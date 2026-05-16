@@ -89,8 +89,8 @@ const WATER_FRAGMENT = /* glsl */ `
   void main() {
     vec3 viewDir = normalize(cameraPosition - vPosition);
     float fresnel = pow(1.0 - dot(vNormal, viewDir), 3.0);
-    vec3 half = normalize(sunDirection + viewDir);
-    float specular = pow(max(dot(vNormal, half), 0.0), 128.0);
+    vec3 halfDir = normalize(sunDirection + viewDir);
+    float specular = pow(max(dot(vNormal, halfDir), 0.0), 128.0);
     vec3 color = mix(waterColor, vec3(0.7, 0.9, 1.0), fresnel) + specular * 0.5;
     gl_FragColor = vec4(color, 0.7);
   }
