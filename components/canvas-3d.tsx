@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useMemo, Suspense } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Sky } from '@react-three/drei'
 import * as THREE from 'three'
 import { useWorldBuilder } from '@/lib/store'
@@ -152,8 +152,9 @@ function WorldObject({ id, position, type }: { id: string; position: [number, nu
   const startScale = useRef(1)
 
   const currentTool = useWorldBuilder((s) => s.currentTool)
+  const { raycaster, pointer } = useThree()
 
-  useFrame(({ raycaster, mouse }) => {
+  useFrame(() => {
     if (!meshRef.current || !dragging) return
 
     if (currentTool === 'move') {
@@ -162,10 +163,10 @@ function WorldObject({ id, position, type }: { id: string; position: [number, nu
       raycaster.ray.intersectPlane(plane, target)
       if (target) meshRef.current.position.copy(target.add(dragOffset.current))
     } else if (currentTool === 'rotate') {
-      const delta = mouse.x - startPointer.current.x
+      const delta = pointer.x - startPointer.current.x
       meshRef.current.rotation.y = startRotation.current + delta * Math.PI * 2
     } else if (currentTool === 'scale') {
-      const delta = Math.max(0.1, startScale.current + 2 * (mouse.y - startPointer.current.y))
+      const delta = Math.max(0.1, startScale.current + 2 * (pointer.y - startPointer.current.y))
       meshRef.current.scale.setScalar(delta)
     }
   })
@@ -198,11 +199,11 @@ function WorldObject({ id, position, type }: { id: string; position: [number, nu
           if (meshRef.current) dragOffset.current.copy(meshRef.current.position).sub(e.point)
         } else if (currentTool === 'rotate') {
           setDragging(true)
-          startPointer.current = { x: e.pointer.x, y: e.pointer.y }
+          startPointer.current = { x: pointer.x, y: pointer.y }
           if (meshRef.current) startRotation.current = meshRef.current.rotation.y
         } else if (currentTool === 'scale') {
           setDragging(true)
-          startPointer.current = { x: e.pointer.x, y: e.pointer.y }
+          startPointer.current = { x: pointer.x, y: pointer.y }
           if (meshRef.current) startScale.current = meshRef.current.scale.x
         }
       }}
