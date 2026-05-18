@@ -14,7 +14,7 @@ const tools: Anthropic.Tool[] = [
           items: { type: 'number' },
           minItems: 3,
           maxItems: 3,
-          description: '[x, y, z] world position',
+          description: '[x, y, z] world position. Ground is roughly y=0.5.',
         },
         rotation: {
           type: 'array',
@@ -36,11 +36,11 @@ const tools: Anthropic.Tool[] = [
   },
   {
     name: 'search_model',
-    description: 'Search Sketchfab for a 3D model and add it to the scene',
+    description: 'Search Sketchfab for a 3D model by keyword and place it in the scene. Use specific terms like "oak tree", "wooden bench", "stone wall".',
     input_schema: {
       type: 'object' as const,
       properties: {
-        query: { type: 'string', description: 'Search term for Sketchfab (e.g. "oak tree", "wooden bench")' },
+        query: { type: 'string', description: 'Sketchfab search term' },
         position: {
           type: 'array',
           items: { type: 'number' },
@@ -54,7 +54,7 @@ const tools: Anthropic.Tool[] = [
   },
   {
     name: 'modify_environment',
-    description: 'Change the scene environment: sky, time of day, or weather',
+    description: 'Change the scene environment: sky preset, time of day, or weather',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -74,37 +74,90 @@ export async function POST(request: Request) {
   const { prompt, sceneContext } = await request.json()
 
   const apiKey = process.env.ANTHROPIC_API_KEY
+  const encoder = new TextEncoder()
+
+  function makeStream(handler: (send: (payload: object) => void) => Promise<void>) {
+    return new ReadableStream({
+      async start(controller) {
+        const send = (payload: object) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
+        }
+        try {
+          await handler(send)
+        } catch (e) {
+          send({ type: 'error', error: e instanceof Error ? e.message : 'Unknown error' })
+        } finally {
+          controller.close()
+        }
+      },
+    })
+  }
+
   if (!apiKey) {
-    return Response.json(
-      { error: 'ANTHROPIC_API_KEY not configured. Add it to .env.local.' },
-      { status: 500 }
-    )
+    const stream = makeStream(async (send) => {
+      send({ type: 'error', error: 'ANTHROPIC_API_KEY not configured. Add it to .env.local.' })
+    })
+    return new Response(stream, {
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+    })
   }
 
   const client = new Anthropic({ apiKey })
 
-  const systemPrompt = `You are an AI assistant for a 3D world builder application similar to Blender.
-Current scene: ${sceneContext.objects.length} objects, environment: ${sceneContext.currentHDRI}, time: ${sceneContext.timeOfDay}h, weather: ${sceneContext.weather}.
-Use the provided tools to modify the scene based on the user's request.
-Place objects thoughtfully — spread them across the terrain, avoid exact overlaps.
-After using tools, respond with a brief, friendly description of what you created.`
+  const systemPrompt = `You are an AI assistant for a 3D world builder driven by chat.
+Current scene: ${sceneContext.objects.length} objects, environment=${sceneContext.currentHDRI}, time=${sceneContext.timeOfDay}h, weather=${sceneContext.weather}.
+Use the provided tools to build what the user asks for. Place objects thoughtfully — spread them across the terrain, vary scale and rotation for natural variety, avoid overlaps. Prefer search_model for organic items (trees, plants, props, vehicles, buildings) and add_object for abstract primitives.
+After tool calls, write a brief, friendly summary of what you built (1-3 sentences).`
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: systemPrompt,
-    tools,
-    messages: [{ role: 'user', content: prompt }],
+  const stream = makeStream(async (send) => {
+    const claudeStream = client.messages.stream({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      system: systemPrompt,
+      tools,
+      messages: [{ role: 'user', content: prompt }],
+    })
+
+    // Track in-flight tool_use blocks: content_block index → { name, id, partialJson }
+    const blocks = new Map<number, { name: string; id: string; json: string }>()
+
+    for await (const event of claudeStream) {
+      if (event.type === 'content_block_start') {
+        const block = event.content_block
+        if (block.type === 'tool_use') {
+          blocks.set(event.index, { name: block.name, id: block.id, json: '' })
+          send({ type: 'tool_use_start', name: block.name, id: block.id })
+        }
+      } else if (event.type === 'content_block_delta') {
+        const delta = event.delta
+        if (delta.type === 'text_delta') {
+          send({ type: 'text_delta', text: delta.text })
+        } else if (delta.type === 'input_json_delta') {
+          const b = blocks.get(event.index)
+          if (b) b.json += delta.partial_json
+        }
+      } else if (event.type === 'content_block_stop') {
+        const b = blocks.get(event.index)
+        if (b) {
+          try {
+            const input = JSON.parse(b.json || '{}')
+            send({ type: 'tool_use_complete', name: b.name, id: b.id, input })
+          } catch {
+            send({ type: 'tool_use_error', name: b.name, id: b.id })
+          }
+          blocks.delete(event.index)
+        }
+      }
+    }
+
+    send({ type: 'done' })
   })
 
-  const actions = response.content
-    .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
-    .map((block) => ({ tool: block.name, input: block.input }))
-
-  const text = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-
-  return Response.json({ text, actions })
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no',
+    },
+  })
 }

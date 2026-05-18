@@ -1,21 +1,27 @@
 export function LoadingScreen() {
   return (
-    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#0a0e1a]">
-      <div className="relative">
-        <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 animate-pulse shadow-2xl shadow-blue-500/50" />
-        <div className="absolute -inset-4">
-          <div className="w-32 h-32 rounded-full border-4 border-transparent border-t-blue-500 border-r-purple-500 animate-spin" />
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-zinc-950">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-400 to-amber-600 shadow-lg shadow-orange-500/30 flex items-center justify-center text-white font-bold text-xs">
+          W
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[14px] text-zinc-200 font-medium tracking-tight">World Builder</span>
+          <span className="text-[10px] text-zinc-600">chat-based 3D</span>
         </div>
       </div>
 
-      <div className="mt-8 text-center">
-        <h2 className="text-2xl font-bold text-white mb-2">World Builder Pro</h2>
-        <p className="text-gray-400 text-sm">AAA Edition — Initializing Engine...</p>
+      <div className="w-40 h-px bg-zinc-800 overflow-hidden rounded-full">
+        <div className="h-full w-1/3 bg-gradient-to-r from-orange-400 to-amber-600 animate-loading-bar" />
       </div>
 
-      <div className="mt-6 w-64 h-1 bg-white/5 rounded-full overflow-hidden">
-        <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 animate-loading origin-left" />
-      </div>
+      <style>{`
+        @keyframes loading-bar {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(400%); }
+        }
+        .animate-loading-bar { animation: loading-bar 1.2s ease-in-out infinite; }
+      `}</style>
     </div>
   )
 }

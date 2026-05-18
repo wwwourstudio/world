@@ -1,6 +1,7 @@
 'use client'
 
 import { useWorldBuilder } from '@/lib/store'
+import { CheckCircle2 } from 'lucide-react'
 
 export function Notification() {
   const notification = useWorldBuilder((s) => s.notification)
@@ -8,16 +9,11 @@ export function Notification() {
   if (!notification) return null
 
   return (
-    <div
-      className="
-        fixed top-20 left-1/2 -translate-x-1/2 z-50
-        px-6 py-3 rounded-xl
-        backdrop-blur-xl bg-black/60 border border-white/20
-        shadow-2xl shadow-black/50
-        animate-in fade-in-0 slide-in-from-top-2 duration-200
-      "
-    >
-      <p className="text-sm text-white font-medium whitespace-nowrap">{notification}</p>
+    <div className="fixed bottom-4 right-4 z-50 anim-fade-in pointer-events-none">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900/95 backdrop-blur-md border border-zinc-800 shadow-xl shadow-black/40">
+        <CheckCircle2 size={13} className="text-orange-400 shrink-0" strokeWidth={1.75} />
+        <p className="text-[12px] text-zinc-200 font-medium whitespace-nowrap">{notification}</p>
+      </div>
     </div>
   )
 }
