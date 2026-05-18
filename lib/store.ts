@@ -14,8 +14,7 @@ export interface WorldObject {
   url?: string
 }
 
-export type RightPanelTab = 'scene' | 'object' | 'environment'
-export type BottomPanelTab = 'assets' | 'ai'
+export type RightPanelTab = 'scene' | 'object' | 'environment' | 'assets'
 
 interface WorldBuilderState {
   // Tools
@@ -23,14 +22,12 @@ interface WorldBuilderState {
   setTool: (tool: Tool) => void
 
   // Layout panels
+  isChatPanelOpen: boolean
   isRightPanelOpen: boolean
-  isBottomPanelOpen: boolean
+  toggleChatPanel: () => void
   toggleRightPanel: () => void
-  toggleBottomPanel: () => void
   rightPanelTab: RightPanelTab
   setRightPanelTab: (tab: RightPanelTab) => void
-  bottomPanelTab: BottomPanelTab
-  setBottomPanelTab: (tab: BottomPanelTab) => void
 
   // Environment
   currentHDRI: HDRI
@@ -62,9 +59,13 @@ interface WorldBuilderState {
   fps: number
   setFPS: (fps: number) => void
 
-  // Undo / Redo
+  // Undo / Redo (with transaction support so AI turns are one undo)
   undoStack: WorldObject[][]
   redoStack: WorldObject[][]
+  transactionDepth: number
+  transactionSnapshot: WorldObject[] | null
+  beginTransaction: () => void
+  endTransaction: () => void
   undo: () => void
   redo: () => void
 
@@ -76,6 +77,17 @@ interface WorldBuilderState {
 
 let notificationTimer: ReturnType<typeof setTimeout> | null = null
 
+// Push the previous snapshot onto undoStack unless we're inside a transaction.
+// Inside a transaction, the snapshot is captured once at begin and flushed at end.
+function recordUndo(get: () => WorldBuilderState, prevObjects: WorldObject[]): Pick<WorldBuilderState, 'undoStack' | 'redoStack'> | object {
+  const { transactionDepth } = get()
+  if (transactionDepth > 0) return {}
+  return {
+    undoStack: [...get().undoStack, prevObjects],
+    redoStack: [],
+  }
+}
+
 export const useWorldBuilder = create<WorldBuilderState>((set, get) => ({
   currentTool: 'select',
   setTool: (tool) => {
@@ -83,14 +95,12 @@ export const useWorldBuilder = create<WorldBuilderState>((set, get) => ({
     get().showNotification(`${tool.charAt(0).toUpperCase() + tool.slice(1)} tool active`)
   },
 
+  isChatPanelOpen: true,
   isRightPanelOpen: true,
-  isBottomPanelOpen: true,
+  toggleChatPanel: () => set((s) => ({ isChatPanelOpen: !s.isChatPanelOpen })),
   toggleRightPanel: () => set((s) => ({ isRightPanelOpen: !s.isRightPanelOpen })),
-  toggleBottomPanel: () => set((s) => ({ isBottomPanelOpen: !s.isBottomPanelOpen })),
   rightPanelTab: 'scene',
   setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
-  bottomPanelTab: 'assets',
-  setBottomPanelTab: (tab) => set({ bottomPanelTab: tab }),
 
   currentHDRI: 'forest',
   setHDRI: (hdri) => {
@@ -121,21 +131,18 @@ export const useWorldBuilder = create<WorldBuilderState>((set, get) => ({
   addObject: (obj) =>
     set((s) => ({
       objects: [...s.objects, obj],
-      undoStack: [...s.undoStack, s.objects],
-      redoStack: [],
+      ...recordUndo(get, s.objects),
     })),
   removeObject: (id) =>
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== id),
       selectedObjectId: s.selectedObjectId === id ? null : s.selectedObjectId,
-      undoStack: [...s.undoStack, s.objects],
-      redoStack: [],
+      ...recordUndo(get, s.objects),
     })),
   updateObject: (id, patch) =>
     set((s) => ({
       objects: s.objects.map((o) => (o.id === id ? { ...o, ...patch } : o)),
-      undoStack: [...s.undoStack, s.objects],
-      redoStack: [],
+      ...recordUndo(get, s.objects),
     })),
   duplicateObject: (id) => {
     const obj = get().objects.find((o) => o.id === id)
@@ -171,6 +178,29 @@ export const useWorldBuilder = create<WorldBuilderState>((set, get) => ({
 
   undoStack: [],
   redoStack: [],
+  transactionDepth: 0,
+  transactionSnapshot: null,
+  beginTransaction: () => {
+    const { transactionDepth, objects } = get()
+    set({
+      transactionDepth: transactionDepth + 1,
+      transactionSnapshot: transactionDepth === 0 ? objects : get().transactionSnapshot,
+    })
+  },
+  endTransaction: () => {
+    const { transactionDepth, transactionSnapshot, undoStack, objects } = get()
+    const next = Math.max(0, transactionDepth - 1)
+    if (next === 0 && transactionSnapshot && transactionSnapshot !== objects) {
+      set({
+        transactionDepth: 0,
+        transactionSnapshot: null,
+        undoStack: [...undoStack, transactionSnapshot],
+        redoStack: [],
+      })
+    } else {
+      set({ transactionDepth: next, transactionSnapshot: next === 0 ? null : transactionSnapshot })
+    }
+  },
   undo: () => {
     const { undoStack, objects } = get()
     if (!undoStack.length) return

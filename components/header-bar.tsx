@@ -1,54 +1,46 @@
 'use client'
 
 import { useWorldBuilder } from '@/lib/store'
-import { PanelRight, PanelBottom } from 'lucide-react'
+import { PanelLeft, PanelRight } from 'lucide-react'
 
 export function HeaderBar() {
   const fps = useWorldBuilder((s) => s.fps)
+  const isChatPanelOpen = useWorldBuilder((s) => s.isChatPanelOpen)
   const isRightPanelOpen = useWorldBuilder((s) => s.isRightPanelOpen)
-  const isBottomPanelOpen = useWorldBuilder((s) => s.isBottomPanelOpen)
+  const toggleChatPanel = useWorldBuilder((s) => s.toggleChatPanel)
   const toggleRightPanel = useWorldBuilder((s) => s.toggleRightPanel)
-  const toggleBottomPanel = useWorldBuilder((s) => s.toggleBottomPanel)
 
   return (
-    <header className="flex items-center h-10 bg-[#2a2a2a] border-b border-[#3a3a3a] px-3 gap-4 shrink-0 select-none">
-      <span className="text-blue-400 font-bold text-xs tracking-widest uppercase">▲ World Builder</span>
+    <header className="flex items-center h-11 bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800 px-4 gap-3 shrink-0 select-none relative z-30">
+      <button
+        onClick={toggleChatPanel}
+        title="Toggle chat panel"
+        className={`p-1.5 rounded-md hover:bg-zinc-800 transition-colors ${
+          isChatPanelOpen ? 'text-zinc-200' : 'text-zinc-600'
+        }`}
+      >
+        <PanelLeft size={15} strokeWidth={1.75} />
+      </button>
 
-      <div className="flex gap-0.5">
-        {['Edit', 'Add', 'View'].map((m) => (
-          <button
-            key={m}
-            className="px-2.5 py-1 text-gray-400 hover:bg-[#3a3a3a] hover:text-gray-200 rounded text-xs"
-          >
-            {m}
-          </button>
-        ))}
+      <div className="flex items-center gap-2">
+        <div className="w-5 h-5 rounded bg-gradient-to-br from-orange-400 to-amber-600 flex items-center justify-center text-[10px] font-bold text-white">W</div>
+        <span className="text-zinc-200 font-medium text-[13px] tracking-tight">World Builder</span>
+        <span className="text-zinc-600 text-[11px]">/ chat-based 3D</span>
       </div>
 
       <div className="flex-1" />
 
-      <span className="text-gray-500 text-xs font-mono tabular-nums">FPS {fps}</span>
+      <span className="text-zinc-600 text-[11px] font-mono tabular-nums">{fps} fps</span>
 
-      <div className="flex gap-0.5">
-        <button
-          onClick={toggleRightPanel}
-          title="Toggle properties panel"
-          className={`p-1.5 rounded hover:bg-[#3a3a3a] transition-colors ${
-            isRightPanelOpen ? 'text-blue-400' : 'text-gray-600'
-          }`}
-        >
-          <PanelRight size={15} />
-        </button>
-        <button
-          onClick={toggleBottomPanel}
-          title="Toggle bottom panel"
-          className={`p-1.5 rounded hover:bg-[#3a3a3a] transition-colors ${
-            isBottomPanelOpen ? 'text-blue-400' : 'text-gray-600'
-          }`}
-        >
-          <PanelBottom size={15} />
-        </button>
-      </div>
+      <button
+        onClick={toggleRightPanel}
+        title="Toggle properties panel"
+        className={`p-1.5 rounded-md hover:bg-zinc-800 transition-colors ${
+          isRightPanelOpen ? 'text-zinc-200' : 'text-zinc-600'
+        }`}
+      >
+        <PanelRight size={15} strokeWidth={1.75} />
+      </button>
     </header>
   )
 }

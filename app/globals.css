@@ -7,33 +7,40 @@
   body {
     overflow: hidden;
     height: 100%;
-    background: #1a1a1a;
-    color: #e5e7eb;
+    background: #09090b;
+    color: #e4e4e7;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   * {
-    @apply border-[#3a3a3a];
     box-sizing: border-box;
+  }
+
+  ::selection {
+    background: rgba(249, 115, 22, 0.25);
+    color: #fafafa;
   }
 }
 
 /* Custom scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 5px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.18);
 }
 
-/* Number input — hide spinners */
+/* Number inputs — hide spinners */
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -41,4 +48,64 @@ input[type='number']::-webkit-outer-spin-button {
 }
 input[type='number'] {
   -moz-appearance: textfield;
+}
+
+/* Range slider — orange accent */
+input[type='range'] {
+  -webkit-appearance: none;
+  background: transparent;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: #f97316;
+  margin-top: -4.5px;
+  border: 2px solid #18181b;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4);
+  cursor: pointer;
+}
+input[type='range']::-moz-range-track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: #f97316;
+  border: 2px solid #18181b;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4);
+  cursor: pointer;
+}
+
+/* Caret */
+.caret-blink {
+  animation: caret 1s steps(2, start) infinite;
+}
+@keyframes caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Fade in animation for chat messages */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim-fade-in {
+  animation: fade-in-up 0.2s ease-out;
 }

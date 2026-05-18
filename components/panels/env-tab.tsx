@@ -22,10 +22,10 @@ function Slider({
   display?: string
 }) {
   return (
-    <div className="mb-3">
+    <div className="mb-3.5">
       <div className="flex justify-between items-center mb-1.5">
-        <span className="text-[11px] text-gray-400">{label}</span>
-        <span className="text-[11px] text-gray-500 font-mono tabular-nums">
+        <span className="text-[11px] text-zinc-400">{label}</span>
+        <span className="text-[11px] text-zinc-500 font-mono tabular-nums">
           {display ?? value.toFixed(2)}
         </span>
       </div>
@@ -36,7 +36,7 @@ function Slider({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1 accent-blue-500 cursor-pointer"
+        className="w-full cursor-pointer"
       />
     </div>
   )
@@ -61,25 +61,24 @@ export function EnvTab() {
   const timeDisplay = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
 
   return (
-    <div className="p-3 overflow-y-auto custom-scrollbar">
-      <div className="mb-4">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Environment</div>
+    <div className="p-4 overflow-y-auto custom-scrollbar h-full">
+      <Section label="Environment">
         <div className="grid grid-cols-3 gap-1.5">
           {HDRI_PRESETS.map((h) => (
             <button
               key={h.id}
               onClick={() => setHDRI(h.id as HDRI)}
-              className={`py-2 px-1 rounded text-[11px] font-medium transition-colors ${
+              className={`py-1.5 px-1 rounded-md text-[11px] font-medium transition-colors ${
                 currentHDRI === h.id
-                  ? 'bg-blue-600 text-white ring-2 ring-blue-400 ring-offset-1 ring-offset-[#252525]'
-                  : 'bg-[#333] text-gray-400 hover:bg-[#3a3a3a] hover:text-gray-200'
+                  ? 'bg-orange-500/15 text-orange-300 border border-orange-500/40'
+                  : 'bg-zinc-800/50 border border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
               }`}
             >
               {h.name}
             </button>
           ))}
         </div>
-      </div>
+      </Section>
 
       <Slider
         label="Time of Day"
@@ -91,31 +90,38 @@ export function EnvTab() {
         display={timeDisplay}
       />
 
-      <div className="mb-4">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Weather</div>
+      <Section label="Weather">
         <div className="flex gap-1.5">
           {WEATHER_OPTIONS.map((w) => (
             <button
               key={w}
               onClick={() => setWeather(w as Weather)}
-              className={`flex-1 py-1.5 rounded text-[11px] capitalize font-medium transition-colors ${
+              className={`flex-1 py-1.5 rounded-md text-[11px] capitalize font-medium transition-colors ${
                 weather === w
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-[#333] text-gray-400 hover:bg-[#3a3a3a] hover:text-gray-200'
+                  ? 'bg-orange-500/15 text-orange-300 border border-orange-500/40'
+                  : 'bg-zinc-800/50 border border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
               }`}
             >
               {w}
             </button>
           ))}
         </div>
-      </div>
+      </Section>
 
-      <div>
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Post Processing</div>
+      <Section label="Post Processing">
         <Slider label="Bloom" value={bloom} min={0} max={2} step={0.05} onChange={setBloom} />
         <Slider label="Exposure" value={exposure} min={0.5} max={2} step={0.05} onChange={setExposure} />
         <Slider label="Contrast" value={contrast} min={0.5} max={2} step={0.05} onChange={setContrast} />
-      </div>
+      </Section>
+    </div>
+  )
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-5">
+      <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">{label}</div>
+      {children}
     </div>
   )
 }
