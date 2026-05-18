@@ -2,9 +2,11 @@
 
 import { useRef, useState, useMemo, Suspense } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, Sky } from '@react-three/drei'
+import { OrbitControls, Sky, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { useWorldBuilder } from '@/lib/store'
+import type { PrimitiveType } from '@/lib/constants'
+import { EffectComposer, Bloom, BrightnessContrast } from '@react-three/postprocessing'
 
 // ─── Terrain ────────────────────────────────────────────────────────────────
 
@@ -19,11 +21,11 @@ function terrainNoise(x: number, z: number): number {
 
 function heightToColor(height: number): THREE.Color {
   const color = new THREE.Color()
-  if (height > 12) color.setHex(0xffffff)      // snow
-  else if (height > 8) color.setHex(0x8b7740)  // rock
-  else if (height > 3) color.setHex(0x4a6b3a)  // forest
-  else if (height > 0) color.setHex(0x5aa24a)  // grass
-  else color.setHex(0xc2b280)                   // sand
+  if (height > 12) color.setHex(0xffffff)
+  else if (height > 8) color.setHex(0x8b7740)
+  else if (height > 3) color.setHex(0x4a6b3a)
+  else if (height > 0) color.setHex(0x5aa24a)
+  else color.setHex(0xc2b280)
   return color
 }
 
@@ -129,11 +131,9 @@ function Water() {
   )
 }
 
-// ─── Interactive Objects ─────────────────────────────────────────────────────
+// ─── Primitive geometry helper ───────────────────────────────────────────────
 
-type ObjectType = 'cube' | 'sphere' | 'cylinder'
-
-function objectGeometry(type: ObjectType) {
+function primitiveGeometry(type: PrimitiveType) {
   switch (type) {
     case 'sphere': return <sphereGeometry args={[0.5, 32, 32]} />
     case 'cylinder': return <cylinderGeometry args={[0.5, 0.5, 1, 32]} />
@@ -141,22 +141,26 @@ function objectGeometry(type: ObjectType) {
   }
 }
 
-function WorldObject({ id, position, type }: { id: string; position: [number, number, number]; type: ObjectType }) {
-  const meshRef = useRef<THREE.Mesh>(null)
-  const [selected, setSelected] = useState(false)
-  const [hovered, setHovered] = useState(false)
-  const [dragging, setDragging] = useState(false)
-  const dragOffset = useRef(new THREE.Vector3())
-  const startRotation = useRef(0)
-  const startPointer = useRef({ x: 0, y: 0 })
-  const startScale = useRef(1)
+// ─── Scene Object (primitive) ────────────────────────────────────────────────
 
+function SceneObjectPrimitive({ id }: { id: string }) {
+  const obj = useWorldBuilder((s) => s.objects.find((o) => o.id === id))
+  const isSelected = useWorldBuilder((s) => s.selectedObjectId === id)
+  const setSelectedObject = useWorldBuilder((s) => s.setSelectedObject)
+  const updateObject = useWorldBuilder((s) => s.updateObject)
   const currentTool = useWorldBuilder((s) => s.currentTool)
   const { raycaster, pointer } = useThree()
 
+  const meshRef = useRef<THREE.Mesh>(null)
+  const [hovered, setHovered] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const dragOffset = useRef(new THREE.Vector3())
+  const startPointer = useRef({ x: 0, y: 0 })
+  const startRotation = useRef(0)
+  const startScale = useRef(1)
+
   useFrame(() => {
     if (!meshRef.current || !dragging) return
-
     if (currentTool === 'move') {
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
       const target = new THREE.Vector3()
@@ -171,13 +175,17 @@ function WorldObject({ id, position, type }: { id: string; position: [number, nu
     }
   })
 
+  if (!obj || !obj.visible || obj.type === 'gltf') return null
+
+  const type = obj.type as PrimitiveType
+
   function getColor() {
     if (dragging) {
       if (currentTool === 'move') return '#10b981'
       if (currentTool === 'rotate') return '#f59e0b'
       if (currentTool === 'scale') return '#8b5cf6'
     }
-    if (selected) return '#3b82f6'
+    if (isSelected) return '#3b82f6'
     if (hovered) return '#6b7280'
     return '#9ca3af'
   }
@@ -187,14 +195,16 @@ function WorldObject({ id, position, type }: { id: string; position: [number, nu
   return (
     <mesh
       ref={meshRef}
-      position={position}
+      position={obj.position}
+      rotation={obj.rotation}
+      scale={obj.scale}
       castShadow
       receiveShadow
       onClick={(e) => {
         e.stopPropagation()
-        if (currentTool === 'select') {
-          setSelected((v) => !v)
-        } else if (currentTool === 'move') {
+        if (obj.locked) return
+        setSelectedObject(id)
+        if (currentTool === 'move') {
           setDragging(true)
           if (meshRef.current) dragOffset.current.copy(meshRef.current.position).sub(e.point)
         } else if (currentTool === 'rotate') {
@@ -207,29 +217,84 @@ function WorldObject({ id, position, type }: { id: string; position: [number, nu
           if (meshRef.current) startScale.current = meshRef.current.scale.x
         }
       }}
-      onPointerUp={() => setDragging(false)}
+      onPointerUp={() => {
+        if (dragging && meshRef.current) {
+          const { x: px, y: py, z: pz } = meshRef.current.position
+          const { x: rx, y: ry, z: rz } = meshRef.current.rotation
+          const { x: sx, y: sy, z: sz } = meshRef.current.scale
+          updateObject(id, {
+            position: [px, py, pz],
+            rotation: [rx, ry, rz],
+            scale: [sx, sy, sz],
+          })
+        }
+        setDragging(false)
+      }}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      {objectGeometry(type)}
+      {primitiveGeometry(type)}
       <meshStandardMaterial
         color={color}
-        emissive={selected || dragging ? color : '#000000'}
-        emissiveIntensity={selected || dragging ? 0.2 : 0}
+        emissive={isSelected || dragging ? color : '#000000'}
+        emissiveIntensity={isSelected || dragging ? 0.2 : 0}
         metalness={0.3}
         roughness={0.7}
       />
-      {(selected || dragging) && meshRef.current && (
-        <lineSegments>
-          <edgesGeometry attach="geometry" args={[meshRef.current.geometry]} />
-          <lineBasicMaterial attach="material" color={color} />
-        </lineSegments>
-      )}
     </mesh>
   )
 }
 
-// ─── Scene (fog + FPS counter + objects) ────────────────────────────────────
+// ─── GLTF Object ─────────────────────────────────────────────────────────────
+
+function GltfMesh({
+  url,
+  position,
+  rotation,
+  scale,
+  onSelect,
+}: {
+  url: string
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: [number, number, number]
+  onSelect: () => void
+}) {
+  const { scene } = useGLTF(url)
+  const clone = useMemo(() => scene.clone(), [scene])
+
+  return (
+    <primitive
+      object={clone}
+      position={position}
+      rotation={rotation}
+      scale={scale}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onClick={(e: any) => { e.stopPropagation(); onSelect() }}
+    />
+  )
+}
+
+function SceneObjectGltf({ id }: { id: string }) {
+  const obj = useWorldBuilder((s) => s.objects.find((o) => o.id === id))
+  const setSelectedObject = useWorldBuilder((s) => s.setSelectedObject)
+
+  if (!obj || !obj.url || !obj.visible) return null
+
+  return (
+    <Suspense fallback={null}>
+      <GltfMesh
+        url={obj.url}
+        position={obj.position}
+        rotation={obj.rotation}
+        scale={obj.scale}
+        onSelect={() => setSelectedObject(id)}
+      />
+    </Suspense>
+  )
+}
+
+// ─── FPS Counter ─────────────────────────────────────────────────────────────
 
 function FPSCounter() {
   const setFPS = useWorldBuilder((s) => s.setFPS)
@@ -249,10 +314,27 @@ function FPSCounter() {
   return null
 }
 
+// ─── Post Processing ──────────────────────────────────────────────────────────
+
+function PostProcessing() {
+  const bloom = useWorldBuilder((s) => s.bloom)
+  const exposure = useWorldBuilder((s) => s.exposure)
+  const contrast = useWorldBuilder((s) => s.contrast)
+
+  return (
+    <EffectComposer>
+      <Bloom intensity={bloom} luminanceThreshold={0.3} luminanceSmoothing={0.9} />
+      <BrightnessContrast brightness={exposure - 1} contrast={contrast - 1} />
+    </EffectComposer>
+  )
+}
+
+// ─── Scene ────────────────────────────────────────────────────────────────────
+
 function Scene() {
+  const objects = useWorldBuilder((s) => s.objects)
   const weather = useWorldBuilder((s) => s.weather)
 
-  // Lerp fog density to match weather
   useFrame(({ scene }) => {
     if (scene.fog instanceof THREE.FogExp2) {
       const target = weather === 'clear' ? 0.0008 : weather === 'rain' ? 0.002 : 0.005
@@ -264,14 +346,18 @@ function Scene() {
     <>
       <Terrain />
       <Water />
-      <WorldObject id="cube-1" position={[2, 0.5, 0]} type="cube" />
-      <WorldObject id="sphere-1" position={[-2, 0.5, 2]} type="sphere" />
-      <WorldObject id="cylinder-1" position={[0, 0.5, -2]} type="cylinder" />
+      {objects.map((obj) =>
+        obj.type === 'gltf' ? (
+          <SceneObjectGltf key={obj.id} id={obj.id} />
+        ) : (
+          <SceneObjectPrimitive key={obj.id} id={obj.id} />
+        ),
+      )}
     </>
   )
 }
 
-// ─── Canvas3D (root export) ──────────────────────────────────────────────────
+// ─── Canvas3D (root export) ───────────────────────────────────────────────────
 
 export function Canvas3D() {
   const timeOfDay = useWorldBuilder((s) => s.timeOfDay)
@@ -292,7 +378,6 @@ export function Canvas3D() {
       style={{ width: '100%', height: '100%' }}
     >
       <color attach="background" args={['#0a0e1a']} />
-      {/* Persistent exponential fog — density is lerped in Scene */}
       <fogExp2 attach="fog" args={['#0a0e1a', 0.0008]} />
 
       <ambientLight intensity={ambientIntensity} />
@@ -328,6 +413,8 @@ export function Canvas3D() {
       <Suspense fallback={null}>
         <Scene />
       </Suspense>
+
+      <PostProcessing />
     </Canvas>
   )
 }

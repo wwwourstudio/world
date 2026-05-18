@@ -1,20 +1,36 @@
 import { create } from 'zustand'
-import type { Tool, HDRI, Weather } from './constants'
+import type { Tool, HDRI, Weather, ObjectType } from './constants'
+import { PRIMITIVE_Y_OFFSET, PRIMITIVE_NAMES } from './constants'
 
 export interface WorldObject {
   id: string
-  type: 'cube' | 'sphere' | 'cylinder'
+  type: ObjectType
+  name: string
   position: [number, number, number]
+  rotation: [number, number, number]
+  scale: [number, number, number]
+  visible: boolean
+  locked: boolean
+  url?: string
 }
+
+export type RightPanelTab = 'scene' | 'object' | 'environment'
+export type BottomPanelTab = 'assets' | 'ai'
 
 interface WorldBuilderState {
   // Tools
   currentTool: Tool
   setTool: (tool: Tool) => void
 
-  // Panel
-  isPanelOpen: boolean
-  togglePanel: () => void
+  // Layout panels
+  isRightPanelOpen: boolean
+  isBottomPanelOpen: boolean
+  toggleRightPanel: () => void
+  toggleBottomPanel: () => void
+  rightPanelTab: RightPanelTab
+  setRightPanelTab: (tab: RightPanelTab) => void
+  bottomPanelTab: BottomPanelTab
+  setBottomPanelTab: (tab: BottomPanelTab) => void
 
   // Environment
   currentHDRI: HDRI
@@ -34,10 +50,15 @@ interface WorldBuilderState {
 
   // Scene objects
   objects: WorldObject[]
+  selectedObjectId: string | null
+  setSelectedObject: (id: string | null) => void
   addObject: (obj: WorldObject) => void
   removeObject: (id: string) => void
+  updateObject: (id: string, patch: Partial<WorldObject>) => void
+  duplicateObject: (id: string) => void
+  addPrimitive: (type: 'cube' | 'sphere' | 'cylinder') => void
 
-  // Stats (updated by the 3D scene)
+  // Stats
   fps: number
   setFPS: (fps: number) => void
 
@@ -62,18 +83,22 @@ export const useWorldBuilder = create<WorldBuilderState>((set, get) => ({
     get().showNotification(`${tool.charAt(0).toUpperCase() + tool.slice(1)} tool active`)
   },
 
-  isPanelOpen: false,
-  togglePanel: () => set((s) => ({ isPanelOpen: !s.isPanelOpen })),
+  isRightPanelOpen: true,
+  isBottomPanelOpen: true,
+  toggleRightPanel: () => set((s) => ({ isRightPanelOpen: !s.isRightPanelOpen })),
+  toggleBottomPanel: () => set((s) => ({ isBottomPanelOpen: !s.isBottomPanelOpen })),
+  rightPanelTab: 'scene',
+  setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+  bottomPanelTab: 'assets',
+  setBottomPanelTab: (tab) => set({ bottomPanelTab: tab }),
 
   currentHDRI: 'forest',
   setHDRI: (hdri) => {
     set({ currentHDRI: hdri })
     get().showNotification(`Loaded ${hdri} environment`)
   },
-
   timeOfDay: 12,
   setTimeOfDay: (timeOfDay) => set({ timeOfDay }),
-
   weather: 'clear',
   setWeather: (weather) => {
     set({ weather })
@@ -88,6 +113,11 @@ export const useWorldBuilder = create<WorldBuilderState>((set, get) => ({
   setContrast: (contrast) => set({ contrast }),
 
   objects: [],
+  selectedObjectId: null,
+  setSelectedObject: (id) => {
+    set({ selectedObjectId: id })
+    if (id) set({ rightPanelTab: 'object' })
+  },
   addObject: (obj) =>
     set((s) => ({
       objects: [...s.objects, obj],
@@ -97,9 +127,44 @@ export const useWorldBuilder = create<WorldBuilderState>((set, get) => ({
   removeObject: (id) =>
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== id),
+      selectedObjectId: s.selectedObjectId === id ? null : s.selectedObjectId,
       undoStack: [...s.undoStack, s.objects],
       redoStack: [],
     })),
+  updateObject: (id, patch) =>
+    set((s) => ({
+      objects: s.objects.map((o) => (o.id === id ? { ...o, ...patch } : o)),
+      undoStack: [...s.undoStack, s.objects],
+      redoStack: [],
+    })),
+  duplicateObject: (id) => {
+    const obj = get().objects.find((o) => o.id === id)
+    if (!obj) return
+    const copy: WorldObject = {
+      ...obj,
+      id: crypto.randomUUID(),
+      name: `${obj.name} (copy)`,
+      position: [obj.position[0] + 1, obj.position[1], obj.position[2] + 1],
+    }
+    get().addObject(copy)
+    get().setSelectedObject(copy.id)
+  },
+  addPrimitive: (type) => {
+    const count = get().objects.filter((o) => o.type === type).length + 1
+    const obj: WorldObject = {
+      id: crypto.randomUUID(),
+      type,
+      name: `${PRIMITIVE_NAMES[type]} ${count}`,
+      position: [0, PRIMITIVE_Y_OFFSET[type], 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      visible: true,
+      locked: false,
+    }
+    get().addObject(obj)
+    get().setSelectedObject(obj.id)
+    get().showNotification(`Added ${PRIMITIVE_NAMES[type]}`)
+  },
 
   fps: 60,
   setFPS: (fps) => set({ fps }),

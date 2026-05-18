@@ -11,6 +11,8 @@ import type { LucideIcon } from 'lucide-react'
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'terrain' | 'paint'
 export type HDRI = 'forest' | 'sunset' | 'studio' | 'night' | 'urban' | 'beach'
 export type Weather = 'clear' | 'rain' | 'fog'
+export type PrimitiveType = 'cube' | 'sphere' | 'cylinder'
+export type ObjectType = PrimitiveType | 'gltf'
 
 export interface ToolDefinition {
   id: Tool
@@ -62,4 +64,16 @@ export const TOOL_SHORTCUTS: Record<string, Tool> = {
   s: 'scale',
   t: 'terrain',
   p: 'paint',
+}
+
+export const PRIMITIVE_Y_OFFSET: Record<PrimitiveType, number> = {
+  cube: 0.5,
+  sphere: 0.5,
+  cylinder: 0.5,
+}
+
+export const PRIMITIVE_NAMES: Record<PrimitiveType, string> = {
+  cube: 'Cube',
+  sphere: 'Sphere',
+  cylinder: 'Cylinder',
 }
