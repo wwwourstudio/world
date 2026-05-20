@@ -268,7 +268,7 @@ function SceneObjectNode({ id }: { id: string }) {
         scale={obj.transform.scale}
         visible={obj.visible}
       >
-        {obj.children.map((cid) => <SceneObjectNode key={cid} id={cid} />)}
+        {(obj.children ?? []).map((cid) => <SceneObjectNode key={cid} id={cid} />)}
       </group>
     )
   }

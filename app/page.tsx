@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, Component, type ReactNode } from 'react'
 import { useScene, loadPersistedScene } from '@/lib/scene/SceneStore'
 import { MainToolbar } from '@/components/toolbar/MainToolbar'
 import { OutlinerPanel } from '@/components/panels/OutlinerPanel'
@@ -14,6 +14,26 @@ import { PhysicsPanel } from '@/components/panels/PhysicsPanel'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react'
+
+class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+  state = { error: null }
+  static getDerivedStateFromError(e: Error) { return { error: e.message } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-3" style={{ background: '#0B0C0F' }}>
+          <span style={{ color: '#f87171', fontSize: 12 }}>3D viewport failed to load</span>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="px-3 py-1.5 rounded-lg text-[11px]"
+            style={{ background: '#1E2028', color: '#E8E9F0' }}
+          >Retry</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const ViewportCanvas = dynamic(
   () => import('@/components/viewport/ViewportCanvas').then((m) => m.ViewportCanvas),
@@ -161,7 +181,9 @@ export default function WorldBuilderPage() {
 
         {/* Viewport */}
         <div className="flex-1 relative overflow-hidden">
-          <ViewportCanvas />
+          <CanvasErrorBoundary>
+            <ViewportCanvas />
+          </CanvasErrorBoundary>
           <ViewportOverlay />
         </div>
 

@@ -713,6 +713,8 @@ export const useScene = create<SceneState>()(
   )
 )
 
+const SCENE_STORAGE_KEY = 'wbp-scene-v2'
+
 // Persist to localStorage
 if (typeof window !== 'undefined') {
   useScene.subscribe(
@@ -721,7 +723,7 @@ if (typeof window !== 'undefined') {
       clearTimeout((window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer)
       ;(window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer = setTimeout(() => {
         try {
-          localStorage.setItem('wbp-scene', JSON.stringify(state))
+          localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(state))
         } catch {}
       }, 500)
     }
@@ -731,12 +733,36 @@ if (typeof window !== 'undefined') {
 export function loadPersistedScene() {
   if (typeof window === 'undefined') return
   try {
-    const raw = localStorage.getItem('wbp-scene')
+    const raw = localStorage.getItem(SCENE_STORAGE_KEY)
     if (!raw) return
     const data = JSON.parse(raw)
+    if (!data || typeof data !== 'object') return
+    const objects: Record<string, SceneObject> = {}
+    for (const [id, obj] of Object.entries(data.objects ?? {})) {
+      const o = obj as Partial<SceneObject>
+      objects[id] = {
+        id,
+        name: o.name ?? 'Object',
+        type: o.type ?? 'mesh',
+        geometry: o.geometry ?? DEFAULT_GEOMETRY,
+        material: { ...DEFAULT_MATERIAL, ...(o.material ?? {}) },
+        light: o.light ?? null,
+        transform: { position: [0,0,0], rotation: [0,0,0], scale: [1,1,1], ...(o.transform ?? {}) },
+        animation: o.animation ?? null,
+        physics: o.physics ?? null,
+        children: Array.isArray(o.children) ? o.children : [],
+        parentId: o.parentId ?? null,
+        visible: o.visible ?? true,
+        locked: o.locked ?? false,
+        tags: Array.isArray(o.tags) ? o.tags : [],
+        expanded: o.expanded ?? false,
+        castShadow: o.castShadow ?? true,
+        receiveShadow: o.receiveShadow ?? true,
+      }
+    }
     useScene.setState((s) => {
-      s.objects = data.objects ?? {}
-      s.rootIds = data.rootIds ?? []
+      s.objects = objects
+      s.rootIds = Array.isArray(data.rootIds) ? data.rootIds : []
       s.environment = { ...s.environment, ...data.environment }
       s.postFX = { ...s.postFX, ...data.postFX }
     })
