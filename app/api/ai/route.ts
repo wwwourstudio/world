@@ -85,7 +85,14 @@ export async function POST(request: Request) {
         try {
           await handler(send)
         } catch (e) {
-          send({ type: 'error', error: e instanceof Error ? e.message : 'Unknown error' })
+          let errorMessage = 'Unknown error'
+          if (e instanceof Anthropic.APIError) {
+            const body = e.error as { error?: { message?: string } } | undefined
+            errorMessage = body?.error?.message ?? `API error ${e.status}`
+          } else if (e instanceof Error) {
+            errorMessage = e.message
+          }
+          send({ type: 'error', error: errorMessage })
         } finally {
           controller.close()
         }
