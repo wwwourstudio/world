@@ -19,6 +19,13 @@ export interface Transform {
   scale: [number, number, number]
 }
 
+export interface MaterialMaps {
+  map?: string
+  roughnessMap?: string
+  metalnessMap?: string
+  normalMap?: string
+}
+
 export interface MaterialConfig {
   type: MaterialType
   color: string
@@ -35,6 +42,7 @@ export interface MaterialConfig {
   thickness: number
   flatShading: boolean
   side: 'front' | 'back' | 'double'
+  maps?: MaterialMaps
 }
 
 export interface GeometryConfig {
