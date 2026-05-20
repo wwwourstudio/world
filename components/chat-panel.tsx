@@ -30,10 +30,10 @@ interface AssistantMessage {
 type Message = UserMessage | AssistantMessage
 
 const SUGGESTED_PROMPTS = [
-  { label: 'Build a small forest with trees and rocks', short: 'Build a forest', icon: '🌲' },
+  { label: 'Build a small forest with trees and rocks', short: 'Forest', icon: '🌲' },
   { label: 'Make a sci-fi base on a desert planet', short: 'Sci-fi base', icon: '🛸' },
-  { label: 'Create a medieval village with a few houses', short: 'Medieval village', icon: '🏰' },
-  { label: 'Set a sunset over the lake with warm light', short: 'Sunset scene', icon: '🌅' },
+  { label: 'Create a medieval village with a few houses', short: 'Village', icon: '🏰' },
+  { label: 'Set a sunset over the lake with warm light', short: 'Sunset', icon: '🌅' },
 ]
 
 function actionLabel(tool: string, input: Record<string, unknown>): { label: string; detail?: string } {
@@ -255,7 +255,7 @@ export function ChatPanel() {
 
       patchLastAssistant((msg) => ({ ...msg, status: receivedError ? 'error' : 'complete' }))
     } catch {
-      patchLastAssistant({ content: 'Failed to reach AI.', status: 'error' })
+      patchLastAssistant({ content: 'Failed to reach the server. Check your connection and try again.', status: 'error' })
     } finally {
       endTransaction()
       setLoading(false)
@@ -293,15 +293,15 @@ export function ChatPanel() {
             <p className="text-[12px] text-zinc-500 max-w-[260px] leading-relaxed mb-6">
               Describe a scene. Claude places objects, imports Sketchfab models, and sets the environment.
             </p>
-            <div className="flex flex-col gap-1.5 w-full max-w-[280px]">
+            <div className="grid grid-cols-2 gap-1.5 w-full max-w-[280px]">
               {SUGGESTED_PROMPTS.map((p) => (
                 <button
                   key={p.short}
                   onClick={() => send(p.label)}
-                  className="group flex items-center gap-2.5 px-3 py-2 bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-left transition-all duration-150"
+                  className="group flex flex-col items-start gap-1.5 px-3 py-2.5 bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-xl text-left transition-all duration-150"
                 >
-                  <span className="text-[14px]">{p.icon}</span>
-                  <span className="text-[12px] text-zinc-300 group-hover:text-zinc-100 flex-1">{p.short}</span>
+                  <span className="text-[18px] leading-none">{p.icon}</span>
+                  <span className="text-[11px] text-zinc-400 group-hover:text-zinc-200 font-medium leading-tight">{p.short}</span>
                 </button>
               ))}
             </div>
@@ -391,14 +391,18 @@ function AssistantTurn({
         <span className="text-[10px] text-zinc-600 uppercase tracking-wider font-medium">Claude</span>
       </div>
 
-      {msg.content && (
+      {msg.status === 'error' && msg.content ? (
+        <div className="px-3 py-2 rounded-lg bg-red-950/40 border border-red-900/50 text-[12px] text-red-300 leading-relaxed">
+          {msg.content.replace(/^⚠\s*/, '')}
+        </div>
+      ) : msg.content ? (
         <div className="text-[13px] text-zinc-300 leading-relaxed whitespace-pre-wrap">
           {msg.content}
           {loading && msg.status === 'streaming' && (
-            <span className="inline-block w-1.5 h-3 bg-orange-400 ml-0.5 align-text-bottom animate-pulse" />
+            <span className="inline-block w-1 h-3.5 bg-orange-400 ml-0.5 align-text-bottom animate-pulse rounded-sm" />
           )}
         </div>
-      )}
+      ) : null}
 
       {!msg.content && loading && (
         <div className="flex items-center gap-2 text-[12px] text-zinc-500">

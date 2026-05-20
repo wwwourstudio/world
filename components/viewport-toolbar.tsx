@@ -15,18 +15,19 @@ export function ViewportToolbar() {
   const canRedo = useWorldBuilder((s) => s.redoStack.length > 0)
 
   return (
-    <div className="absolute top-3 left-3 z-20 flex flex-col gap-3">
-      <div className="flex flex-col gap-0.5 bg-zinc-900/85 backdrop-blur-md rounded-lg border border-zinc-800 p-1 shadow-xl shadow-black/30">
+    <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20">
+      <div className="flex items-center gap-0.5 bg-zinc-900/90 backdrop-blur-md rounded-full border border-zinc-800 px-2 py-1.5 shadow-xl shadow-black/40">
         {SIMPLE_TOOLS.map((t) => {
           const Icon = t.icon
+          const active = currentTool === t.id
           return (
             <button
               key={t.id}
               onClick={() => setTool(t.id)}
               title={`${t.label} (${t.shortcut})`}
-              className={`w-8 h-8 flex items-center justify-center rounded-md transition-all duration-150 ${
-                currentTool === t.id
-                  ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/30'
+              className={`w-8 h-8 flex items-center justify-center rounded-full transition-all duration-150 ${
+                active
+                  ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/40'
                   : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'
               }`}
             >
@@ -34,14 +35,14 @@ export function ViewportToolbar() {
             </button>
           )
         })}
-      </div>
 
-      <div className="flex flex-col gap-0.5 bg-zinc-900/85 backdrop-blur-md rounded-lg border border-zinc-800 p-1 shadow-xl shadow-black/30">
+        <div className="w-px h-5 bg-zinc-800 mx-1" />
+
         <button
           onClick={undo}
           disabled={!canUndo}
           title="Undo (Ctrl+Z)"
-          className="w-8 h-8 flex items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
+          className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-25 disabled:cursor-not-allowed transition-all duration-150"
         >
           <Undo2 size={13} strokeWidth={1.75} />
         </button>
@@ -49,7 +50,7 @@ export function ViewportToolbar() {
           onClick={redo}
           disabled={!canRedo}
           title="Redo (Ctrl+Y)"
-          className="w-8 h-8 flex items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
+          className="w-8 h-8 flex items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-25 disabled:cursor-not-allowed transition-all duration-150"
         >
           <Redo2 size={13} strokeWidth={1.75} />
         </button>
