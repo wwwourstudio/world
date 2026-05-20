@@ -7,8 +7,8 @@
   body {
     overflow: hidden;
     height: 100%;
-    background: #09090b;
-    color: #e4e4e7;
+    background: #0B0C0F;
+    color: #E8E9F0;
     font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -19,25 +19,25 @@
   }
 
   ::selection {
-    background: rgba(249, 115, 22, 0.25);
-    color: #fafafa;
+    background: rgba(91, 108, 255, 0.3);
+    color: #ffffff;
   }
 }
 
 /* Custom scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 /* Number inputs — hide spinners */
@@ -50,62 +50,70 @@ input[type='number'] {
   -moz-appearance: textfield;
 }
 
-/* Range slider — orange accent */
+/* Range slider — blue-violet accent */
 input[type='range'] {
   -webkit-appearance: none;
   background: transparent;
+  cursor: pointer;
 }
 input[type='range']::-webkit-slider-runnable-track {
   height: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  background: #1E2028;
   border-radius: 3px;
 }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 9999px;
-  background: #f97316;
-  margin-top: -4.5px;
-  border: 2px solid #18181b;
-  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4);
-  cursor: pointer;
+  background: #5B6CFF;
+  margin-top: -4px;
+  border: 2px solid #0B0C0F;
+  box-shadow: 0 0 0 1px rgba(91, 108, 255, 0.4);
 }
 input[type='range']::-moz-range-track {
   height: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  background: #1E2028;
   border-radius: 3px;
 }
 input[type='range']::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 9999px;
-  background: #f97316;
-  border: 2px solid #18181b;
-  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.4);
+  background: #5B6CFF;
+  border: 2px solid #0B0C0F;
+  box-shadow: 0 0 0 1px rgba(91, 108, 255, 0.4);
+}
+
+/* Checkbox accent */
+input[type='checkbox'] {
+  accent-color: #5B6CFF;
+  width: 13px;
+  height: 13px;
   cursor: pointer;
 }
 
-/* Caret */
-.caret-blink {
-  animation: caret 1s steps(2, start) infinite;
-}
-@keyframes caret {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
-/* Fade in animation for chat messages */
+/* Animations */
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .anim-fade-in {
   animation: fade-in-up 0.2s ease-out;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
 }
