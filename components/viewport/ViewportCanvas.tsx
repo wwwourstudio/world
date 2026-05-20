@@ -379,7 +379,7 @@ function HDRIEnvironment() {
 
   return (
     <Environment
-      files={env.hdriUrl.startsWith('http') ? `/api/hdri/${env.hdriUrl.split('/').pop()?.replace('_1k.hdr', '')}` : env.hdriUrl}
+      files={env.hdriUrl.startsWith('http') ? `/api/hdri/${env.hdriUrl.split('/').pop()?.replace('_1k', '') ?? 'scene.hdr'}` : env.hdriUrl}
       background={env.showBackground}
       backgroundIntensity={env.hdriIntensity}
       environmentIntensity={env.hdriIntensity}
