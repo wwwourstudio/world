@@ -138,6 +138,40 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   const { selectObject, activeTool } = useScene()
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
 
+  // Load PBR texture maps imperatively when maps change
+  const mapsKey = JSON.stringify(obj.material.maps)
+  useEffect(() => {
+    const maps = obj.material.maps
+    if (!maps) return
+    const mat = material as THREE.MeshStandardMaterial
+    const loader = new THREE.TextureLoader()
+    let disposed = false
+    const loaded: THREE.Texture[] = []
+
+    function loadMap(url: string, apply: (t: THREE.Texture) => void) {
+      loader.load(url, (tex) => {
+        if (disposed) { tex.dispose(); return }
+        loaded.push(tex)
+        apply(tex)
+        mat.needsUpdate = true
+      })
+    }
+
+    if (maps.map) loadMap(maps.map, (t) => { t.colorSpace = THREE.SRGBColorSpace; mat.map = t })
+    if (maps.roughnessMap) loadMap(maps.roughnessMap, (t) => { mat.roughnessMap = t })
+    if (maps.metalnessMap) loadMap(maps.metalnessMap, (t) => { mat.metalnessMap = t })
+    if (maps.normalMap) loadMap(maps.normalMap, (t) => { mat.normalMap = t })
+
+    return () => {
+      disposed = true
+      loaded.forEach((t) => t.dispose())
+      mat.map = null; mat.roughnessMap = null
+      mat.metalnessMap = null; mat.normalMap = null
+      mat.needsUpdate = true
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapsKey, material])
+
   const hasPhysics = obj.physics?.enabled && useScene.getState().physicsEnabled
   const bodyType = obj.physics?.type ?? 'dynamic'
 
