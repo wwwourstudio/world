@@ -13,7 +13,7 @@ import { AnimationTimeline } from '@/components/panels/AnimationTimeline'
 import { PhysicsPanel } from '@/components/panels/PhysicsPanel'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
-import { CheckCircle2, AlertCircle, Info } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, Layers, Palette } from 'lucide-react'
 
 class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state = { error: null }
@@ -146,18 +146,23 @@ export default function WorldBuilderPage() {
         {panels.leftOpen && (
           <div className="flex flex-col w-64 shrink-0 overflow-hidden" style={{ borderRight: '1px solid #1E2028' }}>
             {/* Tab bar */}
-            <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
-              {(['outliner', 'material'] as const).map((t) => (
+            <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14' }}>
+              {([
+                { id: 'outliner', label: 'Scene', icon: <Layers size={12} strokeWidth={1.75} /> },
+                { id: 'material', label: 'Material', icon: <Palette size={12} strokeWidth={1.75} /> },
+              ] as const).map((t) => (
                 <button
-                  key={t}
-                  onClick={() => useScene.getState().setPanelTab('left', t)}
-                  className="flex-1 text-[11px] font-medium capitalize transition-colors"
+                  key={t.id}
+                  onClick={() => useScene.getState().setPanelTab('left', t.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium capitalize transition-colors"
                   style={{
-                    color: panels.leftTab === t ? '#E8E9F0' : '#7A7E92',
-                    borderBottom: panels.leftTab === t ? '2px solid #5B6CFF' : '2px solid transparent',
+                    color: panels.leftTab === t.id ? '#E8E9F0' : '#7A7E92',
+                    borderBottom: panels.leftTab === t.id ? '2px solid #5B6CFF' : '2px solid transparent',
+                    background: panels.leftTab === t.id ? '#5B6CFF10' : 'transparent',
                   }}
                 >
-                  {t}
+                  {t.icon}
+                  {t.label}
                 </button>
               ))}
             </div>

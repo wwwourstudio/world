@@ -1,7 +1,12 @@
 'use client'
 
+import { useState } from 'react'
+import {
+  ChevronDown, ChevronRight, Move3D, RotateCcw, Eye, Lightbulb, Sun,
+  Type, Sparkles, Play, Box, Group, Flame, Maximize2,
+} from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig } from '@/lib/scene/SceneStore'
+import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig, SceneObject } from '@/lib/scene/SceneStore'
 
 function getNaturalSize(geo: GeometryConfig): number {
   switch (geo.type) {
@@ -91,6 +96,128 @@ const DEFAULT_PARTICLE_CFG: ParticleConfig = {
   count: 200, spread: [6, 6, 6], instanceGeometry: 'sphere', instanceScale: 0.08, randomScale: 0.5, preset: 'scatter',
 }
 
+function ObjectHeader({ obj }: { obj: SceneObject }) {
+  const updateObject = useScene((s) => s.updateObject)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const typeColor =
+    obj.type === 'light' ? '#d4b400'
+    : obj.type === 'particle' ? '#ff6b35'
+    : obj.type === 'group' ? '#7A7E92'
+    : '#5B6CFF'
+  const typeLabel =
+    obj.type === 'mesh' ? (obj.geometry?.type === 'gltf' ? 'gltf' : obj.geometry?.type ?? 'mesh')
+    : obj.type
+  const TypeIcon =
+    obj.type === 'light' ? Lightbulb
+    : obj.type === 'particle' ? Flame
+    : obj.type === 'group' ? Group
+    : obj.geometry?.type === 'text' ? Type
+    : Box
+
+  function startEdit() { setDraft(obj.name); setEditing(true) }
+  function commit() { if (draft.trim()) updateObject(obj.id, { name: draft.trim() }); setEditing(false) }
+
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2.5 shrink-0"
+         style={{ borderBottom: '1px solid #1E2028', background: '#0b0c10' }}>
+      <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
+           style={{ background: `${typeColor}18`, border: `1px solid ${typeColor}35` }}>
+        <TypeIcon size={14} style={{ color: typeColor }} strokeWidth={1.5} />
+      </div>
+      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
+            className="text-[12px] font-semibold bg-transparent outline-none border-b w-full"
+            style={{ color: '#E8E9F0', borderColor: '#5B6CFF' }}
+          />
+        ) : (
+          <span
+            className="text-[12px] font-semibold truncate leading-tight cursor-pointer"
+            style={{ color: '#E8E9F0' }}
+            onDoubleClick={startEdit}
+            title="Double-click to rename"
+          >{obj.name}</span>
+        )}
+        <span className="text-[10px] font-mono uppercase tracking-wide leading-tight" style={{ color: typeColor }}>
+          {typeLabel}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function Section({ label, icon, children, defaultOpen = true }: {
+  label: string
+  icon?: React.ReactNode
+  children: React.ReactNode
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{ borderBottom: '1px solid #1E2028' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 h-7 px-3 transition-colors"
+        style={{ background: '#0d0f14' }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#12141a' }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#0d0f14' }}
+      >
+        {icon && <span className="shrink-0 opacity-80" style={{ color: '#5B6CFF' }}>{icon}</span>}
+        <span className="flex-1 text-left text-[10px] uppercase tracking-wider font-semibold" style={{ color: '#5B6CFF' }}>
+          {label}
+        </span>
+        {open
+          ? <ChevronDown size={10} style={{ color: '#3a3e50' }} />
+          : <ChevronRight size={10} style={{ color: '#3a3e50' }} />}
+      </button>
+      {open && (
+        <div className="px-3 py-2.5">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] w-24 truncate shrink-0" style={{ color: '#7A7E92' }}>{label}</span>
+      <div className="flex items-center gap-1 flex-1">{children}</div>
+    </div>
+  )
+}
+
+function SmallBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex-1 h-6 rounded text-[10px] font-medium transition-all border"
+      style={{ color: '#7A7E92', borderColor: '#1E2028', background: 'transparent' }}
+      onMouseEnter={(e) => {
+        const b = e.currentTarget as HTMLButtonElement
+        b.style.color = '#E8E9F0'
+        b.style.background = '#1E2028'
+        b.style.borderColor = '#2a2d3a'
+      }}
+      onMouseLeave={(e) => {
+        const b = e.currentTarget as HTMLButtonElement
+        b.style.color = '#7A7E92'
+        b.style.background = 'transparent'
+        b.style.borderColor = '#1E2028'
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 export function PropertiesPanel() {
   const selectedIds = useScene((s) => s.selectedIds)
   const objects = useScene((s) => s.objects)
@@ -115,19 +242,11 @@ export function PropertiesPanel() {
   }
 
   return (
-    <div className="flex flex-col gap-0 overflow-y-auto custom-scrollbar flex-1">
-      {/* Name */}
-      <Section label="Name">
-        <input
-          value={obj.name}
-          onChange={(e) => updateObject(id, { name: e.target.value })}
-          className="w-full h-7 px-2 rounded text-[12px] outline-none border"
-          style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
-        />
-      </Section>
+    <div className="flex flex-col overflow-y-auto custom-scrollbar flex-1">
+      <ObjectHeader obj={obj} />
 
       {/* Transform */}
-      <Section label="Transform">
+      <Section label="Transform" icon={<Move3D size={11} />}>
         <div className="flex flex-col gap-3">
           <Vec3Control
             label="Position"
@@ -165,7 +284,7 @@ export function PropertiesPanel() {
 
       {/* Light properties */}
       {obj.type === 'light' && obj.light && (
-        <Section label="Light">
+        <Section label="Light" icon={<Lightbulb size={11} />}>
           <div className="flex flex-col gap-2">
             <Row label="Type">
               <select
@@ -212,7 +331,7 @@ export function PropertiesPanel() {
 
       {/* Shadow */}
       {obj.type === 'mesh' && (
-        <Section label="Shadow">
+        <Section label="Shadow" icon={<Sun size={11} />}>
           <div className="flex flex-col gap-2">
             <Row label="Cast Shadow">
               <input type="checkbox" checked={obj.castShadow} onChange={(e) => updateObject(id, { castShadow: e.target.checked })} />
@@ -226,7 +345,7 @@ export function PropertiesPanel() {
 
       {/* 3D Text editing */}
       {obj.geometry?.type === 'text' && (
-        <Section label="3D Text">
+        <Section label="3D Text" icon={<Type size={11} />}>
           <div className="flex flex-col gap-2">
             <textarea
               value={obj.geometry.text ?? 'Text'}
@@ -242,7 +361,7 @@ export function PropertiesPanel() {
 
       {/* Particle Emitter */}
       {obj.type === 'particle' && (
-        <Section label="Particle Emitter">
+        <Section label="Particle Emitter" icon={<Sparkles size={11} />}>
           <div className="flex flex-col gap-2">
             <Row label="Preset">
               <select
@@ -300,7 +419,7 @@ export function PropertiesPanel() {
       )}
 
       {/* Animation */}
-      <Section label="Animation">
+      <Section label="Animation" icon={<Play size={11} />} defaultOpen={false}>
         <div className="flex flex-col gap-2">
           <Row label="Preset">
             <select
@@ -339,7 +458,7 @@ export function PropertiesPanel() {
       </Section>
 
       {/* Visibility */}
-      <Section label="Visibility">
+      <Section label="Visibility" icon={<Eye size={11} />} defaultOpen={false}>
         <div className="flex flex-col gap-2">
           <Row label="Visible">
             <input type="checkbox" checked={obj.visible} onChange={(e) => updateObject(id, { visible: e.target.checked })} />
@@ -350,41 +469,5 @@ export function PropertiesPanel() {
         </div>
       </Section>
     </div>
-  )
-}
-
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="flex items-center h-7 px-3" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14' }}>
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: '#5B6CFF' }}>{label}</span>
-      </div>
-      <div className="px-3 py-3" style={{ borderBottom: '1px solid #1E2028' }}>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] w-24 truncate shrink-0" style={{ color: '#7A7E92' }}>{label}</span>
-      <div className="flex items-center gap-1 flex-1">{children}</div>
-    </div>
-  )
-}
-
-function SmallBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex-1 h-6 rounded text-[10px] transition-colors border"
-      style={{ color: '#7A7E92', borderColor: '#1E2028' }}
-      onMouseEnter={(e) => { e.currentTarget.style.color = '#E8E9F0'; e.currentTarget.style.background = '#1E2028' }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92'; e.currentTarget.style.background = '' }}
-    >
-      {children}
-    </button>
   )
 }
