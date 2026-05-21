@@ -37,6 +37,7 @@ function ObjectRow({
   if (!obj) return null
   const isSelected = selectedIds.includes(id)
   const hasChildren = obj.children.length > 0
+  const typeColor = obj.type === 'light' ? '#d4b400' : obj.type === 'group' ? '#7A7E92' : '#5B6CFF'
 
   function startEdit() {
     setDraft(obj.name)
@@ -55,8 +56,8 @@ function ObjectRow({
         className="flex items-center h-7 px-2 cursor-pointer group transition-colors"
         style={{
           paddingLeft: `${depth * 14 + 8}px`,
-          background: isSelected ? '#5B6CFF22' : undefined,
-          borderLeft: isSelected ? '2px solid #5B6CFF' : '2px solid transparent',
+          background: isSelected ? `${typeColor}15` : undefined,
+          borderLeft: isSelected ? `2px solid ${typeColor}` : '2px solid transparent',
         }}
         onClick={(e) => selectObject(id, e.ctrlKey || e.metaKey)}
         onDoubleClick={startEdit}
@@ -195,36 +196,37 @@ export function OutlinerPanel() {
       </div>
 
       {/* Header row */}
-      <div className="flex items-center px-3 py-1 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
-        <span className="text-[10px] uppercase tracking-wider flex-1" style={{ color: '#7A7E92' }}>
-          {Object.keys(objects).length} Objects
+      <div className="flex items-center px-3 h-7 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14' }}>
+        <span className="flex-1 text-[10px] uppercase tracking-wider font-semibold" style={{ color: '#5B6CFF' }}>
+          Scene
+        </span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: '#1E2028', color: '#7A7E92' }}>
+          {Object.keys(objects).length}
         </span>
         <button
           onClick={selectAll}
-          className="text-[10px] px-2 py-0.5 rounded transition-colors"
+          className="ml-2 text-[10px] px-1.5 h-5 rounded transition-colors"
           style={{ color: '#7A7E92' }}
-          onMouseEnter={(e) => e.currentTarget.style.color = '#E8E9F0'}
-          onMouseLeave={(e) => e.currentTarget.style.color = '#7A7E92'}
-        >
-          All
-        </button>
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#E8E9F0'; (e.currentTarget as HTMLButtonElement).style.background = '#1E2028' }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#7A7E92'; (e.currentTarget as HTMLButtonElement).style.background = '' }}
+        >All</button>
         <button
           onClick={deselectAll}
-          className="text-[10px] px-2 py-0.5 rounded transition-colors"
+          className="text-[10px] px-1.5 h-5 rounded transition-colors"
           style={{ color: '#7A7E92' }}
-          onMouseEnter={(e) => e.currentTarget.style.color = '#E8E9F0'}
-          onMouseLeave={(e) => e.currentTarget.style.color = '#7A7E92'}
-        >
-          None
-        </button>
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#E8E9F0'; (e.currentTarget as HTMLButtonElement).style.background = '#1E2028' }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#7A7E92'; (e.currentTarget as HTMLButtonElement).style.background = '' }}
+        >None</button>
       </div>
 
       {/* Object tree */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-24 gap-2">
-            <Box size={20} style={{ color: '#2a2a3a' }} />
-            <span className="text-[11px]" style={{ color: '#7A7E92' }}>
+          <div className="flex flex-col items-center justify-center h-24 gap-2 py-6">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#1E2028' }}>
+              <Box size={18} style={{ color: '#2a2d3a' }} />
+            </div>
+            <span className="text-[11px]" style={{ color: '#4a4e5e' }}>
               {search ? 'No matches' : 'Scene is empty'}
             </span>
           </div>
