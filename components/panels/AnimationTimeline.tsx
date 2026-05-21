@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Play, Pause, Square, RotateCcw, Clock } from 'lucide-react'
+import { Play, Pause, Square, RotateCcw, Clock, Diamond } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { AnimationPreset } from '@/lib/scene/SceneStore'
 
@@ -40,6 +40,9 @@ export function AnimationTimeline() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [isAnimating])
 
+  const addKeyframe = useScene((s) => s.addKeyframe)
+  const removeKeyframe = useScene((s) => s.removeKeyframe)
+
   const selectedObj = selectedIds[0] ? objects[selectedIds[0]] : null
   const anim = selectedObj?.animation
 
@@ -64,7 +67,7 @@ export function AnimationTimeline() {
   const progress = (playhead / animDuration) * 100
 
   // Objects with animations
-  const animatedObjects = Object.values(objects).filter((o) => o.animation && o.animation.preset !== 'none')
+  const animatedObjects = Object.values(objects).filter((o) => o.animation && (o.animation.preset !== 'none' || (o.animation.keyframes && o.animation.keyframes.length > 0)))
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#111318', borderTop: '1px solid #1E2028' }}>
@@ -108,6 +111,19 @@ export function AnimationTimeline() {
             {animDuration.toFixed(1)}s
           </span>
         </div>
+
+        {selectedIds[0] && (
+          <button
+            onClick={() => addKeyframe(selectedIds[0], playhead)}
+            title="Add keyframe at playhead (K)"
+            className="flex items-center gap-1 px-2.5 h-7 rounded-md text-[10px] font-medium transition-colors border"
+            style={{ background: '#1E2028', color: '#facc15', borderColor: '#2a2d3a' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#facc1520'; e.currentTarget.style.borderColor = '#facc1550' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#1E2028'; e.currentTarget.style.borderColor = '#2a2d3a' }}
+          >
+            <Diamond size={10} fill="currentColor" /> Keyframe
+          </button>
+        )}
 
         <div className="flex items-center gap-2">
           <Clock size={11} style={{ color: '#7A7E92' }} />
@@ -162,25 +178,47 @@ export function AnimationTimeline() {
               <span className="text-[11px]" style={{ color: '#7A7E92' }}>No animated objects — select an object and apply a preset</span>
             </div>
           ) : (
-            animatedObjects.map((obj) => (
-              <div key={obj.id} className="flex items-center h-9" style={{ borderBottom: '1px solid #1E2028' }}>
-                <div className="w-40 px-3 shrink-0" style={{ borderRight: '1px solid #1E2028' }}>
-                  <span className="text-[11px] truncate block" style={{ color: '#E8E9F0' }}>{obj.name}</span>
-                  <span className="text-[9px]" style={{ color: '#5B6CFF' }}>{obj.animation?.preset}</span>
+            animatedObjects.map((obj) => {
+              const kfs = obj.animation?.keyframes ?? []
+              return (
+                <div key={obj.id} className="flex items-center h-9" style={{ borderBottom: '1px solid #1E2028' }}>
+                  <div className="w-40 px-3 shrink-0" style={{ borderRight: '1px solid #1E2028' }}>
+                    <span className="text-[11px] truncate block" style={{ color: '#E8E9F0' }}>{obj.name}</span>
+                    <span className="text-[9px]" style={{ color: kfs.length > 0 ? '#facc15' : '#5B6CFF' }}>
+                      {kfs.length > 0 ? `${kfs.length} keyframes` : obj.animation?.preset}
+                    </span>
+                  </div>
+                  {/* Track visualization */}
+                  <div className="flex-1 h-full relative overflow-hidden">
+                    {kfs.length === 0 && (
+                      <div className="absolute inset-y-2 left-2 right-2 rounded-sm opacity-40"
+                        style={{ background: `linear-gradient(90deg, #5B6CFF, #8B5CF6)` }}
+                      />
+                    )}
+                    {/* Keyframe diamonds */}
+                    {kfs.map((kf) => {
+                      const pct = (kf.time / animDuration) * 100
+                      return (
+                        <button
+                          key={kf.time}
+                          title={`Keyframe at ${kf.time.toFixed(1)}s — click to remove`}
+                          onClick={() => removeKeyframe(obj.id, kf.time)}
+                          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2"
+                          style={{ left: `${pct}%`, color: '#facc15', padding: 0, background: 'none', border: 'none', cursor: 'pointer', zIndex: 2 }}
+                        >
+                          <Diamond size={10} fill="currentColor" />
+                        </button>
+                      )
+                    })}
+                    {/* Playhead indicator */}
+                    <div
+                      className="absolute top-0 bottom-0 w-px"
+                      style={{ left: `${progress}%`, background: '#FF5C8A', zIndex: 1 }}
+                    />
+                  </div>
                 </div>
-                {/* Simple track visualization */}
-                <div className="flex-1 h-full relative overflow-hidden">
-                  <div className="absolute inset-y-2 left-2 right-2 rounded-sm opacity-40"
-                    style={{ background: `linear-gradient(90deg, #5B6CFF, #8B5CF6)` }}
-                  />
-                  {/* Playhead indicator */}
-                  <div
-                    className="absolute top-0 bottom-0 w-px"
-                    style={{ left: `${progress}%`, background: '#FF5C8A' }}
-                  />
-                </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>

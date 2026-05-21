@@ -11,6 +11,7 @@ import { ChatPanel } from '@/components/panels/ChatPanel'
 import { AssetBrowser } from '@/components/panels/AssetBrowser'
 import { AnimationTimeline } from '@/components/panels/AnimationTimeline'
 import { PhysicsPanel } from '@/components/panels/PhysicsPanel'
+import { SceneSwitcher } from '@/components/panels/SceneSwitcher'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
 import { CheckCircle2, AlertCircle, Info, Layers, Palette } from 'lucide-react'
@@ -84,6 +85,9 @@ export default function WorldBuilderPage() {
   const isPlaying = useScene((s) => s.isPlaying)
   const setPlaying = useScene((s) => s.setPlaying)
   const objects = useScene((s) => s.objects)
+  const addKeyframe = useScene((s) => s.addKeyframe)
+  const playhead = useScene((s) => s.playhead)
+  const cameraMode = useScene((s) => s.cameraMode)
   const initialized = useRef(false)
 
   useEffect(() => {
@@ -102,6 +106,7 @@ export default function WorldBuilderPage() {
 
       const TOOL_MAP: Record<string, ActiveTool> = { q: 'select', w: 'translate', e: 'rotate', r: 'scale' }
       if (!ctrl && TOOL_MAP[key]) {
+        if (cameraMode === 'fly') return
         e.preventDefault()
         setActiveTool(TOOL_MAP[key])
         return
@@ -131,6 +136,7 @@ export default function WorldBuilderPage() {
         if (obj) cameraFrameFn.current?.(obj.transform.position)
         return
       }
+      if (key === 'k' && selectedIds[0]) { e.preventDefault(); addKeyframe(selectedIds[0], playhead); return }
       if (key === 'g') { e.preventDefault(); setSnapEnabled(!snapEnabled); return }
       if (key === 'x') { e.preventDefault(); setTransformSpace(transformSpace === 'world' ? 'local' : 'world'); return }
       if (key === 'f3') { e.preventDefault(); setShowStats(!showStats); return }
@@ -143,7 +149,7 @@ export default function WorldBuilderPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedIds, objects, snapEnabled, showStats, transformSpace, isPlaying, undo, redo, setActiveTool, setSnapEnabled, setShowStats, setTransformSpace, setPlaying, removeObject, duplicateObject, deselectAll, selectAll, togglePanel])
+  }, [selectedIds, objects, snapEnabled, showStats, transformSpace, isPlaying, cameraMode, addKeyframe, playhead, undo, redo, setActiveTool, setSnapEnabled, setShowStats, setTransformSpace, setPlaying, removeObject, duplicateObject, deselectAll, selectAll, togglePanel])
 
   return (
     <div className="flex flex-col w-screen h-screen overflow-hidden" style={{ background: '#0B0C0F', color: '#E8E9F0' }}>
@@ -225,6 +231,8 @@ export default function WorldBuilderPage() {
           </div>
         )}
       </div>
+
+      <SceneSwitcher />
 
       {/* Bottom panel */}
       {panels.bottomOpen && (
