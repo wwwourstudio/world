@@ -78,6 +78,7 @@ function buildGeo(g) {
   }
 }
 
+const _animMeshes = []
 for (const obj of Object.values(SCENE_DATA.objects)) {
   if (!obj.visible) continue
   if (obj.type === 'light' && obj.light) {
@@ -89,7 +90,7 @@ for (const obj of Object.values(SCENE_DATA.objects)) {
     else if (lc.type==='spot') { l = new THREE.SpotLight(lc.color, lc.intensity, lc.distance??20, lc.angle??0.8, lc.penumbra??0.1); l.position.set(...obj.transform.position) }
     else if (lc.type==='hemisphere') l = new THREE.HemisphereLight(lc.skyColor||lc.color, lc.groundColor||'#444', lc.intensity)
     if (l) scene.add(l)
-  } else if (obj.type === 'mesh') {
+  } else if (obj.type === 'mesh' && obj.geometry.type !== 'text' && obj.geometry.type !== 'gltf') {
     const mesh = new THREE.Mesh(buildGeo(obj.geometry), buildMat(obj.material))
     mesh.position.set(...obj.transform.position)
     mesh.rotation.set(...obj.transform.rotation)
@@ -97,8 +98,13 @@ for (const obj of Object.values(SCENE_DATA.objects)) {
     mesh.castShadow = obj.castShadow
     mesh.receiveShadow = obj.receiveShadow
     scene.add(mesh)
+    if (obj.animation && obj.animation.preset && obj.animation.preset !== 'none') {
+      _animMeshes.push({ mesh, anim: obj.animation, baseY: obj.transform.position[1], baseScale: obj.transform.scale[0] })
+    }
   }
 }
+
+const _clock = new THREE.Clock()
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth/window.innerHeight
@@ -109,6 +115,20 @@ window.addEventListener('resize', () => {
 ;(function animate() {
   requestAnimationFrame(animate)
   controls.update()
+  const t = _clock.getElapsedTime()
+  for (const { mesh, anim, baseY, baseScale } of _animMeshes) {
+    const s = anim.speed || 1
+    const a = anim.amplitude || 0.5
+    const off = anim.offset || 0
+    const ax = anim.axis || 'y'
+    if (anim.preset === 'float') mesh.position.y = baseY + Math.sin(t * s * 2 + off) * a
+    else if (anim.preset === 'spin') mesh.rotation[ax] = t * s * 2
+    else if (anim.preset === 'pulse') { const sc = 1 + Math.sin(t * s * 3 + off) * a * 0.3; mesh.scale.setScalar(baseScale * sc) }
+    else if (anim.preset === 'bounce') mesh.position.y = baseY + Math.abs(Math.sin(t * s * 2 + off)) * a * 2
+    else if (anim.preset === 'wave') { mesh.position.y = baseY + Math.sin(t * s * 2 + off) * a; mesh.rotation.z = Math.sin(t * s + off) * 0.2 }
+    else if (anim.preset === 'shake') { mesh.position.x += (Math.random() - 0.5) * a * 0.02; mesh.position.y = baseY + (Math.random() - 0.5) * a * 0.02 }
+    else if (anim.preset === 'orbit') { const r = a * 2; mesh.position.x = Math.cos(t * s + off) * r; mesh.position.z = Math.sin(t * s + off) * r }
+  }
   renderer.render(scene, camera)
 })()
 </script>

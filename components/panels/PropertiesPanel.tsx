@@ -355,6 +355,23 @@ export function PropertiesPanel() {
             />
             <SliderRow label="Font Size" value={obj.geometry.fontSize ?? 0.5} min={0.1} max={5} step={0.05}
               onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, fontSize: v } })} />
+            <SliderRow label="Depth" value={obj.geometry.textDepth ?? (obj.geometry.fontSize ?? 0.5) * 0.25} min={0.01} max={1} step={0.01}
+              onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, textDepth: v } })} />
+            <Row label="Font">
+              <div className="flex gap-1">
+                {(['helvetiker', 'optimer', 'gentilis'] as const).map((f) => (
+                  <button key={f} onClick={() => updateObject(id, { geometry: { ...obj.geometry, font: f } })}
+                    className="px-2 h-5 rounded text-[9px] font-medium capitalize transition-all"
+                    style={{ background: (obj.geometry.font ?? 'helvetiker') === f ? '#5B6CFF' : '#1E2028', color: (obj.geometry.font ?? 'helvetiker') === f ? '#fff' : '#7A7E92', border: '1px solid #2a2d3a' }}>
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row label="Bevel">
+              <input type="checkbox" checked={obj.geometry.bevelEnabled !== false}
+                onChange={(e) => updateObject(id, { geometry: { ...obj.geometry, bevelEnabled: e.target.checked } })} />
+            </Row>
           </div>
         </Section>
       )}
@@ -468,6 +485,53 @@ export function PropertiesPanel() {
           </Row>
         </div>
       </Section>
+
+      {/* Interactions */}
+      {(obj.type === 'mesh' || obj.type === 'group' || obj.geometry?.type === 'gltf') && (
+        <Section label="Interactions" icon={<Flame size={11} />} defaultOpen={false}>
+          <div className="flex flex-col gap-2">
+            <Row label="Hover">
+              <select value={obj.interaction?.hoverEffect ?? 'none'}
+                onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'none' }), hoverEffect: e.target.value as 'none' | 'highlight' | 'scale' } })}
+                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                <option value="none">None</option>
+                <option value="highlight">Highlight</option>
+                <option value="scale">Scale Up</option>
+              </select>
+            </Row>
+            {obj.interaction?.hoverEffect !== 'none' && obj.interaction?.hoverEffect && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Tooltip text</span>
+                <input value={obj.interaction?.tooltipText ?? ''} placeholder="Hover label…"
+                  onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'none' }), tooltipText: e.target.value } })}
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
+              </div>
+            )}
+            <Row label="On Click">
+              <select value={obj.interaction?.clickAction ?? 'none'}
+                onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'none' }), clickAction: e.target.value as 'none' | 'toggle-anim' | 'link' | 'toggle-visible' } })}
+                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                <option value="none">None</option>
+                <option value="toggle-anim">Toggle Animation</option>
+                <option value="toggle-visible">Toggle Visibility</option>
+                <option value="link">Open Link</option>
+              </select>
+            </Row>
+            {obj.interaction?.clickAction === 'link' && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>URL</span>
+                <input value={obj.interaction?.linkUrl ?? ''} placeholder="https://…"
+                  onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'none' }), linkUrl: e.target.value } })}
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
     </div>
   )
 }

@@ -24,7 +24,7 @@ import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig } from '@/lib/scene/SceneStore'
+import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 
@@ -91,14 +91,87 @@ function useSceneMaterial(cfg: MaterialConfig) {
   }, [JSON.stringify(cfg)])
 }
 
+// ─── Keyframe Interpolation ───────────────────────────────────────────────────
+
+function lerpAngle(a: number, b: number, t: number) {
+  let diff = b - a
+  while (diff > Math.PI) diff -= Math.PI * 2
+  while (diff < -Math.PI) diff += Math.PI * 2
+  return a + diff * t
+}
+
+function interpolateKeyframes(kfs: Keyframe[], playhead: number): THREE.Object3D | null {
+  if (kfs.length === 0) return null
+  if (kfs.length === 1) {
+    const dummy = new THREE.Object3D()
+    dummy.position.set(...kfs[0].transform.position)
+    dummy.rotation.set(...kfs[0].transform.rotation)
+    dummy.scale.set(...kfs[0].transform.scale)
+    return dummy
+  }
+  const first = kfs[0], last = kfs[kfs.length - 1]
+  const t = playhead
+  if (t <= first.time) {
+    const dummy = new THREE.Object3D()
+    dummy.position.set(...first.transform.position)
+    dummy.rotation.set(...first.transform.rotation)
+    dummy.scale.set(...first.transform.scale)
+    return dummy
+  }
+  if (t >= last.time) {
+    const dummy = new THREE.Object3D()
+    dummy.position.set(...last.transform.position)
+    dummy.rotation.set(...last.transform.rotation)
+    dummy.scale.set(...last.transform.scale)
+    return dummy
+  }
+  let i = 0
+  while (i < kfs.length - 1 && kfs[i + 1].time <= t) i++
+  const k0 = kfs[i], k1 = kfs[i + 1]
+  const alpha = (t - k0.time) / (k1.time - k0.time)
+  const dummy = new THREE.Object3D()
+  dummy.position.set(
+    k0.transform.position[0] + (k1.transform.position[0] - k0.transform.position[0]) * alpha,
+    k0.transform.position[1] + (k1.transform.position[1] - k0.transform.position[1]) * alpha,
+    k0.transform.position[2] + (k1.transform.position[2] - k0.transform.position[2]) * alpha,
+  )
+  dummy.rotation.set(
+    lerpAngle(k0.transform.rotation[0], k1.transform.rotation[0], alpha),
+    lerpAngle(k0.transform.rotation[1], k1.transform.rotation[1], alpha),
+    lerpAngle(k0.transform.rotation[2], k1.transform.rotation[2], alpha),
+  )
+  dummy.scale.set(
+    k0.transform.scale[0] + (k1.transform.scale[0] - k0.transform.scale[0]) * alpha,
+    k0.transform.scale[1] + (k1.transform.scale[1] - k0.transform.scale[1]) * alpha,
+    k0.transform.scale[2] + (k1.transform.scale[2] - k0.transform.scale[2]) * alpha,
+  )
+  return dummy
+}
+
 // ─── Animation Hook ──────────────────────────────────────────────────────────
 
 function useAnimation(ref: React.RefObject<THREE.Object3D | null>, anim: AnimationConfig | null, objectId: string) {
   const offsetRef = useRef(anim?.offset ?? Math.random() * Math.PI * 2)
   const originRef = useRef<THREE.Vector3 | null>(null)
+  const playhead = useScene((s) => s.playhead)
+  const isAnimating = useScene((s) => s.isAnimating)
 
   useFrame(({ clock }) => {
-    if (!ref.current || !anim || anim.preset === 'none') return
+    if (!ref.current || !anim) return
+
+    // Keyframe mode takes priority over preset
+    const kfs = anim.keyframes
+    if (kfs && kfs.length >= 2 && (isAnimating || playhead > 0)) {
+      const interp = interpolateKeyframes(kfs, playhead)
+      if (interp) {
+        ref.current.position.copy(interp.position)
+        ref.current.rotation.copy(interp.rotation)
+        ref.current.scale.copy(interp.scale)
+      }
+      return
+    }
+
+    if (anim.preset === 'none') return
     if (!originRef.current) {
       originRef.current = ref.current.position.clone()
     }
@@ -141,9 +214,10 @@ function useAnimation(ref: React.RefObject<THREE.Object3D | null>, anim: Animati
 function MeshObject({ obj }: { obj: SceneObject }) {
   const ref = useRef<THREE.Mesh>(null)
   const material = useSceneMaterial(obj.material)
-  const { selectObject, activeTool } = useScene()
+  const { selectObject, activeTool, updateObject } = useScene()
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
+  const hovered = useRef(false)
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
 
   // Load PBR texture maps imperatively when maps or repeat change
@@ -190,6 +264,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   const hasPhysics = obj.physics?.enabled && useScene.getState().physicsEnabled
   const bodyType = obj.physics?.type ?? 'dynamic'
 
+  const ix = obj.interaction
   const meshContent = (
     <mesh
       ref={ref}
@@ -203,6 +278,38 @@ function MeshObject({ obj }: { obj: SceneObject }) {
         if (activeTool === 'select' || activeTool === 'translate' || activeTool === 'rotate' || activeTool === 'scale') {
           selectObject(obj.id, e.shiftKey)
         }
+        if (ix?.clickAction === 'link' && ix.linkUrl) window.open(ix.linkUrl, '_blank')
+        if (ix?.clickAction === 'toggle-visible') updateObject(obj.id, { visible: !obj.visible })
+        if (ix?.clickAction === 'toggle-anim') {
+          const playing = useScene.getState().isPlaying
+          useScene.getState().setPlaying(!playing)
+        }
+      }}
+      onPointerEnter={(e) => {
+        e.stopPropagation()
+        if (!ix || ix.hoverEffect === 'none') return
+        hovered.current = true
+        if (ref.current) {
+          if (ix.hoverEffect === 'scale') ref.current.scale.multiplyScalar(1.08)
+          if (ix.hoverEffect === 'highlight') {
+            const mat = ref.current.material as THREE.MeshStandardMaterial
+            if (mat?.emissiveIntensity !== undefined) mat.emissiveIntensity = (obj.material.emissiveIntensity ?? 0) + 0.4
+          }
+        }
+        document.body.style.cursor = 'pointer'
+      }}
+      onPointerLeave={(e) => {
+        e.stopPropagation()
+        if (!ix || ix.hoverEffect === 'none') return
+        hovered.current = false
+        if (ref.current) {
+          if (ix.hoverEffect === 'scale') ref.current.scale.set(...obj.transform.scale)
+          if (ix.hoverEffect === 'highlight') {
+            const mat = ref.current.material as THREE.MeshStandardMaterial
+            if (mat?.emissiveIntensity !== undefined) mat.emissiveIntensity = obj.material.emissiveIntensity ?? 0
+          }
+        }
+        document.body.style.cursor = ''
       }}
       visible={obj.visible}
     >
@@ -210,6 +317,17 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       <primitive object={material} attach="material" />
       {isSelected && !isPlaying && (
         <Outlines thickness={1.5} color="#5B6CFF" screenspace transparent opacity={0.85} />
+      )}
+      {ix?.tooltipText && hovered.current && (
+        <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+          <div style={{
+            background: 'rgba(10,11,15,0.9)', color: '#E8E9F0', padding: '4px 8px',
+            borderRadius: '6px', fontSize: '11px', whiteSpace: 'nowrap',
+            border: '1px solid #1E2028', backdropFilter: 'blur(4px)',
+          }}>
+            {ix.tooltipText}
+          </div>
+        </Html>
       )}
     </mesh>
   )
@@ -285,7 +403,11 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
 
 // ─── Text Object ─────────────────────────────────────────────────────────────
 
-const HELVETIKER = 'https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_regular.typeface.json'
+const FONTS: Record<string, string> = {
+  helvetiker: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_regular.typeface.json',
+  optimer: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/optimer_bold.typeface.json',
+  gentilis: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/gentilis_bold.typeface.json',
+}
 
 function TextObject({ obj }: { obj: SceneObject }) {
   const ref = useRef<THREE.Mesh>(null)
@@ -295,18 +417,23 @@ function TextObject({ obj }: { obj: SceneObject }) {
   const isPlaying = useScene((s) => s.isPlaying)
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
 
+  const fontUrl = FONTS[obj.geometry.font ?? 'helvetiker'] ?? FONTS.helvetiker
+  const fontSize = obj.geometry.fontSize ?? 0.5
+  const textDepth = obj.geometry.textDepth ?? fontSize * 0.25
+  const bevelEnabled = obj.geometry.bevelEnabled !== false
+
   return (
     <Suspense fallback={null}>
       <Text3D
         ref={ref}
-        font={HELVETIKER}
+        font={fontUrl}
         position={obj.transform.position}
         rotation={obj.transform.rotation}
         scale={obj.transform.scale}
-        size={obj.geometry.fontSize ?? 0.5}
-        height={(obj.geometry.fontSize ?? 0.5) * 0.25}
+        size={fontSize}
+        height={textDepth}
         curveSegments={6}
-        bevelEnabled
+        bevelEnabled={bevelEnabled}
         bevelThickness={0.015}
         bevelSize={0.008}
         bevelSegments={3}
@@ -670,6 +797,34 @@ function CanvasCaptureSetup() {
   return null
 }
 
+// ─── Fly Camera ──────────────────────────────────────────────────────────────
+
+function FlyCamera() {
+  const cameraMode = useScene((s) => s.cameraMode)
+  const keys = useRef(new Set<string>())
+  const { camera } = useThree()
+
+  useEffect(() => {
+    const dn = (e: KeyboardEvent) => keys.current.add(e.code)
+    const up = (e: KeyboardEvent) => keys.current.delete(e.code)
+    window.addEventListener('keydown', dn)
+    window.addEventListener('keyup', up)
+    return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up) }
+  }, [])
+
+  useFrame((_, dt) => {
+    if (cameraMode !== 'fly') return
+    const s = 8 * dt
+    if (keys.current.has('KeyW') || keys.current.has('ArrowUp'))    camera.translateZ(-s)
+    if (keys.current.has('KeyS') || keys.current.has('ArrowDown'))  camera.translateZ(s)
+    if (keys.current.has('KeyA') || keys.current.has('ArrowLeft'))  camera.translateX(-s)
+    if (keys.current.has('KeyD') || keys.current.has('ArrowRight')) camera.translateX(s)
+    if (keys.current.has('KeyE'))                                    camera.translateY(s)
+    if (keys.current.has('KeyQ'))                                    camera.translateY(-s)
+  })
+  return null
+}
+
 // ─── Frame Controller ────────────────────────────────────────────────────────
 
 function FrameController() {
@@ -783,6 +938,7 @@ export function ViewportCanvas() {
           <InnerScene />
           <CanvasCaptureSetup />
           <FrameController />
+          <FlyCamera />
           <OrbitControls
             makeDefault
             enableDamping

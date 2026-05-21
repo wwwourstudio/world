@@ -16,14 +16,30 @@ interface AssistantMessage {
 }
 type Message = UserMessage | AssistantMessage
 
-const SUGGESTIONS = [
-  { label: 'Ancient Forest', icon: '🌲', prompt: 'Build a dense ancient forest with towering trees, mossy rocks, and atmospheric fog' },
-  { label: 'Sci-Fi Base', icon: '🛸', prompt: 'Create a sci-fi military base with metal structures, glowing emissive panels, and blue neon lighting' },
-  { label: 'Medieval Village', icon: '🏰', prompt: 'Build a medieval village with a stone castle, market stalls, and warm torchlight' },
-  { label: 'Cyberpunk City', icon: '🏙️', prompt: 'Create a cyberpunk city district with neon signs, dark streets, and pink/cyan lighting' },
-  { label: 'Space Station', icon: '🚀', prompt: 'Build a space station with a ring structure, solar panels, and floating debris' },
-  { label: 'Golden Sunset', icon: '🌅', prompt: 'Create a golden sunset scene with rolling hills, warm lighting, and silhouette trees' },
+const ALL_SUGGESTIONS = [
+  { label: 'Ancient Forest', icon: '🌲', prompt: 'Build a dense ancient forest with towering trees, mossy rocks, atmospheric fog, and dappled light filtering through the canopy' },
+  { label: 'Sci-Fi Base', icon: '🛸', prompt: 'Create a sci-fi military base with metal structures, glowing emissive panels, blue neon lighting, and animated holographic displays' },
+  { label: 'Medieval Village', icon: '🏰', prompt: 'Build a medieval village with a stone castle, market stalls, warm torchlight, and cobblestone streets with animated lanterns' },
+  { label: 'Cyberpunk City', icon: '🏙️', prompt: 'Create a cyberpunk city district at night with towering skyscrapers, neon signs, rain-slicked streets, and pink/cyan lighting' },
+  { label: 'Space Station', icon: '🚀', prompt: 'Build a space station with a ring structure, solar panels, floating debris, and a stunning view of a nebula in the background' },
+  { label: 'Golden Sunset', icon: '🌅', prompt: 'Create a cinematic golden sunset scene with rolling hills, warm directional light, silhouette trees, and floating dust particles' },
+  { label: 'Underwater Reef', icon: '🐠', prompt: 'Build a vibrant coral reef underwater scene with colorful corals, swaying kelp, caustic lighting, and schools of fish particles' },
+  { label: 'Volcano Island', icon: '🌋', prompt: 'Create a dramatic volcanic island with a glowing lava crater, dark rocky terrain, emissive lava flows, and billowing smoke particles' },
+  { label: 'Winter Cabin', icon: '🏔️', prompt: 'Build a cozy winter cabin scene with snow-covered ground, warm glowing windows, pine trees, and falling snow particles' },
+  { label: 'Jungle Temple', icon: '🏛️', prompt: 'Create an ancient jungle temple with moss-covered stone pillars, overgrown vines, mystical glowing runes, and torch flames' },
+  { label: 'City Rooftop', icon: '🌃', prompt: 'Build a futuristic city rooftop at night with a helipad, neon-lit skyline, holographic billboards, and stars overhead' },
+  { label: 'Zen Garden', icon: '🎋', prompt: 'Create a serene Japanese zen garden with raked sand patterns, stone lanterns, bamboo, cherry blossom petals, and soft morning light' },
 ]
+
+function getRotatingSuggestions() {
+  const seed = Math.floor(Date.now() / (1000 * 60 * 60 * 6))
+  const start = seed % ALL_SUGGESTIONS.length
+  const out = []
+  for (let i = 0; i < 6; i++) out.push(ALL_SUGGESTIONS[(start + i) % ALL_SUGGESTIONS.length])
+  return out
+}
+
+const SUGGESTIONS = getRotatingSuggestions()
 
 export function ChatPanel() {
   const objects = useScene((s) => s.objects)

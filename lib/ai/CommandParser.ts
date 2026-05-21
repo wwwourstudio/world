@@ -1,4 +1,4 @@
-import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, AnimationConfig, PhysicsConfig } from '@/lib/scene/SceneStore'
+import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, AnimationConfig, PhysicsConfig, Transform } from '@/lib/scene/SceneStore'
 import { MATERIAL_PRESETS } from '@/lib/scene/SceneStore'
 import { useScene } from '@/lib/scene/SceneStore'
 import { getTemplate } from '@/lib/ai/WorldTemplates'
@@ -149,6 +149,25 @@ export interface AddTextCmd {
   position?: [number, number, number]
   color?: string
   material?: string
+  font?: 'helvetiker' | 'optimer' | 'gentilis'
+  depth?: number
+}
+
+export interface AddKeyframeAnimationCmd {
+  action: 'add_keyframe_animation'
+  objectName?: string
+  objectId?: string
+  keyframes: Array<{
+    time: number
+    position?: [number, number, number]
+    rotation?: [number, number, number]
+    scale?: [number, number, number]
+  }>
+}
+
+export interface AddSceneCmd {
+  action: 'add_scene'
+  name?: string
 }
 
 export interface AddParticleCmd {
@@ -182,6 +201,7 @@ export type SceneCommand =
   | SetCameraCmd | AddAnimationCmd | EnablePhysicsCmd | SetEnvironmentCmd
   | DeleteObjectCmd | DuplicateObjectCmd | GroupObjectsCmd | LoadTemplateCmd | SetPostFXCmd
   | AddTextCmd | AddParticleCmd | ScatterObjectsCmd | SetViewModeCmd
+  | AddKeyframeAnimationCmd | AddSceneCmd
 
 export interface ParsedResponse {
   commands: SceneCommand[]
@@ -477,11 +497,54 @@ export function executeCommand(cmd: SceneCommand): void {
       store.addObject({
         name: c.text ?? '3D Text',
         type: 'mesh',
-        geometry: { type: 'text', text: c.text ?? 'Hello', fontSize: c.fontSize ?? 0.5 },
+        geometry: {
+          type: 'text',
+          text: c.text ?? 'Hello',
+          fontSize: c.fontSize ?? 0.5,
+          ...(c.font ? { font: c.font } : {}),
+          ...(c.depth !== undefined ? { textDepth: c.depth } : {}),
+        },
         material: mat as MaterialConfig,
         transform: { position: c.position ?? [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
         castShadow: true,
       })
+      break
+    }
+
+    case 'add_keyframe_animation': {
+      const c = cmd as AddKeyframeAnimationCmd
+      const obj = c.objectId
+        ? store.objects[c.objectId]
+        : c.objectName
+        ? findObjectByName(store.objects, c.objectName)
+        : store.selectedIds.length ? store.objects[store.selectedIds[0]] : undefined
+      if (!obj) break
+
+      for (const kf of (c.keyframes ?? [])) {
+        const transform: Transform = {
+          position: kf.position ?? obj.transform.position,
+          rotation: kf.rotation ?? obj.transform.rotation,
+          scale: kf.scale ?? obj.transform.scale,
+        }
+        store.updateObject(obj.id, {
+          animation: {
+            ...(obj.animation ?? { preset: 'none' as const, speed: 1, amplitude: 0.5, offset: 0, axis: 'y' as const }),
+            keyframes: [
+              ...(obj.animation?.keyframes?.filter((k) => Math.abs(k.time - kf.time) > 0.05) ?? []),
+              { time: kf.time, transform },
+            ].sort((a, b) => a.time - b.time),
+          },
+        })
+        // Re-fetch obj from store after each update
+        const updated = useScene.getState().objects[obj.id]
+        if (updated) Object.assign(obj, updated)
+      }
+      break
+    }
+
+    case 'add_scene': {
+      const c = cmd as AddSceneCmd
+      store.addScene(c.name)
       break
     }
 

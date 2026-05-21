@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import { X, Download, Code, FileJson, Monitor, Camera } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { X, Download, Code, FileJson, Monitor, Camera, Frame } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { generateEmbedCode, generateThreeJSCode } from '@/lib/three/ExportSystem'
 import { captureCanvas } from '@/lib/canvasCapture'
 
-type ExportTab = 'embed' | 'threejs' | 'json' | 'screenshot'
+type ExportTab = 'embed' | 'threejs' | 'json' | 'screenshot' | 'iframe'
 
 export function ExportModal({ onClose }: { onClose: () => void }) {
   const objects = useScene((s) => s.objects)
@@ -14,15 +14,21 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<ExportTab>('embed')
   const [copied, setCopied] = useState(false)
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null)
+  const [iframeWidth, setIframeWidth] = useState(800)
+  const [iframeHeight, setIframeHeight] = useState(600)
 
   const scene = { objects, environment }
+  const embedHtml = useMemo(() => generateEmbedCode(scene), [objects, environment])
 
   const content: Record<ExportTab, string> = {
-    embed: generateEmbedCode(scene),
+    embed: embedHtml,
     threejs: generateThreeJSCode(scene),
     json: JSON.stringify({ objects, environment }, null, 2),
     screenshot: '',
+    iframe: '',
   }
+
+  const iframeSnippet = `<iframe\n  srcdoc="${embedHtml.replace(/"/g, '&quot;').replace(/\n/g, '')}"\n  width="${iframeWidth}" height="${iframeHeight}"\n  style="border:none;border-radius:12px"\n  allowfullscreen\n></iframe>`
 
   function copyToClipboard() {
     navigator.clipboard.writeText(content[tab]).then(() => {
@@ -48,6 +54,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     { id: 'threejs', label: 'Three.js', icon: Code },
     { id: 'json', label: 'Scene JSON', icon: FileJson },
     { id: 'screenshot', label: 'Screenshot', icon: Camera },
+    { id: 'iframe', label: 'iFrame', icon: Frame },
   ]
 
   return (
@@ -87,7 +94,41 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          {tab === 'screenshot' ? (
+          {tab === 'iframe' ? (
+            <div className="flex flex-col h-full p-4 gap-3">
+              {/* Size controls */}
+              <div className="flex items-center gap-4 shrink-0">
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="text-[11px] w-14 shrink-0" style={{ color: '#7A7E92' }}>Width</span>
+                  <input type="range" min={400} max={1920} step={40} value={iframeWidth}
+                    onChange={(e) => setIframeWidth(Number(e.target.value))}
+                    className="flex-1 accent-indigo-500" />
+                  <span className="text-[11px] w-10 text-right font-mono" style={{ color: '#E8E9F0' }}>{iframeWidth}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="text-[11px] w-14 shrink-0" style={{ color: '#7A7E92' }}>Height</span>
+                  <input type="range" min={300} max={1080} step={40} value={iframeHeight}
+                    onChange={(e) => setIframeHeight(Number(e.target.value))}
+                    className="flex-1 accent-indigo-500" />
+                  <span className="text-[11px] w-10 text-right font-mono" style={{ color: '#E8E9F0' }}>{iframeHeight}</span>
+                </div>
+              </div>
+              {/* Snippet */}
+              <pre className="flex-1 overflow-auto p-3 text-[10px] font-mono leading-relaxed rounded-lg custom-scrollbar"
+                style={{ color: '#7A7E92', background: '#0B0C0F', border: '1px solid #1E2028', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                <code>{`<iframe\n  srcdoc="[full HTML — click Copy to get snippet]"\n  width="${iframeWidth}" height="${iframeHeight}"\n  style="border:none;border-radius:12px"\n  allowfullscreen\n></iframe>`}</code>
+              </pre>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => { navigator.clipboard.writeText(iframeSnippet).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) }) }}
+                  className="flex-1 py-2 rounded-lg text-[12px] font-medium transition-colors"
+                  style={{ background: copied ? '#1a3a1a' : '#5B6CFF', color: copied ? '#4ade80' : '#fff' }}
+                >
+                  {copied ? '✓ Copied iFrame snippet!' : 'Copy iFrame Snippet'}
+                </button>
+              </div>
+            </div>
+          ) : tab === 'screenshot' ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
               {screenshotUrl ? (
                 <>
@@ -146,7 +187,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer */}
-        {tab !== 'screenshot' && (
+        {tab !== 'screenshot' && tab !== 'iframe' && (
           <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderTop: '1px solid #1E2028' }}>
             <span className="text-[11px]" style={{ color: '#7A7E92' }}>
               {Object.keys(objects).length} objects · {(new TextEncoder().encode(content[tab]).length / 1024).toFixed(1)} KB
