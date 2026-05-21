@@ -14,6 +14,7 @@ import { PhysicsPanel } from '@/components/panels/PhysicsPanel'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
 import { CheckCircle2, AlertCircle, Info, Layers, Palette } from 'lucide-react'
+import { cameraFrameFn } from '@/lib/cameraFrame'
 
 class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state = { error: null }
@@ -82,6 +83,7 @@ export default function WorldBuilderPage() {
   const transformSpace = useScene((s) => s.transformSpace)
   const isPlaying = useScene((s) => s.isPlaying)
   const setPlaying = useScene((s) => s.setPlaying)
+  const objects = useScene((s) => s.objects)
   const initialized = useRef(false)
 
   useEffect(() => {
@@ -123,6 +125,12 @@ export default function WorldBuilderPage() {
       }
 
       if (key === 'escape') { deselectAll(); return }
+      if (key === 'f' && selectedIds.length > 0) {
+        e.preventDefault()
+        const obj = objects[selectedIds[0]]
+        if (obj) cameraFrameFn.current?.(obj.transform.position)
+        return
+      }
       if (key === 'g') { e.preventDefault(); setSnapEnabled(!snapEnabled); return }
       if (key === 'x') { e.preventDefault(); setTransformSpace(transformSpace === 'world' ? 'local' : 'world'); return }
       if (key === 'f3') { e.preventDefault(); setShowStats(!showStats); return }
@@ -135,7 +143,7 @@ export default function WorldBuilderPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedIds, snapEnabled, showStats, transformSpace, isPlaying, undo, redo, setActiveTool, setSnapEnabled, setShowStats, setTransformSpace, setPlaying, removeObject, duplicateObject, deselectAll, selectAll, togglePanel])
+  }, [selectedIds, objects, snapEnabled, showStats, transformSpace, isPlaying, undo, redo, setActiveTool, setSnapEnabled, setShowStats, setTransformSpace, setPlaying, removeObject, duplicateObject, deselectAll, selectAll, togglePanel])
 
   return (
     <div className="flex flex-col w-screen h-screen overflow-hidden" style={{ background: '#0B0C0F', color: '#E8E9F0' }}>

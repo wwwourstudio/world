@@ -25,6 +25,8 @@ import * as THREE from 'three'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig } from '@/lib/scene/SceneStore'
+import { captureCanvas } from '@/lib/canvasCapture'
+import { cameraFrameFn } from '@/lib/cameraFrame'
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
@@ -524,6 +526,8 @@ function GizmoControl() {
   const objects = useScene((s) => s.objects)
   const updateObject = useScene((s) => s.updateObject)
   const isPlaying = useScene((s) => s.isPlaying)
+  const snapEnabled = useScene((s) => s.snapEnabled)
+  const snapSize = useScene((s) => s.snapSize)
   const ref = useRef<THREE.Object3D>(null)
 
   const selectedId = selectedIds[0]
@@ -552,9 +556,12 @@ function GizmoControl() {
           const p = ref.current.position
           const r = ref.current.rotation
           const sc = ref.current.scale
+          const snap = (v: number) => snapEnabled && activeTool === 'translate' ? Math.round(v / snapSize) * snapSize : v
+          const sx = snap(p.x), sy = snap(p.y), sz = snap(p.z)
+          if (snapEnabled && activeTool === 'translate') ref.current.position.set(sx, sy, sz)
           updateObject(selectedId, {
             transform: {
-              position: [p.x, p.y, p.z],
+              position: [sx, sy, sz],
               rotation: [r.x, r.y, r.z],
               scale: [sc.x, sc.y, sc.z],
             },
@@ -644,8 +651,46 @@ function PostProcessing() {
         opacity={fx.noise ? fx.noiseOpacity : 0}
         blendFunction={BlendFunction.ADD}
       />
+      <ChromaticAberration
+        offset={new THREE.Vector2(
+          fx.chromaticAberration ? fx.chromaticOffset : 0,
+          fx.chromaticAberration ? fx.chromaticOffset : 0,
+        )}
+        blendFunction={BlendFunction.NORMAL}
+      />
     </EffectComposer>
   )
+}
+
+// ─── Canvas Capture Setup ────────────────────────────────────────────────────
+
+function CanvasCaptureSetup() {
+  const { gl } = useThree()
+  useEffect(() => { captureCanvas.dom = gl.domElement }, [gl])
+  return null
+}
+
+// ─── Frame Controller ────────────────────────────────────────────────────────
+
+function FrameController() {
+  const { camera, controls } = useThree()
+
+  useEffect(() => {
+    cameraFrameFn.current = (pos, dist = 6) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctrl = controls as any
+      if (!ctrl) return
+      const target = new THREE.Vector3(...pos)
+      ctrl.target.copy(target)
+      const dir = new THREE.Vector3().subVectors(camera.position, target).normalize()
+      if (dir.lengthSq() < 0.0001) dir.set(0.6, 0.6, 0.6).normalize()
+      camera.position.copy(target).addScaledVector(dir, dist)
+      ctrl.update()
+    }
+    return () => { cameraFrameFn.current = null }
+  }, [camera, controls])
+
+  return null
 }
 
 // ─── Inner Canvas Scene ───────────────────────────────────────────────────────
@@ -736,6 +781,8 @@ export function ViewportCanvas() {
       >
         <Suspense fallback={null}>
           <InnerScene />
+          <CanvasCaptureSetup />
+          <FrameController />
           <OrbitControls
             makeDefault
             enableDamping
