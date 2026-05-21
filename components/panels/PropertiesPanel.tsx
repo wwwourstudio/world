@@ -1,7 +1,24 @@
 'use client'
 
 import { useScene } from '@/lib/scene/SceneStore'
-import type { AnimationConfig, AnimationPreset, ParticleConfig } from '@/lib/scene/SceneStore'
+import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig } from '@/lib/scene/SceneStore'
+
+function getNaturalSize(geo: GeometryConfig): number {
+  switch (geo.type) {
+    case 'sphere': return (geo.radius ?? 0.5) * 2
+    case 'cylinder': return Math.max((geo.radiusTop ?? 0.5) * 2, geo.height ?? 1)
+    case 'cone': return Math.max((geo.radius ?? 0.5) * 2, geo.height ?? 1)
+    case 'torus': return ((geo.radius ?? 0.5) + (geo.tube ?? 0.2)) * 2
+    case 'ring': return (geo.radius ?? 0.5) * 2
+    case 'capsule': return (geo.radius ?? 0.3) * 2 + (geo.height ?? 1)
+    case 'tetrahedron':
+    case 'octahedron':
+    case 'icosahedron': return (geo.radius ?? 0.5) * 2
+    case 'plane': return Math.max(geo.width ?? 1, geo.height ?? 1)
+    case 'gltf': return 2 // already auto-normalized to ~2m
+    default: return Math.max(geo.width ?? 1, geo.height ?? 1, geo.depth ?? 1)
+  }
+}
 
 function NumInput({
   label, value, onChange, step = 0.01, color,
@@ -129,10 +146,20 @@ export function PropertiesPanel() {
             step={0.05}
           />
         </div>
-        <div className="flex gap-2 mt-2">
+        <div className="flex gap-2 mt-2 flex-wrap">
           <SmallBtn onClick={() => updateObject(id, { transform: { ...transform, position: [0, 0, 0] } })}>Reset Pos</SmallBtn>
           <SmallBtn onClick={() => updateObject(id, { transform: { ...transform, rotation: [0, 0, 0] } })}>Reset Rot</SmallBtn>
           <SmallBtn onClick={() => updateObject(id, { transform: { ...transform, scale: [1, 1, 1] } })}>Reset Scl</SmallBtn>
+          {obj.geometry && (
+            <SmallBtn onClick={() => {
+              const TARGET = 2
+              const nat = getNaturalSize(obj.geometry)
+              const currentMax = Math.max(...transform.scale)
+              const effectiveDim = nat * currentMax
+              const factor = effectiveDim > 0.0001 ? TARGET / effectiveDim : 1
+              updateObject(id, { transform: { ...transform, scale: [transform.scale[0] * factor, transform.scale[1] * factor, transform.scale[2] * factor] } })
+            }}>Normalize</SmallBtn>
+          )}
         </div>
       </Section>
 
