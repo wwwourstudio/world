@@ -194,6 +194,27 @@ export function MaterialEditor() {
         </div>
       </Section>
 
+      {/* UV Tiling */}
+      <Section label="UV Tiling">
+        <div className="flex flex-col gap-2">
+          <SliderRow label="Repeat U" value={mat.textureRepeat?.[0] ?? 1} min={0.1} max={20} step={0.1}
+            onChange={(v) => update({ textureRepeat: [v, mat.textureRepeat?.[1] ?? 1] })} />
+          <SliderRow label="Repeat V" value={mat.textureRepeat?.[1] ?? 1} min={0.1} max={20} step={0.1}
+            onChange={(v) => update({ textureRepeat: [mat.textureRepeat?.[0] ?? 1, v] })} />
+          {(mat.textureRepeat?.[0] !== 1 || mat.textureRepeat?.[1] !== 1) && (
+            <button
+              onClick={() => update({ textureRepeat: [1, 1] })}
+              className="h-6 rounded text-[10px] border transition-colors"
+              style={{ color: '#7A7E92', borderColor: '#1E2028' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#1E2028'; e.currentTarget.style.color = '#E8E9F0' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = ''; e.currentTarget.style.color = '#7A7E92' }}
+            >
+              Reset Tiling
+            </button>
+          )}
+        </div>
+      </Section>
+
       {/* Glass / Physical */}
       {showGlass && (
         <Section label="Transmission (Glass)">
