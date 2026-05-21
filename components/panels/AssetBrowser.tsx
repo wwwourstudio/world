@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Search, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Search, RefreshCw, Download } from 'lucide-react'
 import Image from 'next/image'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { MaterialMaps } from '@/lib/scene/SceneStore'
@@ -296,6 +296,122 @@ function TexturesTab() {
   )
 }
 
+// ─── Sketchfab Tab ────────────────────────────────────────────────────────────
+
+interface SketchfabModel {
+  uid: string
+  name: string
+  thumbnail: string | null
+  downloadable: boolean
+  viewerUrl: string
+}
+
+function SketchfabTab() {
+  const addObject = useScene((s) => s.addObject)
+  const showNotification = useScene((s) => s.showNotification)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SketchfabModel[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [importing, setImporting] = useState<string | null>(null)
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  async function search(q: string) {
+    if (!q.trim()) { setResults([]); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/sketchfab/search?q=${encodeURIComponent(q)}&count=20`)
+      const data = await res.json()
+      if (data.error) { setError(data.error); setResults([]) }
+      else setResults(data.results ?? [])
+    } catch {
+      setError('Search failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleSearch(val: string) {
+    setQuery(val)
+    if (searchRef.current) clearTimeout(searchRef.current)
+    searchRef.current = setTimeout(() => search(val), 600)
+  }
+
+  async function importModel(model: SketchfabModel) {
+    setImporting(model.uid)
+    showNotification(`Fetching ${model.name}…`)
+    try {
+      const res = await fetch(`/api/sketchfab/download/${model.uid}`)
+      const data = await res.json()
+      if (!data.url) throw new Error(data.error ?? 'No download URL')
+      addObject({
+        name: model.name,
+        type: 'mesh',
+        geometry: { type: 'gltf', url: data.url },
+        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      })
+      showNotification(`Imported: ${model.name}`)
+    } catch (e) {
+      showNotification(`Import failed: ${String(e)}`, 'error')
+    } finally {
+      setImporting(null)
+    }
+  }
+
+  return (
+    <>
+      <div className="px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
+        <SearchBar value={query} onChange={handleSearch} placeholder="Search Sketchfab models…" />
+        {!error && results.length === 0 && !loading && !query && (
+          <p className="text-[10px] mt-2 text-center" style={{ color: '#7A7E92' }}>Requires SKETCHFAB_API_KEY env var</p>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+        {error && <p className="text-[11px] text-center py-4" style={{ color: '#f87171' }}>{error}</p>}
+        {!error && loading && <LoadingGrid aspect="4/3" />}
+        {!error && !loading && results.length > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            {results.map((model) => (
+              <button
+                key={model.uid}
+                onClick={() => importModel(model)}
+                disabled={!!importing}
+                className="relative rounded-lg overflow-hidden transition-all group border"
+                style={{ borderColor: '#1E2028', aspectRatio: '4/3' }}
+              >
+                <div className="absolute inset-0" style={{ background: '#1E2028' }}>
+                  {model.thumbnail && (
+                    <Image src={model.thumbnail} alt={model.name} fill sizes="140px"
+                      className="object-cover opacity-70 group-hover:opacity-100 transition-opacity" unoptimized />
+                  )}
+                </div>
+                {importing === model.uid ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                    <RefreshCw size={14} className="animate-spin text-white" />
+                  </div>
+                ) : (
+                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="p-1 rounded bg-black/60">
+                      <Download size={10} className="text-white" />
+                    </div>
+                  </div>
+                )}
+                <div className="absolute inset-x-0 bottom-0 px-2 py-1 bg-gradient-to-t from-black/90">
+                  <span className="text-[10px] text-white font-medium truncate block">{model.name}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        {!error && !loading && results.length === 0 && query && (
+          <p className="text-[11px] text-center py-4" style={{ color: '#7A7E92' }}>No results for &quot;{query}&quot;</p>
+        )}
+      </div>
+    </>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function AssetBrowser() {
@@ -303,29 +419,30 @@ export function AssetBrowser() {
   const setPostFX = useScene((s) => s.setPostFX)
   const environment = useScene((s) => s.environment)
   const setEnvironment = useScene((s) => s.setEnvironment)
-  const [tab, setTab] = useState<'hdri' | 'textures' | 'postfx' | 'env'>('hdri')
+  const [tab, setTab] = useState<'hdri' | 'textures' | 'models' | 'postfx' | 'env'>('hdri')
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: '#111318' }}>
       {/* Tabs */}
       <div className="flex shrink-0 h-9" style={{ borderBottom: '1px solid #1E2028' }}>
-        {(['hdri', 'textures', 'postfx', 'env'] as const).map((t) => (
+        {(['hdri', 'textures', 'models', 'postfx', 'env'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className="flex-1 text-[10px] font-medium uppercase tracking-wider transition-colors"
+            className="flex-1 text-[9px] font-medium uppercase tracking-wider transition-colors"
             style={{
               color: tab === t ? '#E8E9F0' : '#7A7E92',
               borderBottom: tab === t ? '2px solid #5B6CFF' : '2px solid transparent',
             }}
           >
-            {t === 'hdri' ? 'HDRI' : t === 'textures' ? 'Textures' : t === 'postfx' ? 'Post FX' : 'Lighting'}
+            {t === 'hdri' ? 'HDRI' : t === 'textures' ? 'Tex' : t === 'models' ? 'Models' : t === 'postfx' ? 'FX' : 'Env'}
           </button>
         ))}
       </div>
 
       {tab === 'hdri' && <HDRITab />}
       {tab === 'textures' && <TexturesTab />}
+      {tab === 'models' && <SketchfabTab />}
 
       {tab === 'postfx' && (
         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 flex flex-col gap-3">

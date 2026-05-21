@@ -63,11 +63,15 @@ export function MainToolbar() {
 
   const PRIMITIVES = [
     { label: 'Box', geo: { type: 'box' as const, width: 1, height: 1, depth: 1 } },
-    { label: 'Sphere', geo: { type: 'sphere' as const, radius: 0.5, segments: 24 } },
+    { label: 'Sphere', geo: { type: 'sphere' as const, radius: 0.5, segments: 32 } },
     { label: 'Cylinder', geo: { type: 'cylinder' as const, radiusTop: 0.5, radiusBottom: 0.5, height: 1, segments: 16 } },
-    { label: 'Cone', geo: { type: 'cone' as const, radius: 0.5, height: 1, segments: 12 } },
+    { label: 'Cone', geo: { type: 'cone' as const, radius: 0.5, height: 1, segments: 16 } },
     { label: 'Torus', geo: { type: 'torus' as const, radius: 0.5, tube: 0.2, segments: 32 } },
     { label: 'Plane', geo: { type: 'plane' as const, width: 2, height: 2 } },
+    { label: 'Ring', geo: { type: 'ring' as const, radius: 0.5 } },
+    { label: 'Octahedron', geo: { type: 'octahedron' as const, radius: 0.5 } },
+    { label: 'Icosahedron', geo: { type: 'icosahedron' as const, radius: 0.5, segments: 1 } },
+    { label: 'Capsule', geo: { type: 'capsule' as const, radius: 0.3, height: 1 } },
   ]
 
   const LIGHTS = [
@@ -195,6 +199,24 @@ export function MainToolbar() {
                   setShowAdd(false)
                 }}>{p.label}</DropdownItem>
               ))}
+              <div className="w-full h-px my-1" style={{ background: '#1E2028' }} />
+              <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Special</div>
+              <DropdownItem onClick={() => {
+                addObject({ name: '3D Text', type: 'mesh', geometry: { type: 'text', text: 'Hello', fontSize: 0.5 }, transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
+                setShowAdd(false)
+              }}>✦ 3D Text</DropdownItem>
+              <DropdownItem onClick={() => {
+                addObject({ name: 'Particles', type: 'particle', geometry: { type: 'sphere', radius: 0.1 }, particle: { count: 300, spread: [6, 6, 6], instanceGeometry: 'sphere', instanceScale: 0.06, randomScale: 0.6, preset: 'scatter' }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
+                setShowAdd(false)
+              }}>✦ Particles</DropdownItem>
+              <DropdownItem onClick={() => {
+                addObject({ name: 'Rain', type: 'particle', geometry: { type: 'sphere', radius: 0.1 }, particle: { count: 500, spread: [10, 8, 10], instanceGeometry: 'sphere', instanceScale: 0.04, randomScale: 0.3, preset: 'rain' }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
+                setShowAdd(false)
+              }}>✦ Rain</DropdownItem>
+              <DropdownItem onClick={() => {
+                addObject({ name: 'Snow', type: 'particle', geometry: { type: 'sphere', radius: 0.1 }, particle: { count: 400, spread: [10, 8, 10], instanceGeometry: 'sphere', instanceScale: 0.05, randomScale: 0.5, preset: 'snow' }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
+                setShowAdd(false)
+              }}>✦ Snow</DropdownItem>
               <div className="w-full h-px my-1" style={{ background: '#1E2028' }} />
               <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Lights</div>
               {LIGHTS.map((l) => (

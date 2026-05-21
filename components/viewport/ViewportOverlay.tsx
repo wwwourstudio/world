@@ -11,12 +11,50 @@ export function ViewportOverlay() {
   const activeTool = useScene((s) => s.activeTool)
   const transformSpace = useScene((s) => s.transformSpace)
   const snapEnabled = useScene((s) => s.snapEnabled)
+  const viewMode = useScene((s) => s.viewMode)
+  const setViewMode = useScene((s) => s.setViewMode)
+  const cameraFov = useScene((s) => s.cameraFov)
+  const setCameraFov = useScene((s) => s.setCameraFov)
 
   const objCount = Object.keys(objects).length
   const selectedObj = selectedIds.length === 1 ? objects[selectedIds[0]] : null
 
   return (
     <>
+      {/* View mode switcher */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-1">
+        {(['persp', 'top', 'front', 'right'] as const).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => setViewMode(mode)}
+            className="px-2 h-6 rounded text-[10px] font-mono uppercase transition-colors"
+            style={{
+              background: viewMode === mode ? '#5B6CFF' : 'rgba(11,12,15,0.8)',
+              color: viewMode === mode ? '#fff' : '#7A7E92',
+              border: '1px solid #1E2028',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            {mode}
+          </button>
+        ))}
+        {viewMode === 'persp' && (
+          <>
+            <div className="w-px h-4 mx-1" style={{ background: '#1E2028' }} />
+            <span className="text-[10px] font-mono" style={{ color: '#7A7E92' }}>FOV</span>
+            <input
+              type="range"
+              min={20} max={120} step={1}
+              value={cameraFov}
+              onChange={(e) => setCameraFov(parseInt(e.target.value))}
+              className="w-16 h-1"
+              style={{ accentColor: '#5B6CFF' }}
+            />
+            <span className="text-[10px] font-mono w-6" style={{ color: '#7A7E92' }}>{cameraFov}°</span>
+          </>
+        )}
+      </div>
+
       {/* Playing badge */}
       {isPlaying && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">

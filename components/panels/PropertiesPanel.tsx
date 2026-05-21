@@ -1,7 +1,7 @@
 'use client'
 
 import { useScene } from '@/lib/scene/SceneStore'
-import type { AnimationConfig, AnimationPreset } from '@/lib/scene/SceneStore'
+import type { AnimationConfig, AnimationPreset, ParticleConfig } from '@/lib/scene/SceneStore'
 
 function NumInput({
   label, value, onChange, step = 0.01, color,
@@ -69,6 +69,10 @@ function SliderRow({ label, value, min = 0, max = 1, step = 0.01, onChange }: {
 }
 
 const ANIM_PRESETS: AnimationPreset[] = ['none', 'float', 'spin', 'pulse', 'orbit', 'shake', 'wave', 'bounce']
+
+const DEFAULT_PARTICLE_CFG: ParticleConfig = {
+  count: 200, spread: [6, 6, 6], instanceGeometry: 'sphere', instanceScale: 0.08, randomScale: 0.5, preset: 'scatter',
+}
 
 export function PropertiesPanel() {
   const selectedIds = useScene((s) => s.selectedIds)
@@ -188,6 +192,81 @@ export function PropertiesPanel() {
             </Row>
             <Row label="Receive Shadow">
               <input type="checkbox" checked={obj.receiveShadow} onChange={(e) => updateObject(id, { receiveShadow: e.target.checked })} />
+            </Row>
+          </div>
+        </Section>
+      )}
+
+      {/* 3D Text editing */}
+      {obj.geometry?.type === 'text' && (
+        <Section label="3D Text">
+          <div className="flex flex-col gap-2">
+            <textarea
+              value={obj.geometry.text ?? 'Text'}
+              onChange={(e) => updateObject(id, { geometry: { ...obj.geometry, text: e.target.value } })}
+              className="w-full h-16 px-2 py-1.5 rounded text-[12px] outline-none border resize-none"
+              style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+            />
+            <SliderRow label="Font Size" value={obj.geometry.fontSize ?? 0.5} min={0.1} max={5} step={0.05}
+              onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, fontSize: v } })} />
+          </div>
+        </Section>
+      )}
+
+      {/* Particle Emitter */}
+      {obj.type === 'particle' && (
+        <Section label="Particle Emitter">
+          <div className="flex flex-col gap-2">
+            <Row label="Preset">
+              <select
+                value={obj.particle?.preset ?? 'scatter'}
+                onChange={(e) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), preset: e.target.value as ParticleConfig['preset'] } })}
+                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+              >
+                {['scatter', 'rain', 'snow', 'leaves', 'sparks', 'custom'].map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </Row>
+            <Row label="Shape">
+              <select
+                value={obj.particle?.instanceGeometry ?? 'sphere'}
+                onChange={(e) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), instanceGeometry: e.target.value as ParticleConfig['instanceGeometry'] } })}
+                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+              >
+                {['sphere', 'box', 'cone', 'tetrahedron'].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </Row>
+            <SliderRow label="Count" value={obj.particle?.count ?? 200} min={10} max={2000} step={10}
+              onChange={(v) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), count: Math.round(v) } })} />
+            <SliderRow label="Scale" value={obj.particle?.instanceScale ?? 0.08} min={0.01} max={1} step={0.01}
+              onChange={(v) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), instanceScale: v } })} />
+            <SliderRow label="Random Scale" value={obj.particle?.randomScale ?? 0.5} min={0} max={1} step={0.05}
+              onChange={(v) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), randomScale: v } })} />
+            <Row label="Spread">
+              <div className="grid grid-cols-3 gap-1 flex-1">
+                {(['X', 'Y', 'Z'] as const).map((axis, i) => (
+                  <div key={axis} className="flex items-center gap-1">
+                    <span className="text-[10px] font-mono" style={{ color: i === 0 ? '#ef4444' : i === 1 ? '#22c55e' : '#3b82f6' }}>{axis}</span>
+                    <input
+                      type="number"
+                      value={(obj.particle?.spread ?? [6, 6, 6])[i].toFixed(1)}
+                      step={0.5}
+                      onChange={(e) => {
+                        const spread = [...(obj.particle?.spread ?? [6, 6, 6])] as [number, number, number]
+                        spread[i] = parseFloat(e.target.value) || 1
+                        updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), spread } })
+                      }}
+                      className="flex-1 h-6 px-1 rounded text-[10px] font-mono text-center outline-none border"
+                      style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                    />
+                  </div>
+                ))}
+              </div>
             </Row>
           </div>
         </Section>

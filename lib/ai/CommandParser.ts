@@ -142,10 +142,46 @@ export interface SetPostFXCmd {
   chromaticAberration?: boolean
 }
 
+export interface AddTextCmd {
+  action: 'add_text'
+  text?: string
+  fontSize?: number
+  position?: [number, number, number]
+  color?: string
+  material?: string
+}
+
+export interface AddParticleCmd {
+  action: 'add_particle'
+  preset?: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'custom'
+  count?: number
+  spread?: [number, number, number]
+  instanceGeometry?: 'sphere' | 'box' | 'cone' | 'tetrahedron'
+  instanceScale?: number
+  position?: [number, number, number]
+  color?: string
+  name?: string
+}
+
+export interface ScatterObjectsCmd {
+  action: 'scatter_objects'
+  objectId?: string
+  objectName?: string
+  count?: number
+  spread?: [number, number, number]
+}
+
+export interface SetViewModeCmd {
+  action: 'set_view_mode'
+  mode?: 'persp' | 'top' | 'front' | 'right'
+  fov?: number
+}
+
 export type SceneCommand =
   | AddObjectCmd | AddLightCmd | SetMaterialCmd | SetHDRICmd | SetFogCmd
   | SetCameraCmd | AddAnimationCmd | EnablePhysicsCmd | SetEnvironmentCmd
   | DeleteObjectCmd | DuplicateObjectCmd | GroupObjectsCmd | LoadTemplateCmd | SetPostFXCmd
+  | AddTextCmd | AddParticleCmd | ScatterObjectsCmd | SetViewModeCmd
 
 export interface ParsedResponse {
   commands: SceneCommand[]
@@ -432,6 +468,68 @@ export function executeCommand(cmd: SceneCommand): void {
         ...(c.noise !== undefined ? { noise: c.noise } : {}),
         ...(c.chromaticAberration !== undefined ? { chromaticAberration: c.chromaticAberration } : {}),
       })
+      break
+    }
+
+    case 'add_text': {
+      const c = cmd as AddTextCmd
+      const mat = resolveMaterial(c.material, { color: c.color } as Partial<AddObjectCmd>)
+      store.addObject({
+        name: c.text ?? '3D Text',
+        type: 'mesh',
+        geometry: { type: 'text', text: c.text ?? 'Hello', fontSize: c.fontSize ?? 0.5 },
+        material: mat as MaterialConfig,
+        transform: { position: c.position ?? [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        castShadow: true,
+      })
+      break
+    }
+
+    case 'add_particle': {
+      const c = cmd as AddParticleCmd
+      const mat = resolveMaterial(undefined, { color: c.color } as Partial<AddObjectCmd>)
+      store.addObject({
+        name: c.name ?? `${c.preset ?? 'scatter'} particles`,
+        type: 'particle',
+        geometry: { type: 'sphere', radius: 0.1 },
+        material: mat as MaterialConfig,
+        particle: {
+          count: c.count ?? 200,
+          spread: c.spread ?? [6, 6, 6],
+          instanceGeometry: c.instanceGeometry ?? 'sphere',
+          instanceScale: c.instanceScale ?? 0.08,
+          randomScale: 0.5,
+          preset: c.preset ?? 'scatter',
+        },
+        transform: { position: c.position ?? [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      })
+      break
+    }
+
+    case 'scatter_objects': {
+      const c = cmd as ScatterObjectsCmd
+      const src = c.objectId
+        ? store.objects[c.objectId]
+        : c.objectName
+        ? findObjectByName(store.objects, c.objectName)
+        : store.selectedIds.length ? store.objects[store.selectedIds[0]] : undefined
+      if (!src) break
+      const count = c.count ?? 5
+      const spread = c.spread ?? [5, 0, 5]
+      for (let i = 0; i < count; i++) {
+        store.duplicateObject(src.id, [
+          (Math.random() - 0.5) * spread[0],
+          (Math.random() - 0.5) * spread[1],
+          (Math.random() - 0.5) * spread[2],
+        ])
+      }
+      break
+    }
+
+    case 'set_view_mode': {
+      const c = cmd as SetViewModeCmd
+      if (c.mode) store.setViewMode(c.mode)
+      if (c.fov !== undefined) store.setCameraFov(c.fov)
       break
     }
   }

@@ -10,6 +10,7 @@ import {
   useGLTF,
   Html,
   Stars,
+  Text3D,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -22,7 +23,7 @@ import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig } from '@/lib/scene/SceneStore'
+import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig } from '@/lib/scene/SceneStore'
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
@@ -36,6 +37,8 @@ function SceneGeometry({ geo }: { geo: GeometryConfig }) {
     case 'ring': return <ringGeometry args={[0.3, geo.radius ?? 0.5, 32]} />
     case 'capsule': return <capsuleGeometry args={[geo.radius ?? 0.3, geo.height ?? 1, 4, 16]} />
     case 'tetrahedron': return <tetrahedronGeometry args={[geo.radius ?? 0.5]} />
+    case 'octahedron': return <octahedronGeometry args={[geo.radius ?? 0.5]} />
+    case 'icosahedron': return <icosahedronGeometry args={[geo.radius ?? 0.5, geo.segments ?? 0]} />
     default: return <boxGeometry args={[geo.width ?? 1, geo.height ?? 1, geo.depth ?? 1]} />
   }
 }
@@ -138,29 +141,36 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   const { selectObject, activeTool } = useScene()
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
 
-  // Load PBR texture maps imperatively when maps change
+  // Load PBR texture maps imperatively when maps or repeat change
   const mapsKey = JSON.stringify(obj.material.maps)
+  const repeatKey = JSON.stringify(obj.material.textureRepeat)
   useEffect(() => {
     const maps = obj.material.maps
     if (!maps) return
     const mat = material as THREE.MeshStandardMaterial
     const loader = new THREE.TextureLoader()
+    const repeat = obj.material.textureRepeat ?? [1, 1]
     let disposed = false
     const loaded: THREE.Texture[] = []
 
-    function loadMap(url: string, apply: (t: THREE.Texture) => void) {
+    function loadMap(url: string, srgb: boolean, apply: (t: THREE.Texture) => void) {
       loader.load(url, (tex) => {
         if (disposed) { tex.dispose(); return }
+        if (srgb) tex.colorSpace = THREE.SRGBColorSpace
+        if (repeat[0] !== 1 || repeat[1] !== 1) {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+          tex.repeat.set(repeat[0], repeat[1])
+        }
         loaded.push(tex)
         apply(tex)
         mat.needsUpdate = true
       })
     }
 
-    if (maps.map) loadMap(maps.map, (t) => { t.colorSpace = THREE.SRGBColorSpace; mat.map = t })
-    if (maps.roughnessMap) loadMap(maps.roughnessMap, (t) => { mat.roughnessMap = t })
-    if (maps.metalnessMap) loadMap(maps.metalnessMap, (t) => { mat.metalnessMap = t })
-    if (maps.normalMap) loadMap(maps.normalMap, (t) => { mat.normalMap = t })
+    if (maps.map) loadMap(maps.map, true, (t) => { mat.map = t })
+    if (maps.roughnessMap) loadMap(maps.roughnessMap, false, (t) => { mat.roughnessMap = t })
+    if (maps.metalnessMap) loadMap(maps.metalnessMap, false, (t) => { mat.metalnessMap = t })
+    if (maps.normalMap) loadMap(maps.normalMap, false, (t) => { mat.normalMap = t })
 
     return () => {
       disposed = true
@@ -170,7 +180,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       mat.needsUpdate = true
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapsKey, material])
+  }, [mapsKey, repeatKey, material])
 
   const hasPhysics = obj.physics?.enabled && useScene.getState().physicsEnabled
   const bodyType = obj.physics?.type ?? 'dynamic'
@@ -238,6 +248,159 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
   )
 }
 
+// ─── Text Object ─────────────────────────────────────────────────────────────
+
+const HELVETIKER = 'https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_regular.typeface.json'
+
+function TextObject({ obj }: { obj: SceneObject }) {
+  const ref = useRef<THREE.Mesh>(null)
+  const { selectObject } = useScene()
+  const mat = obj.material
+  useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
+
+  return (
+    <Suspense fallback={null}>
+      <Text3D
+        ref={ref}
+        font={HELVETIKER}
+        position={obj.transform.position}
+        rotation={obj.transform.rotation}
+        scale={obj.transform.scale}
+        size={obj.geometry.fontSize ?? 0.5}
+        height={(obj.geometry.fontSize ?? 0.5) * 0.25}
+        curveSegments={6}
+        bevelEnabled
+        bevelThickness={0.015}
+        bevelSize={0.008}
+        bevelSegments={3}
+        castShadow={obj.castShadow}
+        visible={obj.visible}
+        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+      >
+        {obj.geometry.text ?? 'Text'}
+        <meshStandardMaterial
+          color={mat.color}
+          roughness={mat.roughness}
+          metalness={mat.metalness}
+          emissive={new THREE.Color(mat.emissive)}
+          emissiveIntensity={mat.emissiveIntensity}
+        />
+      </Text3D>
+    </Suspense>
+  )
+}
+
+// ─── Particle Object ──────────────────────────────────────────────────────────
+
+const DEFAULT_PARTICLE: ParticleConfig = {
+  count: 200,
+  spread: [6, 6, 6],
+  instanceGeometry: 'sphere',
+  instanceScale: 0.08,
+  randomScale: 0.5,
+  preset: 'scatter',
+}
+
+function ParticleObject({ obj }: { obj: SceneObject }) {
+  const meshRef = useRef<THREE.InstancedMesh>(null)
+  const material = useSceneMaterial(obj.material)
+  const { selectObject } = useScene()
+  const cfg = obj.particle ?? DEFAULT_PARTICLE
+  const cfgKey = JSON.stringify(cfg)
+
+  const matrices = useMemo(() => {
+    const dummy = new THREE.Object3D()
+    const result: THREE.Matrix4[] = []
+    const [sx, sy, sz] = cfg.spread
+    for (let i = 0; i < cfg.count; i++) {
+      let x = (Math.random() - 0.5) * sx
+      let y = cfg.preset === 'rain' || cfg.preset === 'snow' || cfg.preset === 'sparks'
+        ? Math.random() * sy
+        : cfg.preset === 'leaves' ? Math.random() * sy * 0.6
+        : (Math.random() - 0.5) * sy
+      let z = (Math.random() - 0.5) * sz
+      dummy.position.set(x, y, z)
+      dummy.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
+      const sc = cfg.instanceScale * (1 - cfg.randomScale * 0.5 + Math.random() * cfg.randomScale)
+      dummy.scale.setScalar(Math.max(0.001, sc))
+      dummy.updateMatrix()
+      result.push(dummy.matrix.clone())
+    }
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfgKey])
+
+  useEffect(() => {
+    if (!meshRef.current) return
+    matrices.forEach((m, i) => meshRef.current!.setMatrixAt(i, m))
+    meshRef.current.instanceMatrix.needsUpdate = true
+  }, [matrices])
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return
+    if (cfg.preset !== 'rain' && cfg.preset !== 'snow' && cfg.preset !== 'sparks') return
+    const dummy = new THREE.Object3D()
+    const speed = cfg.preset === 'rain' ? 4 : cfg.preset === 'sparks' ? 2.5 : 0.5
+    const [sx, sy, sz] = cfg.spread
+    for (let i = 0; i < cfg.count; i++) {
+      meshRef.current.getMatrixAt(i, dummy.matrix)
+      dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale)
+      dummy.position.y -= speed * delta
+      if (dummy.position.y < -sy * 0.5) {
+        dummy.position.y = sy * 0.5
+        dummy.position.x = (Math.random() - 0.5) * sx
+        dummy.position.z = (Math.random() - 0.5) * sz
+      }
+      dummy.updateMatrix()
+      meshRef.current.setMatrixAt(i, dummy.matrix)
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true
+  })
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, cfg.count]}
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      visible={obj.visible}
+      castShadow={obj.castShadow}
+      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+    >
+      {cfg.instanceGeometry === 'box' && <boxGeometry args={[1, 1, 1]} />}
+      {cfg.instanceGeometry === 'cone' && <coneGeometry args={[0.5, 1, 4]} />}
+      {cfg.instanceGeometry === 'tetrahedron' && <tetrahedronGeometry args={[0.5, 0]} />}
+      {(cfg.instanceGeometry === 'sphere' || !cfg.instanceGeometry) && <sphereGeometry args={[0.5, 6, 6]} />}
+      <primitive object={material} attach="material" />
+    </instancedMesh>
+  )
+}
+
+// ─── Camera Controller ────────────────────────────────────────────────────────
+
+function CameraController() {
+  const viewMode = useScene((s) => s.viewMode)
+  const cameraFov = useScene((s) => s.cameraFov)
+  const { camera } = useThree()
+
+  useEffect(() => {
+    const cam = camera as THREE.PerspectiveCamera
+    if (viewMode === 'persp') {
+      cam.fov = cameraFov
+    } else {
+      cam.fov = 5
+      if (viewMode === 'top') camera.position.set(0, 50, 0.01)
+      else if (viewMode === 'front') camera.position.set(0, 0, 50)
+      else camera.position.set(50, 0, 0)
+      camera.lookAt(0, 0, 0)
+    }
+    cam.updateProjectionMatrix()
+  }, [viewMode, cameraFov, camera])
+
+  return null
+}
+
 // ─── Light Object ─────────────────────────────────────────────────────────────
 
 function LightObject({ obj }: { obj: SceneObject }) {
@@ -294,6 +457,8 @@ function SceneObjectNode({ id }: { id: string }) {
   if (!obj || !obj.visible) return null
 
   if (obj.type === 'light' && obj.light) return <LightObject obj={obj} />
+  if (obj.type === 'particle') return <ParticleObject obj={obj} />
+  if (obj.geometry?.type === 'text') return <TextObject obj={obj} />
   if (obj.type === 'group') {
     return (
       <group
@@ -480,6 +645,7 @@ function InnerScene() {
 
       <GizmoControl />
       <FPSCounter />
+      <CameraController />
       <FogController />
       <HDRIEnvironment />
       <PostProcessing />

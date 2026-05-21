@@ -5,7 +5,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type ObjectType = 'mesh' | 'light' | 'group' | 'particle'
-export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'gltf'
+export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'octahedron' | 'icosahedron' | 'text' | 'gltf'
 export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'
 export type MaterialType = 'standard' | 'physical' | 'toon' | 'wireframe' | 'glass' | 'hologram'
 export type AnimationPreset = 'none' | 'float' | 'spin' | 'pulse' | 'orbit' | 'shake' | 'wave' | 'bounce'
@@ -43,6 +43,7 @@ export interface MaterialConfig {
   flatShading: boolean
   side: 'front' | 'back' | 'double'
   maps?: MaterialMaps
+  textureRepeat?: [number, number]
 }
 
 export interface GeometryConfig {
@@ -56,6 +57,8 @@ export interface GeometryConfig {
   segments?: number
   tube?: number
   url?: string
+  text?: string
+  fontSize?: number
 }
 
 export interface LightConfig {
@@ -90,6 +93,15 @@ export interface AnimationConfig {
   axis: 'x' | 'y' | 'z'
 }
 
+export interface ParticleConfig {
+  count: number
+  spread: [number, number, number]
+  instanceGeometry: 'sphere' | 'box' | 'cone' | 'tetrahedron'
+  instanceScale: number
+  randomScale: number
+  preset: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'custom'
+}
+
 export interface SceneObject {
   id: string
   name: string
@@ -108,6 +120,7 @@ export interface SceneObject {
   expanded: boolean
   castShadow: boolean
   receiveShadow: boolean
+  particle?: ParticleConfig
 }
 
 export interface EnvironmentState {
@@ -249,6 +262,8 @@ interface SceneActions {
   setFPS: (fps: number) => void
   setShowStats: (v: boolean) => void
   setCameraMode: (mode: 'orbit' | 'fly') => void
+  setViewMode: (mode: 'persp' | 'top' | 'front' | 'right') => void
+  setCameraFov: (fov: number) => void
 
   showNotification: (msg: string, type?: 'success' | 'error' | 'info') => void
 
@@ -284,6 +299,8 @@ interface SceneState extends SceneActions {
   showStats: boolean
   fps: number
   cameraMode: 'orbit' | 'fly'
+  viewMode: 'persp' | 'top' | 'front' | 'right'
+  cameraFov: number
 
   notification: { message: string; type: 'success' | 'error' | 'info'; id: string } | null
 
@@ -401,6 +418,8 @@ export const useScene = create<SceneState>()(
       showStats: false,
       fps: 60,
       cameraMode: 'orbit',
+      viewMode: 'persp',
+      cameraFov: 60,
 
       notification: null,
 
@@ -673,6 +692,14 @@ export const useScene = create<SceneState>()(
 
       setCameraMode(mode) {
         set((s) => { s.cameraMode = mode })
+      },
+
+      setViewMode(mode) {
+        set((s) => { s.viewMode = mode })
+      },
+
+      setCameraFov(fov) {
+        set((s) => { s.cameraFov = fov })
       },
 
       // ── Notifications ─────────────────────────────────────────────────────
