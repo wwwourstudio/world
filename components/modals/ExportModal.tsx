@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { X, Download, Code, FileJson, Monitor, Camera } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { generateEmbedCode, generateThreeJSCode } from '@/lib/three/ExportSystem'
+import { captureCanvas } from '@/lib/canvasCapture'
 
 type ExportTab = 'embed' | 'threejs' | 'json' | 'screenshot'
 
@@ -12,6 +13,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   const environment = useScene((s) => s.environment)
   const [tab, setTab] = useState<ExportTab>('embed')
   const [copied, setCopied] = useState(false)
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null)
 
   const scene = { objects, environment }
 
@@ -86,22 +88,54 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
         {/* Content */}
         <div className="flex-1 overflow-hidden">
           {tab === 'screenshot' ? (
-            <div className="flex flex-col items-center justify-center h-full gap-4">
-              <Camera size={40} style={{ color: '#1E2028' }} />
-              <p className="text-[12px]" style={{ color: '#7A7E92' }}>
-                Use your browser&apos;s screenshot tool or press <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono" style={{ background: '#1E2028', color: '#E8E9F0' }}>F12</kbd> → DevTools screenshot.
-              </p>
-              <button
-                onClick={() => {
-                  // Try to trigger browser screenshot via keyboard event
-                  const event = new KeyboardEvent('keydown', { key: 'F12' })
-                  document.dispatchEvent(event)
-                }}
-                className="px-4 py-2 rounded-lg text-[12px] font-medium transition-colors"
-                style={{ background: '#5B6CFF', color: '#fff' }}
-              >
-                Open DevTools
-              </button>
+            <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
+              {screenshotUrl ? (
+                <>
+                  <img src={screenshotUrl} alt="Screenshot" className="max-h-64 rounded-lg object-contain"
+                    style={{ border: '1px solid #1E2028' }} />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setScreenshotUrl(null) }}
+                      className="px-4 py-2 rounded-lg text-[12px] font-medium transition-colors border"
+                      style={{ color: '#7A7E92', borderColor: '#1E2028' }}
+                    >Retake</button>
+                    <button
+                      onClick={() => {
+                        const a = document.createElement('a')
+                        a.href = screenshotUrl
+                        a.download = 'world-screenshot.png'
+                        a.click()
+                      }}
+                      className="px-4 py-2 rounded-lg text-[12px] font-medium flex items-center gap-1.5"
+                      style={{ background: '#5B6CFF', color: '#fff' }}
+                    >
+                      <Download size={12} strokeWidth={2} />
+                      Download PNG
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: '#1E2028' }}>
+                    <Camera size={22} style={{ color: '#5B6CFF' }} />
+                  </div>
+                  <p className="text-[12px] text-center" style={{ color: '#7A7E92' }}>
+                    Captures the current viewport as a PNG image.
+                  </p>
+                  <button
+                    onClick={() => {
+                      const canvas = captureCanvas.dom
+                      if (!canvas) return
+                      const url = canvas.toDataURL('image/png')
+                      setScreenshotUrl(url)
+                    }}
+                    className="px-4 py-2 rounded-lg text-[12px] font-medium"
+                    style={{ background: '#5B6CFF', color: '#fff' }}
+                  >
+                    Capture Screenshot
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <pre className="h-full overflow-auto p-4 text-[11px] font-mono leading-relaxed custom-scrollbar"

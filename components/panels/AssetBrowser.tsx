@@ -37,6 +37,21 @@ function usePolyHavenAssets(type: 'hdris' | 'textures') {
   return { assets, loading, error }
 }
 
+// ─── Recently Used Hook ──────────────────────────────────────────────────────
+
+function useRecentAssets(storageKey: string, max = 6) {
+  const get = (): string[] => {
+    try { return JSON.parse(localStorage.getItem(storageKey) ?? '[]') } catch { return [] }
+  }
+  const add = (id: string) => {
+    try {
+      const list = [id, ...get().filter((x) => x !== id)].slice(0, max)
+      localStorage.setItem(storageKey, JSON.stringify(list))
+    } catch { /* localStorage may be unavailable */ }
+  }
+  return { get, add }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function thumbUrl(id: string) {
@@ -144,6 +159,10 @@ function HDRITab() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [applying, setApplying] = useState<string | null>(null)
+  const recent = useRecentAssets('wb_recent_hdri')
+  const [recentIds, setRecentIds] = useState<string[]>([])
+
+  useEffect(() => { setRecentIds(recent.get()) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const categories = getCategories(assets).slice(0, 10)
   const filtered = filterAssets(assets, category, search)
@@ -151,6 +170,8 @@ function HDRITab() {
 
   function applyHDRI(id: string, name: string) {
     setApplying(id)
+    recent.add(id)
+    setRecentIds(recent.get())
     setEnvironment({ hdriUrl: `/api/hdri/${id}.hdr`, hdriName: id })
     showNotification(`Applying ${name}…`)
     setTimeout(() => { setApplying(null); showNotification(`HDRI: ${name}`) }, 1200)
@@ -184,6 +205,23 @@ function HDRITab() {
       )}
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+        {recentIds.length > 0 && !search && category === 'all' && (
+          <div className="mb-3">
+            <p className="text-[9px] uppercase tracking-widest font-semibold mb-1.5" style={{ color: '#3a3e50' }}>Recent</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {recentIds.map((id) => (
+                <button key={id} onClick={() => applyHDRI(id, id)}
+                  className="relative rounded-md overflow-hidden border"
+                  style={{ borderColor: activeId === id ? '#5B6CFF' : '#1E2028', aspectRatio: '16/9' }}>
+                  <div className="absolute inset-0" style={{ background: '#1E2028' }}>
+                    <Image src={thumbUrl(id)} alt={id} fill sizes="90px" className="object-cover opacity-80 hover:opacity-100 transition-opacity" unoptimized />
+                  </div>
+                  {activeId === id && <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {error && <p className="text-[11px] text-center py-6" style={{ color: '#f87171' }}>Failed to load HDRIs</p>}
         {!error && loading && <LoadingGrid aspect="16/9" />}
         {!error && !loading && (
@@ -227,6 +265,10 @@ function TexturesTab() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [applying, setApplying] = useState<string | null>(null)
+  const recent = useRecentAssets('wb_recent_tex')
+  const [recentIds, setRecentIds] = useState<string[]>([])
+
+  useEffect(() => { setRecentIds(recent.get()) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const categories = getCategories(assets).slice(0, 10)
   const filtered = filterAssets(assets, category, search)
@@ -237,6 +279,8 @@ function TexturesTab() {
       return
     }
     setApplying(id)
+    recent.add(id)
+    setRecentIds(recent.get())
     try {
       const res = await fetch(`/api/polyhaven/files/${id}`)
       const files = await res.json()
@@ -264,6 +308,22 @@ function TexturesTab() {
         </div>
       )}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+        {recentIds.length > 0 && !search && category === 'all' && (
+          <div className="mb-3">
+            <p className="text-[9px] uppercase tracking-widest font-semibold mb-1.5" style={{ color: '#3a3e50' }}>Recent</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {recentIds.map((id) => (
+                <button key={id} onClick={() => applyTexture(id, id)}
+                  className="relative rounded-md overflow-hidden border"
+                  style={{ borderColor: '#1E2028', aspectRatio: '1/1' }}>
+                  <div className="absolute inset-0" style={{ background: '#1E2028' }}>
+                    <Image src={thumbUrl(id)} alt={id} fill sizes="90px" className="object-cover opacity-80 hover:opacity-100 transition-opacity" unoptimized />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {error && <p className="text-[11px] text-center py-6" style={{ color: '#f87171' }}>Failed to load textures</p>}
         {!error && loading && <LoadingGrid aspect="1/1" />}
         {!error && !loading && (
@@ -497,6 +557,31 @@ export function AssetBrowser() {
 
       {tab === 'env' && (
         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 flex flex-col gap-3">
+          {/* Lighting presets */}
+          <div>
+            <p className="text-[9px] uppercase tracking-widest font-semibold mb-1.5" style={{ color: '#3a3e50' }}>Presets</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {([
+                { label: 'Studio', ambientColor: '#ffffff', ambientIntensity: 0.8, directionalColor: '#ffffff', directionalIntensity: 2.0, fogType: 'none', backgroundColor: '#111111' },
+                { label: 'Day', ambientColor: '#b0d4ff', ambientIntensity: 0.5, directionalColor: '#fff8e0', directionalIntensity: 3.0, fogType: 'none', backgroundColor: '#87ceeb' },
+                { label: 'Sunset', ambientColor: '#ff8040', ambientIntensity: 0.4, directionalColor: '#ff6010', directionalIntensity: 2.0, fogType: 'exponential', fogDensity: 0.005, fogColor: '#ff5020', backgroundColor: '#cc4010' },
+                { label: 'Night', ambientColor: '#001030', ambientIntensity: 0.15, directionalColor: '#2040ff', directionalIntensity: 0.2, fogType: 'exponential', fogDensity: 0.015, fogColor: '#000510', backgroundColor: '#000510' },
+                { label: 'Overcast', ambientColor: '#c0c8d0', ambientIntensity: 0.8, directionalColor: '#c0c8d0', directionalIntensity: 0.4, fogType: 'none', backgroundColor: '#9ea8b0' },
+              ] as const).map((preset) => (
+                <button
+                  key={preset.label}
+                  onClick={() => setEnvironment(preset as Parameters<typeof setEnvironment>[0])}
+                  className="px-2.5 h-6 rounded-full text-[10px] font-medium transition-all"
+                  style={{ background: '#1E2028', color: '#7A7E92', border: '1px solid #2a2d3a' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#5B6CFF20'; e.currentTarget.style.color = '#8B9CFF'; e.currentTarget.style.borderColor = '#5B6CFF50' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#1E2028'; e.currentTarget.style.color = '#7A7E92'; e.currentTarget.style.borderColor = '#2a2d3a' }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="w-full h-px" style={{ background: '#1E2028' }} />
           <ColorRow label="Ambient Color" value={environment.ambientColor} onChange={(v) => setEnvironment({ ambientColor: v })} />
           <SliderRow label="Ambient Intensity" value={environment.ambientIntensity} min={0} max={3} step={0.05}
             onChange={(v) => setEnvironment({ ambientIntensity: v })} />
