@@ -11,6 +11,7 @@ import {
   Html,
   Stars,
   Text3D,
+  Outlines,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -139,6 +140,8 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   const ref = useRef<THREE.Mesh>(null)
   const material = useSceneMaterial(obj.material)
   const { selectObject, activeTool } = useScene()
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const isPlaying = useScene((s) => s.isPlaying)
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
 
   // Load PBR texture maps imperatively when maps or repeat change
@@ -203,6 +206,9 @@ function MeshObject({ obj }: { obj: SceneObject }) {
     >
       <SceneGeometry geo={obj.geometry} />
       <primitive object={material} attach="material" />
+      {isSelected && !isPlaying && (
+        <Outlines thickness={1.5} color="#5B6CFF" screenspace transparent opacity={0.85} />
+      )}
     </mesh>
   )
 
@@ -231,8 +237,29 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
   const url = obj.geometry.url ?? ''
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
   const { selectObject } = useScene()
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const isPlaying = useScene((s) => s.isPlaying)
   const { scene: gltfScene } = useGLTF(url)
-  const cloned = useMemo(() => gltfScene.clone(true), [gltfScene])
+
+  const { cloned, bbSize, bbCenter } = useMemo(() => {
+    const c = gltfScene.clone(true)
+    // Auto-normalize: scale imported models to fit ~2m bounding box
+    const box = new THREE.Box3().setFromObject(c)
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z)
+    if (maxDim > 0.001 && (maxDim > 5 || maxDim < 0.1)) {
+      const factor = 2 / maxDim
+      c.scale.setScalar(factor)
+      const center = box.getCenter(new THREE.Vector3())
+      c.position.sub(center.multiplyScalar(factor))
+    }
+    const finalBox = new THREE.Box3().setFromObject(c)
+    return {
+      cloned: c,
+      bbSize: finalBox.getSize(new THREE.Vector3()),
+      bbCenter: finalBox.getCenter(new THREE.Vector3()),
+    }
+  }, [gltfScene])
 
   return (
     <group
@@ -244,6 +271,12 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
       onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
     >
       <primitive object={cloned} />
+      {isSelected && !isPlaying && (
+        <mesh position={bbCenter.toArray() as [number, number, number]}>
+          <boxGeometry args={[bbSize.x * 1.02, bbSize.y * 1.02, bbSize.z * 1.02]} />
+          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.5} />
+        </mesh>
+      )}
     </group>
   )
 }
@@ -256,6 +289,8 @@ function TextObject({ obj }: { obj: SceneObject }) {
   const ref = useRef<THREE.Mesh>(null)
   const { selectObject } = useScene()
   const mat = obj.material
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const isPlaying = useScene((s) => s.isPlaying)
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
 
   return (
@@ -285,6 +320,9 @@ function TextObject({ obj }: { obj: SceneObject }) {
           emissive={new THREE.Color(mat.emissive)}
           emissiveIntensity={mat.emissiveIntensity}
         />
+        {isSelected && !isPlaying && (
+          <Outlines thickness={1.5} color="#5B6CFF" screenspace transparent opacity={0.85} />
+        )}
       </Text3D>
     </Suspense>
   )

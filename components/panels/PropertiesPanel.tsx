@@ -1,7 +1,24 @@
 'use client'
 
 import { useScene } from '@/lib/scene/SceneStore'
-import type { AnimationConfig, AnimationPreset, ParticleConfig } from '@/lib/scene/SceneStore'
+import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig } from '@/lib/scene/SceneStore'
+
+function getNaturalSize(geo: GeometryConfig): number {
+  switch (geo.type) {
+    case 'sphere': return (geo.radius ?? 0.5) * 2
+    case 'cylinder': return Math.max((geo.radiusTop ?? 0.5) * 2, geo.height ?? 1)
+    case 'cone': return Math.max((geo.radius ?? 0.5) * 2, geo.height ?? 1)
+    case 'torus': return ((geo.radius ?? 0.5) + (geo.tube ?? 0.2)) * 2
+    case 'ring': return (geo.radius ?? 0.5) * 2
+    case 'capsule': return (geo.radius ?? 0.3) * 2 + (geo.height ?? 1)
+    case 'tetrahedron':
+    case 'octahedron':
+    case 'icosahedron': return (geo.radius ?? 0.5) * 2
+    case 'plane': return Math.max(geo.width ?? 1, geo.height ?? 1)
+    case 'gltf': return 2 // already auto-normalized to ~2m
+    default: return Math.max(geo.width ?? 1, geo.height ?? 1, geo.depth ?? 1)
+  }
+}
 
 function NumInput({
   label, value, onChange, step = 0.01, color,
@@ -9,14 +26,14 @@ function NumInput({
   label: string; value: number; onChange: (v: number) => void; step?: number; color?: string
 }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="w-3 text-[10px] font-mono font-bold" style={{ color: color ?? '#7A7E92' }}>{label}</span>
+    <div className="flex items-center gap-1 min-w-0">
+      <span className="shrink-0 text-[10px] font-mono font-bold" style={{ color: color ?? '#7A7E92' }}>{label}</span>
       <input
         type="number"
-        value={value.toFixed(3)}
+        value={value.toFixed(2)}
         step={step}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="flex-1 h-6 px-1.5 rounded text-[11px] font-mono outline-none border text-center"
+        className="min-w-0 w-full h-6 px-1 rounded text-[11px] font-mono outline-none border text-center"
         style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
       />
     </div>
@@ -32,9 +49,9 @@ function Vec3Control({
   step?: number
 }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 min-w-0">
       <span className="text-[10px] uppercase tracking-wider" style={{ color: '#7A7E92' }}>{label}</span>
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-3 gap-1 min-w-0">
         <NumInput label="X" value={value[0]} onChange={(v) => onChange([v, value[1], value[2]])} step={step} color="#ef4444" />
         <NumInput label="Y" value={value[1]} onChange={(v) => onChange([value[0], v, value[2]])} step={step} color="#22c55e" />
         <NumInput label="Z" value={value[2]} onChange={(v) => onChange([value[0], value[1], v])} step={step} color="#3b82f6" />
@@ -129,10 +146,20 @@ export function PropertiesPanel() {
             step={0.05}
           />
         </div>
-        <div className="flex gap-2 mt-2">
+        <div className="flex gap-2 mt-2 flex-wrap">
           <SmallBtn onClick={() => updateObject(id, { transform: { ...transform, position: [0, 0, 0] } })}>Reset Pos</SmallBtn>
           <SmallBtn onClick={() => updateObject(id, { transform: { ...transform, rotation: [0, 0, 0] } })}>Reset Rot</SmallBtn>
           <SmallBtn onClick={() => updateObject(id, { transform: { ...transform, scale: [1, 1, 1] } })}>Reset Scl</SmallBtn>
+          {obj.geometry && (
+            <SmallBtn onClick={() => {
+              const TARGET = 2
+              const nat = getNaturalSize(obj.geometry)
+              const currentMax = Math.max(...transform.scale)
+              const effectiveDim = nat * currentMax
+              const factor = effectiveDim > 0.0001 ? TARGET / effectiveDim : 1
+              updateObject(id, { transform: { ...transform, scale: [transform.scale[0] * factor, transform.scale[1] * factor, transform.scale[2] * factor] } })
+            }}>Normalize</SmallBtn>
+          )}
         </div>
       </Section>
 

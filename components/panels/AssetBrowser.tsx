@@ -339,12 +339,17 @@ function SketchfabTab() {
   }
 
   async function importModel(model: SketchfabModel) {
+    if (!model.downloadable) {
+      showNotification('This model is not available for download (license restricted)')
+      return
+    }
     setImporting(model.uid)
     showNotification(`Fetching ${model.name}…`)
     try {
       const res = await fetch(`/api/sketchfab/download/${model.uid}`)
       const data = await res.json()
-      if (!data.url) throw new Error(data.error ?? 'No download URL')
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      if (!data.url) throw new Error('No download URL returned — model may require a Sketchfab Pro account')
       addObject({
         name: model.name,
         type: 'mesh',
@@ -353,7 +358,8 @@ function SketchfabTab() {
       })
       showNotification(`Imported: ${model.name}`)
     } catch (e) {
-      showNotification(`Import failed: ${String(e)}`, 'error')
+      const msg = e instanceof Error ? e.message : String(e)
+      showNotification(`Import failed: ${msg}`, 'error')
     } finally {
       setImporting(null)
     }
@@ -378,7 +384,11 @@ function SketchfabTab() {
                 onClick={() => importModel(model)}
                 disabled={!!importing}
                 className="relative rounded-lg overflow-hidden transition-all group border"
-                style={{ borderColor: '#1E2028', aspectRatio: '4/3' }}
+                style={{
+                  borderColor: model.downloadable ? '#1E2028' : '#3a2020',
+                  aspectRatio: '4/3',
+                  opacity: model.downloadable ? 1 : 0.65,
+                }}
               >
                 <div className="absolute inset-0" style={{ background: '#1E2028' }}>
                   {model.thumbnail && (
@@ -390,10 +400,16 @@ function SketchfabTab() {
                   <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                     <RefreshCw size={14} className="animate-spin text-white" />
                   </div>
-                ) : (
+                ) : model.downloadable ? (
                   <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <div className="p-1 rounded bg-black/60">
                       <Download size={10} className="text-white" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="absolute top-1 right-1">
+                    <div className="px-1 py-0.5 rounded text-[9px] font-mono" style={{ background: 'rgba(220,38,38,0.8)', color: '#fca5a5' }}>
+                      locked
                     </div>
                   </div>
                 )}
