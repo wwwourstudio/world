@@ -314,15 +314,12 @@ function TextObject({ obj }: { obj: SceneObject }) {
       >
         {obj.geometry.text ?? 'Text'}
         <meshStandardMaterial
-          color={mat.color}
+          color={isSelected && !isPlaying ? '#7B8CFF' : mat.color}
           roughness={mat.roughness}
           metalness={mat.metalness}
-          emissive={new THREE.Color(mat.emissive)}
-          emissiveIntensity={mat.emissiveIntensity}
+          emissive={isSelected && !isPlaying ? new THREE.Color('#5B6CFF') : new THREE.Color(mat.emissive)}
+          emissiveIntensity={isSelected && !isPlaying ? 0.3 : mat.emissiveIntensity}
         />
-        {isSelected && !isPlaying && (
-          <Outlines thickness={1.5} color="#5B6CFF" screenspace transparent opacity={0.85} />
-        )}
       </Text3D>
     </Suspense>
   )
