@@ -62,6 +62,10 @@ export interface GeometryConfig {
   textDepth?: number
   bevelEnabled?: boolean
   font?: 'helvetiker' | 'optimer' | 'gentilis'
+  letterSpacing?: number
+  lineHeight?: number
+  bevelThickness?: number
+  bevelSize?: number
 }
 
 export interface LightConfig {
