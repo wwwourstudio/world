@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, useRef, useEffect, useMemo } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
 import {
   OrbitControls,
   TransformControls,
@@ -22,6 +22,7 @@ import {
 } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe } from '@/lib/scene/SceneStore'
@@ -747,9 +748,39 @@ function FogController() {
 
 // ─── HDRI Environment ────────────────────────────────────────────────────────
 
+function BlobHDRIEnvironment({ url, showBackground, intensity }: { url: string; showBackground: boolean; intensity: number }) {
+  const { gl, scene } = useThree()
+  const texture = useLoader(RGBELoader, url)
+
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl)
+    pmrem.compileEquirectangularShader()
+    const envMap = pmrem.fromEquirectangular(texture).texture
+    scene.environment = envMap
+    ;(scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = intensity
+    if (showBackground) scene.background = envMap
+    else scene.background = null
+    pmrem.dispose()
+    return () => {
+      envMap.dispose()
+      scene.environment = null
+    }
+  }, [texture, gl, scene, showBackground, intensity])
+
+  return null
+}
+
 function HDRIEnvironment() {
   const env = useScene((s) => s.environment)
   if (!env.hdriUrl) return null
+
+  if (env.hdriUrl.startsWith('blob:')) {
+    return (
+      <Suspense fallback={null}>
+        <BlobHDRIEnvironment url={env.hdriUrl} showBackground={env.showBackground} intensity={env.hdriIntensity} />
+      </Suspense>
+    )
+  }
 
   return (
     <Environment
