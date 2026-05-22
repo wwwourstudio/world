@@ -10,13 +10,12 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get('q') ?? ''
   const count = searchParams.get('count') ?? '20'
+  const sortBy = searchParams.get('sort_by') ?? 'relevance'
+  const offset = searchParams.get('offset') ?? '0'
 
   const apiKey = process.env.SKETCHFAB_API_KEY
   if (!apiKey) {
-    return Response.json(
-      { error: 'SKETCHFAB_API_KEY not configured. Add it to .env.local.' },
-      { status: 500 }
-    )
+    return Response.json({ error: 'SKETCHFAB_API_KEY not configured.' }, { status: 500 })
   }
 
   const url = new URL('https://api.sketchfab.com/v3/models')
@@ -24,10 +23,12 @@ export async function GET(request: Request) {
   url.searchParams.set('count', count)
   url.searchParams.set('downloadable', 'true')
   url.searchParams.set('type', 'models')
+  url.searchParams.set('sort_by', sortBy)
+  if (Number(offset) > 0) url.searchParams.set('offset', offset)
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Token ${apiKey}` },
-    next: { revalidate: 300 },
+    cache: 'no-store',
   })
 
   if (!res.ok) {
@@ -43,5 +44,5 @@ export async function GET(request: Request) {
     viewerUrl: m.viewerUrl,
   }))
 
-  return Response.json({ results })
+  return Response.json({ results, next: data.next ?? null })
 }

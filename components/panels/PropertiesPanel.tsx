@@ -372,6 +372,18 @@ export function PropertiesPanel() {
               <input type="checkbox" checked={obj.geometry.bevelEnabled !== false}
                 onChange={(e) => updateObject(id, { geometry: { ...obj.geometry, bevelEnabled: e.target.checked } })} />
             </Row>
+            <SliderRow label="Letter Spacing" value={obj.geometry.letterSpacing ?? 0} min={-0.5} max={1} step={0.01}
+              onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, letterSpacing: v } })} />
+            <SliderRow label="Line Height" value={obj.geometry.lineHeight ?? 1} min={0.5} max={3} step={0.05}
+              onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, lineHeight: v } })} />
+            {(obj.geometry.bevelEnabled !== false) && (
+              <>
+                <SliderRow label="Bevel Thickness" value={obj.geometry.bevelThickness ?? 0.015} min={0.001} max={0.2} step={0.001}
+                  onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, bevelThickness: v } })} />
+                <SliderRow label="Bevel Size" value={obj.geometry.bevelSize ?? 0.008} min={0.001} max={0.1} step={0.001}
+                  onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, bevelSize: v } })} />
+              </>
+            )}
           </div>
         </Section>
       )}

@@ -161,6 +161,7 @@ function HDRITab() {
   const [applying, setApplying] = useState<string | null>(null)
   const recent = useRecentAssets('wb_recent_hdri')
   const [recentIds, setRecentIds] = useState<string[]>([])
+  const hdriUploadRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setRecentIds(recent.get()) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -182,6 +183,26 @@ function HDRITab() {
       <div className="px-3 py-2 flex flex-col gap-2 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
         <SearchBar value={search} onChange={setSearch} placeholder="Search ~550 HDRIs…" />
         <CategoryChips categories={categories} active={category} onChange={setCategory} />
+        <div className="flex items-center gap-2">
+          <input ref={hdriUploadRef} type="file" accept=".hdr,.exr" className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              const url = URL.createObjectURL(file)
+              setEnvironment({ hdriUrl: url, hdriName: file.name })
+              showNotification(`Custom HDRI: ${file.name}`)
+            }}
+          />
+          <button
+            onClick={() => hdriUploadRef.current?.click()}
+            className="flex items-center gap-1.5 px-2.5 h-6 rounded-md text-[10px] font-medium transition-colors border"
+            style={{ background: '#1E2028', color: '#7A7E92', borderColor: '#2a2d3a' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#E8E9F0'; e.currentTarget.style.borderColor = '#5B6CFF50' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92'; e.currentTarget.style.borderColor = '#2a2d3a' }}
+          >
+            ↑ Upload .hdr / .exr
+          </button>
+        </div>
       </div>
 
       {environment.hdriUrl && (
@@ -267,6 +288,8 @@ function TexturesTab() {
   const [applying, setApplying] = useState<string | null>(null)
   const recent = useRecentAssets('wb_recent_tex')
   const [recentIds, setRecentIds] = useState<string[]>([])
+  const texUploadRef = useRef<HTMLInputElement>(null)
+  const [uploadSlot, setUploadSlot] = useState<'map' | 'roughnessMap' | 'normalMap'>('map')
 
   useEffect(() => { setRecentIds(recent.get()) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -301,6 +324,35 @@ function TexturesTab() {
       <div className="px-3 py-2 flex flex-col gap-2 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
         <SearchBar value={search} onChange={setSearch} placeholder="Search ~1000 textures…" />
         <CategoryChips categories={categories} active={category} onChange={setCategory} />
+        <div className="flex items-center gap-2 mt-2">
+          <input ref={texUploadRef} type="file" accept="image/*" className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              if (selectedIds.length === 0) { showNotification('Select an object first'); return }
+              const url = URL.createObjectURL(file)
+              for (const objId of selectedIds) {
+                updateObject(objId, { material: { maps: { [uploadSlot]: url } } })
+              }
+              showNotification(`Uploaded ${uploadSlot === 'map' ? 'color' : uploadSlot === 'roughnessMap' ? 'roughness' : 'normal'} map`)
+            }}
+          />
+          <select value={uploadSlot} onChange={(e) => setUploadSlot(e.target.value as typeof uploadSlot)}
+            className="h-6 px-1 rounded text-[10px] outline-none border"
+            style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028', width: '90px' }}>
+            <option value="map">Color</option>
+            <option value="roughnessMap">Roughness</option>
+            <option value="normalMap">Normal</option>
+          </select>
+          <button onClick={() => texUploadRef.current?.click()}
+            className="flex-1 h-6 rounded text-[10px] font-medium transition-colors border"
+            style={{ background: '#1E2028', color: '#7A7E92', borderColor: '#2a2d3a' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#E8E9F0' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92' }}
+          >
+            ↑ Upload image
+          </button>
+        </div>
       </div>
       {selectedIds.length === 0 && (
         <div className="px-3 py-1.5 shrink-0 text-[11px] text-center" style={{ color: '#7A7E92', background: '#0d0e12', borderBottom: '1px solid #1E2028' }}>
@@ -375,16 +427,23 @@ function SketchfabTab() {
   const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState<string | null>(null)
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [sortBy, setSortBy] = useState('relevance')
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
 
-  async function search(q: string) {
+  async function search(q: string, sort: string, off: number, append = false) {
     if (!q.trim()) { setResults([]); return }
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/sketchfab/search?q=${encodeURIComponent(q)}&count=20`)
+      const res = await fetch(`/api/sketchfab/search?q=${encodeURIComponent(q)}&count=20&sort_by=${sort}&offset=${off}`)
       const data = await res.json()
       if (data.error) { setError(data.error); setResults([]) }
-      else setResults(data.results ?? [])
+      else {
+        if (append) setResults(prev => [...prev, ...data.results])
+        else setResults(data.results ?? [])
+        setHasMore(!!data.next)
+      }
     } catch {
       setError('Search failed')
     } finally {
@@ -394,8 +453,9 @@ function SketchfabTab() {
 
   function handleSearch(val: string) {
     setQuery(val)
+    setOffset(0)
     if (searchRef.current) clearTimeout(searchRef.current)
-    searchRef.current = setTimeout(() => search(val), 600)
+    searchRef.current = setTimeout(() => search(val, sortBy, 0), 600)
   }
 
   async function importModel(model: SketchfabModel) {
@@ -429,6 +489,17 @@ function SketchfabTab() {
     <>
       <div className="px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
         <SearchBar value={query} onChange={handleSearch} placeholder="Search Sketchfab models…" />
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-[10px]" style={{ color: '#7A7E92' }}>Sort:</span>
+          <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setOffset(0); search(query, e.target.value, 0) }}
+            className="flex-1 h-6 px-1 rounded text-[10px] outline-none border"
+            style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+            <option value="relevance">Relevance</option>
+            <option value="mostRecent">Most Recent</option>
+            <option value="mostLiked">Most Liked</option>
+            <option value="mostViewed">Most Viewed</option>
+          </select>
+        </div>
         {!error && results.length === 0 && !loading && !query && (
           <p className="text-[10px] mt-2 text-center" style={{ color: '#7A7E92' }}>Requires SKETCHFAB_API_KEY env var</p>
         )}
@@ -480,6 +551,13 @@ function SketchfabTab() {
             ))}
           </div>
         )}
+        {hasMore && !loading && (
+          <button onClick={() => { const next = offset + 20; setOffset(next); search(query, sortBy, next, true) }}
+            className="w-full mt-2 py-2 rounded-lg text-[11px] font-medium transition-colors"
+            style={{ background: '#1E2028', color: '#7A7E92', border: '1px solid #2a2d3a' }}>
+            Load more
+          </button>
+        )}
         {!error && !loading && results.length === 0 && query && (
           <p className="text-[11px] text-center py-4" style={{ color: '#7A7E92' }}>No results for &quot;{query}&quot;</p>
         )}
@@ -495,6 +573,8 @@ export function AssetBrowser() {
   const setPostFX = useScene((s) => s.setPostFX)
   const environment = useScene((s) => s.environment)
   const setEnvironment = useScene((s) => s.setEnvironment)
+  const cameraMode = useScene((s) => s.cameraMode)
+  const cameraFov = useScene((s) => s.cameraFov)
   const [tab, setTab] = useState<'hdri' | 'textures' | 'models' | 'postfx' | 'env'>('hdri')
 
   return (
@@ -626,6 +706,36 @@ export function AssetBrowser() {
             <span className="text-[11px]" style={{ color: '#7A7E92', width: '100px' }}>Shadows</span>
             <input type="checkbox" checked={environment.shadowsEnabled}
               onChange={(e) => setEnvironment({ shadowsEnabled: e.target.checked })} />
+          </div>
+          <div className="w-full h-px" style={{ background: '#1E2028' }} />
+          <p className="text-[9px] uppercase tracking-widest font-semibold" style={{ color: '#3a3e50' }}>Camera</p>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] shrink-0" style={{ color: '#7A7E92', width: '100px' }}>Mode</span>
+            <div className="flex gap-1 flex-1">
+              {(['orbit', 'fly'] as const).map((m) => (
+                <button key={m} onClick={() => useScene.getState().setCameraMode(m)}
+                  className="flex-1 h-6 rounded text-[10px] font-medium capitalize transition-colors"
+                  style={{ background: cameraMode === m ? '#5B6CFF' : '#1E2028', color: cameraMode === m ? '#fff' : '#7A7E92', border: '1px solid #2a2d3a' }}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+          <SliderRow label="Field of View" value={cameraFov} min={20} max={120} step={1}
+            onChange={(v) => useScene.getState().setCameraFov(v)} />
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] shrink-0" style={{ color: '#7A7E92', width: '100px' }}>View</span>
+            <div className="flex gap-1 flex-1 flex-wrap">
+              {(['persp', 'top', 'front', 'right'] as const).map((v) => (
+                <button key={v} onClick={() => useScene.getState().setViewMode(v)}
+                  className="flex-1 h-6 rounded text-[9px] font-medium capitalize transition-colors"
+                  style={{ background: '#1E2028', color: '#7A7E92', border: '1px solid #2a2d3a' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#5B6CFF20'; e.currentTarget.style.color = '#8B9CFF' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#1E2028'; e.currentTarget.style.color = '#7A7E92' }}>
+                  {v}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

@@ -421,6 +421,10 @@ function TextObject({ obj }: { obj: SceneObject }) {
   const fontSize = obj.geometry.fontSize ?? 0.5
   const textDepth = obj.geometry.textDepth ?? fontSize * 0.25
   const bevelEnabled = obj.geometry.bevelEnabled !== false
+  const letterSpacing = obj.geometry.letterSpacing ?? 0
+  const lineHeight = obj.geometry.lineHeight ?? 1
+  const bevelThickness = obj.geometry.bevelThickness ?? 0.015
+  const bevelSize = obj.geometry.bevelSize ?? 0.008
 
   return (
     <Suspense fallback={null}>
@@ -433,9 +437,11 @@ function TextObject({ obj }: { obj: SceneObject }) {
         size={fontSize}
         height={textDepth}
         curveSegments={6}
+        letterSpacing={letterSpacing}
+        lineHeight={lineHeight}
         bevelEnabled={bevelEnabled}
-        bevelThickness={0.015}
-        bevelSize={0.008}
+        bevelThickness={bevelThickness}
+        bevelSize={bevelSize}
         bevelSegments={3}
         castShadow={obj.castShadow}
         visible={obj.visible}
