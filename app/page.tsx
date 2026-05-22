@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, Component, type ReactNode } from 'react'
 import { useScene, loadPersistedScene } from '@/lib/scene/SceneStore'
 import { MainToolbar } from '@/components/toolbar/MainToolbar'
 import { OutlinerPanel } from '@/components/panels/OutlinerPanel'
@@ -11,9 +11,31 @@ import { ChatPanel } from '@/components/panels/ChatPanel'
 import { AssetBrowser } from '@/components/panels/AssetBrowser'
 import { AnimationTimeline } from '@/components/panels/AnimationTimeline'
 import { PhysicsPanel } from '@/components/panels/PhysicsPanel'
+import { SceneSwitcher } from '@/components/panels/SceneSwitcher'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
-import { CheckCircle2, AlertCircle, Info } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, Layers, Palette } from 'lucide-react'
+import { cameraFrameFn } from '@/lib/cameraFrame'
+
+class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+  state = { error: null }
+  static getDerivedStateFromError(e: Error) { return { error: e.message } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-3" style={{ background: '#0B0C0F' }}>
+          <span style={{ color: '#f87171', fontSize: 12 }}>3D viewport failed to load</span>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="px-3 py-1.5 rounded-lg text-[11px]"
+            style={{ background: '#1E2028', color: '#E8E9F0' }}
+          >Retry</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const ViewportCanvas = dynamic(
   () => import('@/components/viewport/ViewportCanvas').then((m) => m.ViewportCanvas),
@@ -62,6 +84,10 @@ export default function WorldBuilderPage() {
   const transformSpace = useScene((s) => s.transformSpace)
   const isPlaying = useScene((s) => s.isPlaying)
   const setPlaying = useScene((s) => s.setPlaying)
+  const objects = useScene((s) => s.objects)
+  const addKeyframe = useScene((s) => s.addKeyframe)
+  const playhead = useScene((s) => s.playhead)
+  const cameraMode = useScene((s) => s.cameraMode)
   const initialized = useRef(false)
 
   useEffect(() => {
@@ -80,6 +106,7 @@ export default function WorldBuilderPage() {
 
       const TOOL_MAP: Record<string, ActiveTool> = { q: 'select', w: 'translate', e: 'rotate', r: 'scale' }
       if (!ctrl && TOOL_MAP[key]) {
+        if (cameraMode === 'fly') return
         e.preventDefault()
         setActiveTool(TOOL_MAP[key])
         return
@@ -103,6 +130,13 @@ export default function WorldBuilderPage() {
       }
 
       if (key === 'escape') { deselectAll(); return }
+      if (key === 'f' && selectedIds.length > 0) {
+        e.preventDefault()
+        const obj = objects[selectedIds[0]]
+        if (obj) cameraFrameFn.current?.(obj.transform.position)
+        return
+      }
+      if (key === 'k' && selectedIds[0]) { e.preventDefault(); addKeyframe(selectedIds[0], playhead); return }
       if (key === 'g') { e.preventDefault(); setSnapEnabled(!snapEnabled); return }
       if (key === 'x') { e.preventDefault(); setTransformSpace(transformSpace === 'world' ? 'local' : 'world'); return }
       if (key === 'f3') { e.preventDefault(); setShowStats(!showStats); return }
@@ -115,7 +149,7 @@ export default function WorldBuilderPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedIds, snapEnabled, showStats, transformSpace, isPlaying, undo, redo, setActiveTool, setSnapEnabled, setShowStats, setTransformSpace, setPlaying, removeObject, duplicateObject, deselectAll, selectAll, togglePanel])
+  }, [selectedIds, objects, snapEnabled, showStats, transformSpace, isPlaying, cameraMode, addKeyframe, playhead, undo, redo, setActiveTool, setSnapEnabled, setShowStats, setTransformSpace, setPlaying, removeObject, duplicateObject, deselectAll, selectAll, togglePanel])
 
   return (
     <div className="flex flex-col w-screen h-screen overflow-hidden" style={{ background: '#0B0C0F', color: '#E8E9F0' }}>
@@ -126,18 +160,23 @@ export default function WorldBuilderPage() {
         {panels.leftOpen && (
           <div className="flex flex-col w-64 shrink-0 overflow-hidden" style={{ borderRight: '1px solid #1E2028' }}>
             {/* Tab bar */}
-            <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
-              {(['outliner', 'material'] as const).map((t) => (
+            <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14' }}>
+              {([
+                { id: 'outliner', label: 'Scene', icon: <Layers size={12} strokeWidth={1.75} /> },
+                { id: 'material', label: 'Material', icon: <Palette size={12} strokeWidth={1.75} /> },
+              ] as const).map((t) => (
                 <button
-                  key={t}
-                  onClick={() => useScene.getState().setPanelTab('left', t)}
-                  className="flex-1 text-[11px] font-medium capitalize transition-colors"
+                  key={t.id}
+                  onClick={() => useScene.getState().setPanelTab('left', t.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium capitalize transition-colors"
                   style={{
-                    color: panels.leftTab === t ? '#E8E9F0' : '#7A7E92',
-                    borderBottom: panels.leftTab === t ? '2px solid #5B6CFF' : '2px solid transparent',
+                    color: panels.leftTab === t.id ? '#E8E9F0' : '#7A7E92',
+                    borderBottom: panels.leftTab === t.id ? '2px solid #5B6CFF' : '2px solid transparent',
+                    background: panels.leftTab === t.id ? '#5B6CFF10' : 'transparent',
                   }}
                 >
-                  {t}
+                  {t.icon}
+                  {t.label}
                 </button>
               ))}
             </div>
@@ -161,7 +200,9 @@ export default function WorldBuilderPage() {
 
         {/* Viewport */}
         <div className="flex-1 relative overflow-hidden">
-          <ViewportCanvas />
+          <CanvasErrorBoundary>
+            <ViewportCanvas />
+          </CanvasErrorBoundary>
           <ViewportOverlay />
         </div>
 
@@ -190,6 +231,8 @@ export default function WorldBuilderPage() {
           </div>
         )}
       </div>
+
+      <SceneSwitcher />
 
       {/* Bottom panel */}
       {panels.bottomOpen && (

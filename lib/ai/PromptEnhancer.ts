@@ -82,6 +82,20 @@ AVAILABLE ACTIONS (emit as JSON in \`\`\`json code blocks):
     // ADD ANIMATION PRESET
     { "action": "add_animation", "objectId": "optional-id", "objectName": "optional name", "preset": "float|spin|pulse|orbit|shake|wave|bounce", "speed": 1, "amplitude": 0.5, "axis": "x|y|z" },
 
+    // KEYFRAME ANIMATION (overrides preset, creates path animation)
+    { "action": "add_keyframe_animation", "objectName": "Floating Cube", "keyframes": [
+        { "time": 0, "position": [0, 0, 0] },
+        { "time": 2, "position": [0, 3, 0] },
+        { "time": 4, "position": [0, 0, 0] }
+      ]
+    },
+
+    // ADD 3D TEXT
+    { "action": "add_text", "text": "Hello World", "fontSize": 0.6, "position": [0,1,0], "color": "#ffffff", "font": "helvetiker|optimer|gentilis", "depth": 0.2 },
+
+    // ADD PARTICLES
+    { "action": "add_particle", "preset": "scatter|rain|snow|leaves|sparks", "count": 200, "spread": [8,8,8], "color": "#ffffff", "position": [0,0,0] },
+
     // ENABLE PHYSICS
     { "action": "enable_physics", "objectId": "optional-id", "objectName": "optional name", "bodyType": "dynamic|static|kinematic", "shape": "auto|box|sphere|capsule|hull", "mass": 1, "restitution": 0.3 },
 
@@ -94,7 +108,10 @@ AVAILABLE ACTIONS (emit as JSON in \`\`\`json code blocks):
     { "action": "load_template", "id": "ancient_forest|scifi_base|medieval_village|cyberpunk_city|space_station|golden_sunset|deep_space" },
 
     // POST PROCESSING
-    { "action": "set_postfx", "bloom": true, "bloomIntensity": 0.5, "vignette": true, "noise": true, "chromaticAberration": false }
+    { "action": "set_postfx", "bloom": true, "bloomIntensity": 0.5, "vignette": true, "noise": true, "chromaticAberration": false },
+
+    // ADD NEW SCENE
+    { "action": "add_scene", "name": "Scene Name" }
   ]
 }
 \`\`\`
@@ -111,14 +128,18 @@ HDRI NAMES (Poly Haven): golden_bay, forest_slope, satara_night, kiara_interior,
 
 IMPORTANT RULES:
 - Always generate commands for scene changes; never describe changes without acting on them
-- Place objects at thoughtful positions — spread them, vary rotations, avoid overlap
-- Use emissive materials for glowing objects
+- Build CINEMATIC, DETAILED worlds — not sparse demos. Populate scenes with depth: foreground, midground, background elements
+- Place objects at thoughtful positions — spread them, vary rotations, avoid overlap. Use real coordinates
+- Use realistic scale: humans ~1.8m tall, cars ~4m long, buildings 5-20m tall
+- Always include at least 2 light types per scene (e.g. directional sun + point fill lights)
+- Use emissive materials for glowing objects; combine with nearby point lights
 - Combine multiple commands in one response for complex scenes
 - After commands, summarize in 1-3 friendly sentences what was built
-- Use real coordinates — don't put everything at [0,0,0]
 - For ground planes, rotate by [-π/2,0,0] and use plane geometry
-- For trees: cylinder trunk + cone canopy
-- For neon lights: high emissive intensity (2-5) + matching point light nearby`
+- For trees: cylinder trunk + cone canopy, scatter multiple instances
+- For neon lights: high emissive intensity (2-5) + matching point light nearby
+- For animated scenes: use keyframe_animation for path motion, presets for loops
+- Vary materials — don't make everything the same color`
 }
 
 export function buildSceneContext(objects: Record<string, unknown>, environment: Record<string, unknown>): string {

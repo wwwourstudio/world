@@ -5,7 +5,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type ObjectType = 'mesh' | 'light' | 'group' | 'particle'
-export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'gltf'
+export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'octahedron' | 'icosahedron' | 'text' | 'gltf'
 export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'
 export type MaterialType = 'standard' | 'physical' | 'toon' | 'wireframe' | 'glass' | 'hologram'
 export type AnimationPreset = 'none' | 'float' | 'spin' | 'pulse' | 'orbit' | 'shake' | 'wave' | 'bounce'
@@ -17,6 +17,13 @@ export interface Transform {
   position: [number, number, number]
   rotation: [number, number, number]
   scale: [number, number, number]
+}
+
+export interface MaterialMaps {
+  map?: string
+  roughnessMap?: string
+  metalnessMap?: string
+  normalMap?: string
 }
 
 export interface MaterialConfig {
@@ -35,6 +42,8 @@ export interface MaterialConfig {
   thickness: number
   flatShading: boolean
   side: 'front' | 'back' | 'double'
+  maps?: MaterialMaps
+  textureRepeat?: [number, number]
 }
 
 export interface GeometryConfig {
@@ -48,6 +57,15 @@ export interface GeometryConfig {
   segments?: number
   tube?: number
   url?: string
+  text?: string
+  fontSize?: number
+  textDepth?: number
+  bevelEnabled?: boolean
+  font?: 'helvetiker' | 'optimer' | 'gentilis'
+  letterSpacing?: number
+  lineHeight?: number
+  bevelThickness?: number
+  bevelSize?: number
 }
 
 export interface LightConfig {
@@ -74,12 +92,44 @@ export interface PhysicsConfig {
   gravityScale: number
 }
 
+export interface Keyframe {
+  time: number
+  transform: Transform
+}
+
+export interface ObjectInteraction {
+  hoverEffect: 'none' | 'highlight' | 'scale'
+  clickAction: 'none' | 'toggle-anim' | 'link' | 'toggle-visible'
+  tooltipText?: string
+  linkUrl?: string
+}
+
 export interface AnimationConfig {
   preset: AnimationPreset
   speed: number
   amplitude: number
   offset: number
   axis: 'x' | 'y' | 'z'
+  keyframes?: Keyframe[]
+}
+
+export interface SceneSnapshot {
+  id: string
+  name: string
+  objects: Record<string, SceneObject>
+  rootIds: string[]
+  environment: EnvironmentState
+  postFX: PostFXState
+  createdAt: number
+}
+
+export interface ParticleConfig {
+  count: number
+  spread: [number, number, number]
+  instanceGeometry: 'sphere' | 'box' | 'cone' | 'tetrahedron'
+  instanceScale: number
+  randomScale: number
+  preset: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'custom'
 }
 
 export interface SceneObject {
@@ -100,6 +150,8 @@ export interface SceneObject {
   expanded: boolean
   castShadow: boolean
   receiveShadow: boolean
+  particle?: ParticleConfig
+  interaction?: ObjectInteraction
 }
 
 export interface EnvironmentState {
@@ -241,12 +293,25 @@ interface SceneActions {
   setFPS: (fps: number) => void
   setShowStats: (v: boolean) => void
   setCameraMode: (mode: 'orbit' | 'fly') => void
+  setViewMode: (mode: 'persp' | 'top' | 'front' | 'right') => void
+  setCameraFov: (fov: number) => void
 
   showNotification: (msg: string, type?: 'success' | 'error' | 'info') => void
 
   pushHistory: () => void
   undo: () => void
   redo: () => void
+
+  addKeyframe: (objectId: string, time: number) => void
+  removeKeyframe: (objectId: string, time: number) => void
+  clearKeyframes: (objectId: string) => void
+
+  saveCurrentScene: () => void
+  switchScene: (id: string) => void
+  addScene: (name?: string) => string
+  duplicateScene: (id: string) => string
+  removeScene: (id: string) => void
+  renameScene: (id: string, name: string) => void
 }
 
 export type DeepPartial<T> = { [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P] }
@@ -276,11 +341,16 @@ interface SceneState extends SceneActions {
   showStats: boolean
   fps: number
   cameraMode: 'orbit' | 'fly'
+  viewMode: 'persp' | 'top' | 'front' | 'right'
+  cameraFov: number
 
   notification: { message: string; type: 'success' | 'error' | 'info'; id: string } | null
 
   past: string[]
   future: string[]
+
+  scenes: SceneSnapshot[]
+  activeSceneId: string
 }
 
 function makeId() {
@@ -393,11 +463,16 @@ export const useScene = create<SceneState>()(
       showStats: false,
       fps: 60,
       cameraMode: 'orbit',
+      viewMode: 'persp',
+      cameraFov: 60,
 
       notification: null,
 
       past: [],
       future: [],
+
+      scenes: [],
+      activeSceneId: 'default',
 
       // ── Object CRUD ──────────────────────────────────────────────────────
 
@@ -667,6 +742,14 @@ export const useScene = create<SceneState>()(
         set((s) => { s.cameraMode = mode })
       },
 
+      setViewMode(mode) {
+        set((s) => { s.viewMode = mode })
+      },
+
+      setCameraFov(fov) {
+        set((s) => { s.cameraFov = fov })
+      },
+
       // ── Notifications ─────────────────────────────────────────────────────
 
       showNotification(msg, type = 'success') {
@@ -709,19 +792,186 @@ export const useScene = create<SceneState>()(
           s.selectedIds = []
         })
       },
+
+      // ── Keyframes ────────────────────────────────────────────────────────
+
+      addKeyframe(objectId, time) {
+        const obj = get().objects[objectId]
+        if (!obj) return
+        set((s) => {
+          const o = s.objects[objectId]
+          if (!o) return
+          if (!o.animation) {
+            o.animation = { preset: 'none', speed: 1, amplitude: 0.5, offset: 0, axis: 'y', keyframes: [] }
+          }
+          const kfs = o.animation.keyframes ?? []
+          const existing = kfs.findIndex((k) => Math.abs(k.time - time) < 0.05)
+          const kf: Keyframe = { time, transform: JSON.parse(JSON.stringify(o.transform)) }
+          if (existing >= 0) kfs[existing] = kf
+          else kfs.push(kf)
+          kfs.sort((a, b) => a.time - b.time)
+          o.animation.keyframes = kfs
+        })
+      },
+
+      removeKeyframe(objectId, time) {
+        set((s) => {
+          const o = s.objects[objectId]
+          if (!o?.animation?.keyframes) return
+          o.animation.keyframes = o.animation.keyframes.filter((k) => Math.abs(k.time - time) >= 0.05)
+        })
+      },
+
+      clearKeyframes(objectId) {
+        set((s) => {
+          const o = s.objects[objectId]
+          if (o?.animation) o.animation.keyframes = []
+        })
+      },
+
+      // ── Scenes ───────────────────────────────────────────────────────────
+
+      saveCurrentScene() {
+        set((s) => {
+          const snap: SceneSnapshot = {
+            id: s.activeSceneId,
+            name: s.scenes.find((sc) => sc.id === s.activeSceneId)?.name ?? 'Scene 1',
+            objects: JSON.parse(JSON.stringify(s.objects)),
+            rootIds: [...s.rootIds],
+            environment: JSON.parse(JSON.stringify(s.environment)),
+            postFX: JSON.parse(JSON.stringify(s.postFX)),
+            createdAt: Date.now(),
+          }
+          const idx = s.scenes.findIndex((sc) => sc.id === s.activeSceneId)
+          if (idx >= 0) s.scenes[idx] = snap
+          else s.scenes.push(snap)
+        })
+      },
+
+      switchScene(id) {
+        const state = get()
+        // Save current
+        const currentSnap: SceneSnapshot = {
+          id: state.activeSceneId,
+          name: state.scenes.find((sc) => sc.id === state.activeSceneId)?.name ?? 'Scene 1',
+          objects: JSON.parse(JSON.stringify(state.objects)),
+          rootIds: [...state.rootIds],
+          environment: JSON.parse(JSON.stringify(state.environment)),
+          postFX: JSON.parse(JSON.stringify(state.postFX)),
+          createdAt: Date.now(),
+        }
+        const target = state.scenes.find((sc) => sc.id === id)
+        if (!target) return
+        set((s) => {
+          const idx = s.scenes.findIndex((sc) => sc.id === s.activeSceneId)
+          if (idx >= 0) s.scenes[idx] = currentSnap
+          else s.scenes.push(currentSnap)
+          s.objects = JSON.parse(JSON.stringify(target.objects))
+          s.rootIds = [...target.rootIds]
+          s.environment = JSON.parse(JSON.stringify(target.environment))
+          s.postFX = JSON.parse(JSON.stringify(target.postFX))
+          s.activeSceneId = id
+          s.selectedIds = []
+          s.past = []
+          s.future = []
+        })
+      },
+
+      addScene(name) {
+        const newId = makeId()
+        const sceneCount = get().scenes.length + 1
+        const sceneName = name ?? `Scene ${sceneCount}`
+        const state = get()
+        // Save current scene first
+        const currentSnap: SceneSnapshot = {
+          id: state.activeSceneId,
+          name: state.scenes.find((sc) => sc.id === state.activeSceneId)?.name ?? 'Scene 1',
+          objects: JSON.parse(JSON.stringify(state.objects)),
+          rootIds: [...state.rootIds],
+          environment: JSON.parse(JSON.stringify(state.environment)),
+          postFX: JSON.parse(JSON.stringify(state.postFX)),
+          createdAt: Date.now(),
+        }
+        const newSnap: SceneSnapshot = {
+          id: newId,
+          name: sceneName,
+          objects: {},
+          rootIds: [],
+          environment: JSON.parse(JSON.stringify(state.environment)),
+          postFX: JSON.parse(JSON.stringify(state.postFX)),
+          createdAt: Date.now(),
+        }
+        set((s) => {
+          const idx = s.scenes.findIndex((sc) => sc.id === s.activeSceneId)
+          if (idx >= 0) s.scenes[idx] = currentSnap
+          else s.scenes.push(currentSnap)
+          s.scenes.push(newSnap)
+          s.objects = {}
+          s.rootIds = []
+          s.activeSceneId = newId
+          s.selectedIds = []
+          s.past = []
+          s.future = []
+        })
+        return newId
+      },
+
+      duplicateScene(id) {
+        const state = get()
+        const src = state.scenes.find((sc) => sc.id === id) ?? {
+          id: state.activeSceneId,
+          name: state.scenes.find((sc) => sc.id === state.activeSceneId)?.name ?? 'Scene 1',
+          objects: JSON.parse(JSON.stringify(state.objects)),
+          rootIds: [...state.rootIds],
+          environment: JSON.parse(JSON.stringify(state.environment)),
+          postFX: JSON.parse(JSON.stringify(state.postFX)),
+          createdAt: Date.now(),
+        }
+        const newId = makeId()
+        const dup: SceneSnapshot = { ...JSON.parse(JSON.stringify(src)), id: newId, name: `${src.name} (copy)`, createdAt: Date.now() }
+        set((s) => { s.scenes.push(dup) })
+        return newId
+      },
+
+      removeScene(id) {
+        set((s) => {
+          if (s.scenes.length <= 1) return
+          s.scenes = s.scenes.filter((sc) => sc.id !== id)
+          if (s.activeSceneId === id) {
+            const next = s.scenes[0]
+            s.objects = JSON.parse(JSON.stringify(next.objects))
+            s.rootIds = [...next.rootIds]
+            s.environment = JSON.parse(JSON.stringify(next.environment))
+            s.postFX = JSON.parse(JSON.stringify(next.postFX))
+            s.activeSceneId = next.id
+            s.selectedIds = []
+            s.past = []
+            s.future = []
+          }
+        })
+      },
+
+      renameScene(id, name) {
+        set((s) => {
+          const sc = s.scenes.find((x) => x.id === id)
+          if (sc) sc.name = name
+        })
+      },
     }))
   )
 )
 
+const SCENE_STORAGE_KEY = 'wbp-scene-v2'
+
 // Persist to localStorage
 if (typeof window !== 'undefined') {
   useScene.subscribe(
-    (s) => ({ objects: s.objects, rootIds: s.rootIds, environment: s.environment, postFX: s.postFX }),
+    (s) => ({ objects: s.objects, rootIds: s.rootIds, environment: s.environment, postFX: s.postFX, scenes: s.scenes, activeSceneId: s.activeSceneId }),
     (state) => {
       clearTimeout((window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer)
       ;(window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer = setTimeout(() => {
         try {
-          localStorage.setItem('wbp-scene', JSON.stringify(state))
+          localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(state))
         } catch {}
       }, 500)
     }
@@ -731,14 +981,40 @@ if (typeof window !== 'undefined') {
 export function loadPersistedScene() {
   if (typeof window === 'undefined') return
   try {
-    const raw = localStorage.getItem('wbp-scene')
+    const raw = localStorage.getItem(SCENE_STORAGE_KEY)
     if (!raw) return
     const data = JSON.parse(raw)
+    if (!data || typeof data !== 'object') return
+    const objects: Record<string, SceneObject> = {}
+    for (const [id, obj] of Object.entries(data.objects ?? {})) {
+      const o = obj as Partial<SceneObject>
+      objects[id] = {
+        id,
+        name: o.name ?? 'Object',
+        type: o.type ?? 'mesh',
+        geometry: o.geometry ?? DEFAULT_GEOMETRY,
+        material: { ...DEFAULT_MATERIAL, ...(o.material ?? {}) },
+        light: o.light ?? null,
+        transform: { position: [0,0,0], rotation: [0,0,0], scale: [1,1,1], ...(o.transform ?? {}) },
+        animation: o.animation ?? null,
+        physics: o.physics ?? null,
+        children: Array.isArray(o.children) ? o.children : [],
+        parentId: o.parentId ?? null,
+        visible: o.visible ?? true,
+        locked: o.locked ?? false,
+        tags: Array.isArray(o.tags) ? o.tags : [],
+        expanded: o.expanded ?? false,
+        castShadow: o.castShadow ?? true,
+        receiveShadow: o.receiveShadow ?? true,
+      }
+    }
     useScene.setState((s) => {
-      s.objects = data.objects ?? {}
-      s.rootIds = data.rootIds ?? []
+      s.objects = objects
+      s.rootIds = Array.isArray(data.rootIds) ? data.rootIds : []
       s.environment = { ...s.environment, ...data.environment }
       s.postFX = { ...s.postFX, ...data.postFX }
+      if (Array.isArray(data.scenes)) s.scenes = data.scenes
+      if (data.activeSceneId) s.activeSceneId = data.activeSceneId
     })
   } catch {}
 }
