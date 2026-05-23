@@ -12,6 +12,7 @@ import {
   Stars,
   Text3D,
   Outlines,
+  Sky,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -571,29 +572,110 @@ function CameraController() {
   return null
 }
 
+// ─── Light Gizmo ─────────────────────────────────────────────────────────────
+
+function LightGizmo({ obj }: { obj: SceneObject }) {
+  const cfg = obj.light!
+  const selectObject = useScene((s) => s.selectObject)
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+
+  if (cfg.type === 'ambient' || cfg.type === 'hemisphere') return null
+
+  const [px, py, pz] = obj.transform.position
+  const dist = cfg.distance ?? 10
+  const angle = cfg.angle ?? Math.PI / 4
+  const spotRadius = Math.tan(angle) * dist
+
+  return (
+    <group position={[px, py, pz]}>
+      {/* Clickable gizmo sphere — always visible */}
+      <mesh onClick={(e) => { e.stopPropagation(); selectObject(obj.id) }}>
+        <sphereGeometry args={[0.18, 10, 10]} />
+        <meshBasicMaterial color={cfg.color} />
+      </mesh>
+
+      {/* Selection ring */}
+      {isSelected && (
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.28, 0.025, 8, 32]} />
+          <meshBasicMaterial color="#5B6CFF" depthTest={false} />
+        </mesh>
+      )}
+
+      {/* Point light: distance sphere wireframe */}
+      {isSelected && cfg.type === 'point' && dist > 0 && (
+        <mesh>
+          <sphereGeometry args={[dist, 20, 14]} />
+          <meshBasicMaterial color={cfg.color} wireframe transparent opacity={0.1} depthTest={false} />
+        </mesh>
+      )}
+
+      {/* Spot light: cone wireframe opening downward */}
+      {isSelected && cfg.type === 'spot' && (
+        <group rotation={[Math.PI, 0, 0]}>
+          <mesh position={[0, dist / 2, 0]}>
+            <coneGeometry args={[spotRadius, dist, 18, 1, true]} />
+            <meshBasicMaterial color={cfg.color} wireframe transparent opacity={0.2} side={THREE.DoubleSide} depthTest={false} />
+          </mesh>
+        </group>
+      )}
+
+      {/* Directional light: arrow pointing down */}
+      {isSelected && cfg.type === 'directional' && (
+        <>
+          <mesh position={[0, -1, 0]}>
+            <cylinderGeometry args={[0.03, 0.03, 2, 6]} />
+            <meshBasicMaterial color={cfg.color} depthTest={false} />
+          </mesh>
+          <mesh position={[0, -2.25, 0]}>
+            <coneGeometry args={[0.14, 0.45, 8]} />
+            <meshBasicMaterial color={cfg.color} depthTest={false} />
+          </mesh>
+        </>
+      )}
+
+      {/* Area light: rectangle wireframe */}
+      {isSelected && cfg.type === 'rectarea' && (
+        <mesh>
+          <planeGeometry args={[cfg.rectAreaWidth ?? 4, cfg.rectAreaHeight ?? 4]} />
+          <meshBasicMaterial color={cfg.color} side={THREE.DoubleSide} wireframe transparent opacity={0.4} depthTest={false} />
+        </mesh>
+      )}
+    </group>
+  )
+}
+
 // ─── Light Object ─────────────────────────────────────────────────────────────
 
 function LightObject({ obj }: { obj: SceneObject }) {
   const cfg = obj.light!
   const pos = obj.transform.position
+  const shadowMapSize = useScene((s) => s.environment.shadowMapSize)
+  const mapSize = shadowMapSize ?? 2048
 
-  switch (cfg.type) {
-    case 'ambient':
-      return <ambientLight color={cfg.color} intensity={cfg.intensity} />
-    case 'hemisphere':
-      return <hemisphereLight args={[cfg.skyColor ?? cfg.color, cfg.groundColor ?? '#444444', cfg.intensity]} />
-    case 'directional':
-      return (
+  return (
+    <>
+      {cfg.type === 'ambient' && (
+        <ambientLight color={cfg.color} intensity={cfg.intensity} />
+      )}
+      {cfg.type === 'hemisphere' && (
+        <hemisphereLight args={[cfg.skyColor ?? cfg.color, cfg.groundColor ?? '#444444', cfg.intensity]} />
+      )}
+      {cfg.type === 'directional' && (
         <directionalLight
           position={pos}
           color={cfg.color}
           intensity={cfg.intensity}
           castShadow={cfg.castShadow}
-          shadow-mapSize={[2048, 2048]}
+          shadow-mapSize={[mapSize, mapSize]}
+          shadow-camera-far={100}
+          shadow-camera-left={-20}
+          shadow-camera-right={20}
+          shadow-camera-top={20}
+          shadow-camera-bottom={-20}
         />
-      )
-    case 'point':
-      return (
+      )}
+      {cfg.type === 'point' && (
         <pointLight
           position={pos}
           color={cfg.color}
@@ -601,10 +683,10 @@ function LightObject({ obj }: { obj: SceneObject }) {
           distance={cfg.distance}
           decay={cfg.decay}
           castShadow={cfg.castShadow}
+          shadow-mapSize={[mapSize, mapSize]}
         />
-      )
-    case 'spot':
-      return (
+      )}
+      {cfg.type === 'spot' && (
         <spotLight
           position={pos}
           color={cfg.color}
@@ -613,11 +695,21 @@ function LightObject({ obj }: { obj: SceneObject }) {
           angle={cfg.angle}
           penumbra={cfg.penumbra}
           castShadow={cfg.castShadow}
+          shadow-mapSize={[mapSize, mapSize]}
         />
-      )
-    default:
-      return null
-  }
+      )}
+      {cfg.type === 'rectarea' && (
+        <rectAreaLight
+          position={pos}
+          color={cfg.color}
+          intensity={cfg.intensity}
+          width={cfg.rectAreaWidth ?? 4}
+          height={cfg.rectAreaHeight ?? 4}
+        />
+      )}
+      <LightGizmo obj={obj} />
+    </>
+  )
 }
 
 // ─── Scene Object Router ──────────────────────────────────────────────────────
@@ -723,6 +815,52 @@ function FPSCounter() {
   })
 
   return null
+}
+
+// ─── Shadow Map + RectAreaLight Setup ────────────────────────────────────────
+
+function ShadowMapSetup() {
+  const { gl } = useThree()
+  useEffect(() => {
+    gl.shadowMap.type = THREE.PCFSoftShadowMap
+    gl.shadowMap.needsUpdate = true
+    // Initialize RectAreaLight uniforms so area lights illuminate standard materials
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { RectAreaLightUniformsLib } = require('three/examples/jsm/lights/RectAreaLightUniformsLib.js') as any
+      RectAreaLightUniformsLib.init()
+    } catch {
+      // Gracefully skip if unavailable
+    }
+  }, [gl])
+  return null
+}
+
+// ─── Sky System ──────────────────────────────────────────────────────────────
+
+function SkySystem() {
+  const env = useScene((s) => s.environment)
+  if (!env.skyEnabled) return null
+
+  const DEG2RAD = Math.PI / 180
+  const elev = env.sunElevation * DEG2RAD
+  const azim = env.sunAzimuth * DEG2RAD
+  const sunPosition: [number, number, number] = [
+    Math.cos(elev) * Math.sin(azim),
+    Math.sin(elev),
+    Math.cos(elev) * Math.cos(azim),
+  ]
+
+  return (
+    <Sky
+      distance={450000}
+      sunPosition={sunPosition}
+      turbidity={env.skyTurbidity}
+      rayleigh={env.skyRayleigh}
+      mieCoefficient={0.005}
+      mieDirectionalG={0.8}
+    />
+  )
 }
 
 // ─── Fog Controller ──────────────────────────────────────────────────────────
@@ -865,16 +1003,26 @@ function InnerScene() {
   const deselectAll = useScene((s) => s.deselectAll)
   const transformSpace = useScene((s) => s.transformSpace)
 
+  const mapSize = environment.shadowMapSize ?? 2048
+
+  // When sky is enabled, position the default directional light at the sun position
+  const DEG2RAD = Math.PI / 180
+  const skyDirPos: [number, number, number] = environment.skyEnabled ? [
+    Math.cos(environment.sunElevation * DEG2RAD) * Math.sin(environment.sunAzimuth * DEG2RAD) * 50,
+    Math.sin(environment.sunElevation * DEG2RAD) * 50,
+    Math.cos(environment.sunElevation * DEG2RAD) * Math.cos(environment.sunAzimuth * DEG2RAD) * 50,
+  ] : environment.directionalPosition
+
   const sceneObjects = (
     <>
-      {/* Default environment lights (when no HDRI light objects) */}
+      {/* Default environment lights */}
       <ambientLight color={environment.ambientColor} intensity={environment.ambientIntensity} />
       <directionalLight
         color={environment.directionalColor}
         intensity={environment.directionalIntensity}
-        position={environment.directionalPosition}
+        position={skyDirPos}
         castShadow={environment.shadowsEnabled}
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[mapSize, mapSize]}
         shadow-camera-far={100}
         shadow-camera-left={-20}
         shadow-camera-right={20}
@@ -889,6 +1037,8 @@ function InnerScene() {
       <CameraController />
       <FogController />
       <HDRIEnvironment />
+      <SkySystem />
+      <ShadowMapSetup />
       <PostProcessing />
 
       {/* Grid */}
@@ -904,8 +1054,8 @@ function InnerScene() {
         sectionColor="#2a2a4e"
       />
 
-      {/* Stars when no HDRI */}
-      {!environment.hdriUrl && <Stars radius={100} depth={50} count={3000} factor={4} fade />}
+      {/* Stars when no HDRI and no sky shader */}
+      {!environment.hdriUrl && !environment.skyEnabled && <Stars radius={100} depth={50} count={3000} factor={4} fade />}
     </>
   )
 
@@ -936,6 +1086,7 @@ export function ViewportCanvas() {
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure,
           powerPreference: 'high-performance',
+          preserveDrawingBuffer: true,
         }}
         camera={{ position: [10, 8, 10], fov: 60, near: 0.1, far: 1000 }}
         onPointerMissed={() => deselectAll()}

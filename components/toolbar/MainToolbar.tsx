@@ -74,12 +74,13 @@ export function MainToolbar() {
     { label: 'Capsule', geo: { type: 'capsule' as const, radius: 0.3, height: 1 } },
   ]
 
-  const LIGHTS = [
-    { label: 'Point Light', ltype: 'point' as const },
-    { label: 'Directional', ltype: 'directional' as const },
-    { label: 'Spot Light', ltype: 'spot' as const },
-    { label: 'Ambient', ltype: 'ambient' as const },
-    { label: 'Hemisphere', ltype: 'hemisphere' as const },
+  const LIGHTS: { label: string; ltype: import('@/lib/scene/SceneStore').LightType; extra?: Partial<import('@/lib/scene/SceneStore').LightConfig> }[] = [
+    { label: 'Point Light', ltype: 'point' },
+    { label: 'Directional', ltype: 'directional' },
+    { label: 'Spot Light', ltype: 'spot' },
+    { label: 'Area Light', ltype: 'rectarea', extra: { rectAreaWidth: 4, rectAreaHeight: 4 } },
+    { label: 'Ambient', ltype: 'ambient' },
+    { label: 'Hemisphere', ltype: 'hemisphere' },
   ]
 
   return (
@@ -221,7 +222,7 @@ export function MainToolbar() {
               <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Lights</div>
               {LIGHTS.map((l) => (
                 <DropdownItem key={l.label} onClick={() => {
-                  addObject({ name: l.label, type: 'light', light: { type: l.ltype, intensity: 1, color: '#ffffff', distance: 20, decay: 2, angle: Math.PI / 4, penumbra: 0.1, castShadow: true }, transform: { position: [0, 5, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
+                  addObject({ name: l.label, type: 'light', light: { type: l.ltype, intensity: 1, color: '#ffffff', distance: 20, decay: 2, angle: Math.PI / 4, penumbra: 0.1, castShadow: true, ...l.extra }, transform: { position: [0, 5, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
                   setShowAdd(false)
                 }}>{l.label}</DropdownItem>
               ))}

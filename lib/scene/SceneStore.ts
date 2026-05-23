@@ -6,7 +6,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 
 export type ObjectType = 'mesh' | 'light' | 'group' | 'particle'
 export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'octahedron' | 'icosahedron' | 'text' | 'gltf'
-export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'
+export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere' | 'rectarea'
 export type MaterialType = 'standard' | 'physical' | 'toon' | 'wireframe' | 'glass' | 'hologram'
 export type AnimationPreset = 'none' | 'float' | 'spin' | 'pulse' | 'orbit' | 'shake' | 'wave' | 'bounce'
 export type PhysicsBodyType = 'dynamic' | 'static' | 'kinematic'
@@ -79,6 +79,8 @@ export interface LightConfig {
   castShadow: boolean
   skyColor?: string
   groundColor?: string
+  rectAreaWidth?: number
+  rectAreaHeight?: number
 }
 
 export interface PhysicsConfig {
@@ -172,6 +174,12 @@ export interface EnvironmentState {
   directionalIntensity: number
   directionalPosition: [number, number, number]
   shadowsEnabled: boolean
+  shadowMapSize: number
+  skyEnabled: boolean
+  skyTurbidity: number
+  skyRayleigh: number
+  sunElevation: number
+  sunAzimuth: number
 }
 
 export interface PostFXState {
@@ -193,7 +201,7 @@ export interface PanelState {
   leftOpen: boolean
   rightOpen: boolean
   bottomOpen: boolean
-  leftTab: 'outliner' | 'material'
+  leftTab: 'outliner' | 'material' | 'lighting'
   rightTab: 'chat' | 'assets'
   bottomTab: 'animation' | 'physics'
 }
@@ -297,6 +305,8 @@ interface SceneActions {
   setCameraFov: (fov: number) => void
 
   showNotification: (msg: string, type?: 'success' | 'error' | 'info') => void
+  setBakePreview: (url: string | null) => void
+  setBakeBlend: (v: number) => void
 
   pushHistory: () => void
   undo: () => void
@@ -345,6 +355,8 @@ interface SceneState extends SceneActions {
   cameraFov: number
 
   notification: { message: string; type: 'success' | 'error' | 'info'; id: string } | null
+  bakePreviewUrl: string | null
+  bakeBlend: number
 
   past: string[]
   future: string[]
@@ -426,6 +438,12 @@ export const useScene = create<SceneState>()(
         directionalIntensity: 1.5,
         directionalPosition: [5, 10, 5],
         shadowsEnabled: true,
+        shadowMapSize: 2048,
+        skyEnabled: false,
+        skyTurbidity: 10,
+        skyRayleigh: 3,
+        sunElevation: 45,
+        sunAzimuth: 180,
       },
 
       postFX: {
@@ -467,6 +485,8 @@ export const useScene = create<SceneState>()(
       cameraFov: 60,
 
       notification: null,
+      bakePreviewUrl: null,
+      bakeBlend: 0.5,
 
       past: [],
       future: [],
@@ -758,6 +778,9 @@ export const useScene = create<SceneState>()(
         set((s) => { s.notification = { message: msg, type, id } })
         _notifTimer = setTimeout(() => set((s) => { s.notification = null }), 3000)
       },
+
+      setBakePreview(url) { set((s) => { s.bakePreviewUrl = url }) },
+      setBakeBlend(v) { set((s) => { s.bakeBlend = v }) },
 
       // ── Undo / Redo ──────────────────────────────────────────────────────
 

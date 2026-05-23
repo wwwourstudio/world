@@ -12,9 +12,10 @@ import { AssetBrowser } from '@/components/panels/AssetBrowser'
 import { AnimationTimeline } from '@/components/panels/AnimationTimeline'
 import { PhysicsPanel } from '@/components/panels/PhysicsPanel'
 import { SceneSwitcher } from '@/components/panels/SceneSwitcher'
+import { LightingPanel } from '@/components/panels/LightingPanel'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
-import { CheckCircle2, AlertCircle, Info, Layers, Palette } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, Layers, Palette, Sun } from 'lucide-react'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 
 class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
@@ -41,6 +42,23 @@ const ViewportCanvas = dynamic(
   () => import('@/components/viewport/ViewportCanvas').then((m) => m.ViewportCanvas),
   { ssr: false, loading: () => <div className="w-full h-full" style={{ background: '#0B0C0F' }} /> }
 )
+
+function BakeOverlay() {
+  const bakePreviewUrl = useScene((s) => s.bakePreviewUrl)
+  const bakeBlend = useScene((s) => s.bakeBlend)
+  if (!bakePreviewUrl) return null
+  return (
+    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 40 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={bakePreviewUrl}
+        alt=""
+        className="w-full h-full object-cover"
+        style={{ opacity: bakeBlend }}
+      />
+    </div>
+  )
+}
 
 function Notification() {
   const notification = useScene((s) => s.notification)
@@ -164,6 +182,7 @@ export default function WorldBuilderPage() {
               {([
                 { id: 'outliner', label: 'Scene', icon: <Layers size={12} strokeWidth={1.75} /> },
                 { id: 'material', label: 'Material', icon: <Palette size={12} strokeWidth={1.75} /> },
+                { id: 'lighting', label: 'Lighting', icon: <Sun size={12} strokeWidth={1.75} /> },
               ] as const).map((t) => (
                 <button
                   key={t.id}
@@ -191,8 +210,10 @@ export default function WorldBuilderPage() {
                     <PropertiesPanel />
                   </div>
                 </>
-              ) : (
+              ) : panels.leftTab === 'material' ? (
                 <MaterialEditor />
+              ) : (
+                <LightingPanel />
               )}
             </div>
           </div>
@@ -258,6 +279,7 @@ export default function WorldBuilderPage() {
         </div>
       )}
 
+      <BakeOverlay />
       <Notification />
     </div>
   )
