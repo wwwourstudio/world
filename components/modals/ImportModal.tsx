@@ -13,7 +13,7 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
   const setEnvironment = useScene((s) => s.setEnvironment)
 
   const processFile = useCallback((file: File) => {
-    if (file.name.endsWith('.json')) {
+    if (file.name.endsWith('.json') || file.name.endsWith('.wbp')) {
       const reader = new FileReader()
       reader.onload = (e) => {
         try {
@@ -48,7 +48,7 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
       showNotification(`Imported GLTF: ${file.name}`)
       onClose()
     } else {
-      setStatus(`Unsupported format: ${file.name.split('.').pop()}. Supported: .json, .gltf, .glb`)
+      setStatus(`Unsupported format: ${file.name.split('.').pop()}. Supported: .json, .wbp, .gltf, .glb`)
     }
   }, [addObject, setEnvironment, showNotification, onClose])
 

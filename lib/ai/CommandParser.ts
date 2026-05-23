@@ -289,7 +289,7 @@ export function executeAction(action: SceneAction): void {
     case 'light': {
       const existing = target ? findObjectByName(store.objects, target) : undefined
       if (existing?.light) {
-        store.updateObject(existing.id, { light: params as Partial<LightConfig> })
+        store.updateObject(existing.id, { light: params as unknown as LightConfig })
       } else {
         const lightType = ((params.lightType ?? params.type ?? 'point') as string) as LightConfig['type']
         store.addObject({
@@ -298,7 +298,7 @@ export function executeAction(action: SceneAction): void {
           geometry: { type: 'sphere', radius: 0.1 },
           material: {} as MaterialConfig,
           light: {
-            type: lightType,
+            type: lightType as LightConfig['type'],
             intensity: (params.intensity as number) ?? 1,
             color: (params.color as string) ?? '#ffffff',
             distance: (params.distance as number) ?? 20,

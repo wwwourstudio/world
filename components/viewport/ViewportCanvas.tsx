@@ -28,6 +28,7 @@ import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { cameraFrameFn } from '@/lib/cameraFrame'
+import { fbmNoise } from '@/lib/noise'
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ function SceneGeometry({ geo }: { geo: GeometryConfig }) {
     case 'tetrahedron': return <tetrahedronGeometry args={[geo.radius ?? 0.5]} />
     case 'octahedron': return <octahedronGeometry args={[geo.radius ?? 0.5]} />
     case 'icosahedron': return <icosahedronGeometry args={[geo.radius ?? 0.5, geo.segments ?? 0]} />
+    case 'torusknot': return <torusKnotGeometry args={[geo.radius ?? 0.4, geo.tube ?? 0.15, 100, 16]} />
     default: return <boxGeometry args={[geo.width ?? 1, geo.height ?? 1, geo.depth ?? 1]} />
   }
 }
@@ -507,20 +509,58 @@ function ParticleObject({ obj }: { obj: SceneObject }) {
     meshRef.current.instanceMatrix.needsUpdate = true
   }, [matrices])
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!meshRef.current) return
-    if (cfg.preset !== 'rain' && cfg.preset !== 'snow' && cfg.preset !== 'sparks') return
+    const preset = cfg.preset
+    const animated = ['rain', 'snow', 'sparks', 'fire', 'smoke', 'magic']
+    if (!animated.includes(preset)) return
     const dummy = new THREE.Object3D()
-    const speed = cfg.preset === 'rain' ? 4 : cfg.preset === 'sparks' ? 2.5 : 0.5
     const [sx, sy, sz] = cfg.spread
+    const t = state.clock.elapsedTime
+
+    if (preset === 'magic') {
+      for (let i = 0; i < cfg.count; i++) {
+        const phase = (i / cfg.count) * Math.PI * 2
+        const layer = i % 3
+        const speed = 0.3 + ((i * 37) % 7) * 0.07
+        const angle = phase + t * speed
+        const radius = sx * 0.35 * (0.4 + 0.6 * ((i * 173) % 100) / 100)
+        const hy = Math.sin(phase * 2 + t * 0.5) * sy * 0.4 + (layer - 1) * sy * 0.15
+        dummy.position.set(Math.cos(angle) * radius, hy, Math.sin(angle) * radius)
+        const sc = cfg.instanceScale * (0.5 + 0.5 * Math.abs(Math.sin(t * 3 + phase)))
+        dummy.scale.setScalar(Math.max(0.001, sc))
+        dummy.updateMatrix()
+        meshRef.current.setMatrixAt(i, dummy.matrix)
+      }
+      meshRef.current.instanceMatrix.needsUpdate = true
+      return
+    }
+
+    const isRising = preset === 'fire' || preset === 'smoke'
+    const speed = preset === 'rain' ? 4 : preset === 'sparks' ? 2.5 : preset === 'snow' ? 0.5 : preset === 'fire' ? 1.8 : 0.7
     for (let i = 0; i < cfg.count; i++) {
       meshRef.current.getMatrixAt(i, dummy.matrix)
       dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale)
-      dummy.position.y -= speed * delta
-      if (dummy.position.y < -sy * 0.5) {
-        dummy.position.y = sy * 0.5
-        dummy.position.x = (Math.random() - 0.5) * sx
-        dummy.position.z = (Math.random() - 0.5) * sz
+      if (isRising) {
+        const speedMult = 0.5 + ((i * 1619) % 100) / 100
+        dummy.position.y += speed * delta * speedMult
+        if (preset === 'smoke') {
+          dummy.position.x += Math.sin(t + i) * delta * 0.08
+          dummy.position.z += Math.cos(t * 0.7 + i) * delta * 0.08
+        }
+        if (dummy.position.y > sy * 0.5) {
+          const r = (preset === 'fire' ? 0.3 : 0.5) * (((i * 997) % 100) / 100)
+          const a = ((i * 127) % 100) / 100 * Math.PI * 2
+          dummy.position.set(Math.cos(a) * r * sx, -sy * 0.5 + ((i * 43) % 30) / 100, Math.sin(a) * r * sz)
+          dummy.scale.setScalar(cfg.instanceScale * (0.3 + ((i * 317) % 100) / 100 * 0.7))
+        }
+      } else {
+        dummy.position.y -= speed * delta
+        if (dummy.position.y < -sy * 0.5) {
+          dummy.position.y = sy * 0.5
+          dummy.position.x = (Math.random() - 0.5) * sx
+          dummy.position.z = (Math.random() - 0.5) * sz
+        }
       }
       dummy.updateMatrix()
       meshRef.current.setMatrixAt(i, dummy.matrix)
@@ -545,6 +585,195 @@ function ParticleObject({ obj }: { obj: SceneObject }) {
       {(cfg.instanceGeometry === 'sphere' || !cfg.instanceGeometry) && <sphereGeometry args={[0.5, 6, 6]} />}
       <primitive object={material} attach="material" />
     </instancedMesh>
+  )
+}
+
+// ─── Terrain Object ──────────────────────────────────────────────────────────
+
+function TerrainObject({ obj }: { obj: SceneObject }) {
+  const meshRef = useRef<THREE.Mesh>(null)
+  const geoRef = useRef<THREE.BufferGeometry | null>(null)
+  const { selectObject, sculptTerrain, updateTerrain } = useScene()
+  const activeTool = useScene((s) => s.activeTool)
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const sculpting = useRef(false)
+  const cfg = obj.terrain!
+
+  const geometry = useMemo(() => {
+    const res = cfg.resolution
+    const size = cfg.size
+    const half = size / 2
+    const step = size / (res - 1)
+    const count = res * res
+
+    const positions = new Float32Array(count * 3)
+    const uvs = new Float32Array(count * 2)
+
+    for (let iy = 0; iy < res; iy++) {
+      for (let ix = 0; ix < res; ix++) {
+        const i = iy * res + ix
+        const x = -half + ix * step
+        const z = -half + iy * step
+        const h = fbmNoise(x, z, cfg.seed, cfg.layers, cfg.noiseScale) * cfg.heightScale
+        positions[i * 3] = x
+        positions[i * 3 + 1] = h
+        positions[i * 3 + 2] = z
+        uvs[i * 2] = ix / (res - 1)
+        uvs[i * 2 + 1] = iy / (res - 1)
+      }
+    }
+
+    const indices: number[] = []
+    for (let iy = 0; iy < res - 1; iy++) {
+      for (let ix = 0; ix < res - 1; ix++) {
+        const a = iy * res + ix
+        const b = iy * res + ix + 1
+        const c = (iy + 1) * res + ix
+        const d = (iy + 1) * res + ix + 1
+        indices.push(a, c, b, b, c, d)
+      }
+    }
+
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+    geo.setIndex(indices)
+    geo.computeVertexNormals()
+    geoRef.current = geo
+    return geo
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.resolution, cfg.size, cfg.seed, cfg.layers, cfg.noiseScale, cfg.heightScale])
+
+  // Apply sculpted heights imperatively
+  useEffect(() => {
+    const geo = geoRef.current
+    if (!geo || !cfg.vertexHeights || cfg.vertexHeights.length !== cfg.resolution * cfg.resolution) return
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute
+    cfg.vertexHeights.forEach((h, i) => pos.setY(i, h))
+    pos.needsUpdate = true
+    geo.computeVertexNormals()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.vertexHeights, cfg.resolution])
+
+  const terrainMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      lowColor: { value: new THREE.Color(cfg.lowColor) },
+      midColor: { value: new THREE.Color(cfg.midColor) },
+      highColor: { value: new THREE.Color(cfg.highColor) },
+      maxH: { value: Math.max(cfg.heightScale, 0.001) },
+    },
+    vertexShader: `varying float vY; void main() { vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 lowColor; uniform vec3 midColor; uniform vec3 highColor; uniform float maxH;
+      varying float vY;
+      void main() {
+        float t = clamp(vY/maxH,0.0,1.0);
+        vec3 col = t<0.5 ? mix(lowColor,midColor,t*2.0) : mix(midColor,highColor,(t-0.5)*2.0);
+        gl_FragColor = vec4(col,1.0);
+      }`,
+  }), [cfg.lowColor, cfg.midColor, cfg.highColor, cfg.heightScale])
+
+  function handleSculptAt(point: THREE.Vector3) {
+    const lx = point.x - obj.transform.position[0]
+    const lz = point.z - obj.transform.position[2]
+    if (!cfg.vertexHeights || cfg.vertexHeights.length !== cfg.resolution * cfg.resolution) {
+      const geo = geoRef.current
+      if (!geo) return
+      const pos = geo.getAttribute('position') as THREE.BufferAttribute
+      const heights = Array.from({ length: pos.count }, (_, i) => pos.getY(i))
+      updateTerrain(obj.id, { vertexHeights: heights })
+    }
+    sculptTerrain(obj.id, lx, lz)
+  }
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      visible={obj.visible}
+      castShadow={obj.castShadow}
+      receiveShadow={obj.receiveShadow}
+      geometry={geometry}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (activeTool === 'sculpt') handleSculptAt(e.point)
+        else selectObject(obj.id, e.shiftKey)
+      }}
+      onPointerDown={(e) => {
+        if (activeTool === 'sculpt') { e.stopPropagation(); sculpting.current = true; handleSculptAt(e.point) }
+      }}
+      onPointerUp={() => { sculpting.current = false }}
+      onPointerLeave={() => { sculpting.current = false }}
+      onPointerMove={(e) => {
+        if (activeTool === 'sculpt' && sculpting.current) { e.stopPropagation(); handleSculptAt(e.point) }
+      }}
+    >
+      <primitive object={terrainMat} attach="material" />
+      {isSelected && (
+        <mesh>
+          <boxGeometry args={[cfg.size * 1.01, 0.05, cfg.size * 1.01]} />
+          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.3} />
+        </mesh>
+      )}
+    </mesh>
+  )
+}
+
+// ─── Water Object ─────────────────────────────────────────────────────────────
+
+function WaterObject({ obj }: { obj: SceneObject }) {
+  const ref = useRef<THREE.Mesh>(null)
+  const { selectObject } = useScene()
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const cfg = obj.water!
+
+  const waterGeo = useMemo(() => new THREE.PlaneGeometry(cfg.size, cfg.size, 32, 32), [cfg.size])
+
+  const waterMat = useMemo(() => new THREE.MeshPhongMaterial({
+    color: new THREE.Color(cfg.color),
+    opacity: cfg.opacity,
+    transparent: cfg.opacity < 1,
+    shininess: 120,
+    specular: new THREE.Color('#aaccff'),
+    side: THREE.DoubleSide,
+  }), [cfg.color, cfg.opacity])
+
+  useFrame((state) => {
+    if (!ref.current) return
+    const geo = ref.current.geometry as THREE.BufferGeometry
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute
+    const t = state.clock.elapsedTime * cfg.waveSpeed
+    const scale = cfg.waveScale
+    const h = cfg.waveHeight
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i)
+      const y = pos.getY(i)
+      pos.setZ(i, Math.sin(x * scale + t) * h * 0.5 + Math.cos(y * scale * 0.7 + t * 1.3) * h * 0.5)
+    }
+    pos.needsUpdate = true
+    geo.computeVertexNormals()
+  })
+
+  return (
+    <mesh
+      ref={ref}
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      visible={obj.visible}
+      geometry={waterGeo}
+      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+    >
+      <primitive object={waterMat} attach="material" />
+      {isSelected && (
+        <mesh>
+          <planeGeometry args={[cfg.size * 1.01, cfg.size * 1.01]} />
+          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.3} />
+        </mesh>
+      )}
+    </mesh>
   )
 }
 
@@ -719,6 +948,8 @@ function SceneObjectNode({ id }: { id: string }) {
   if (!obj || !obj.visible) return null
 
   if (obj.type === 'light' && obj.light) return <LightObject obj={obj} />
+  if (obj.type === 'terrain' && obj.terrain) return <TerrainObject obj={obj} />
+  if (obj.type === 'water' && obj.water) return <WaterObject obj={obj} />
   if (obj.type === 'particle') return <ParticleObject obj={obj} />
   if (obj.geometry?.type === 'text') return <TextObject obj={obj} />
   if (obj.type === 'group') {
@@ -766,7 +997,7 @@ function GizmoControl() {
     }
   }, [obj, selectedId])
 
-  if (!obj || isPlaying || activeTool === 'select') return null
+  if (!obj || isPlaying || activeTool === 'select' || activeTool === 'sculpt') return null
 
   const mode = activeTool === 'rotate' ? 'rotate' : activeTool === 'scale' ? 'scale' : 'translate'
 

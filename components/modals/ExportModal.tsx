@@ -1,19 +1,25 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { X, Download, Code, FileJson, Monitor, Camera, Frame } from 'lucide-react'
+import { X, Download, Code, FileJson, Monitor, Camera, Frame, Video, Share2, Package } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
-import { generateEmbedCode, generateThreeJSCode } from '@/lib/three/ExportSystem'
+import { generateEmbedCode, generateThreeJSCode, exportSceneGLB } from '@/lib/three/ExportSystem'
 import { captureCanvas } from '@/lib/canvasCapture'
+import { videoRecorder } from '@/lib/three/VideoRecorder'
 
-type ExportTab = 'embed' | 'threejs' | 'json' | 'screenshot' | 'iframe'
+type ExportTab = 'embed' | 'threejs' | 'json' | 'screenshot' | 'iframe' | 'video' | 'glb' | 'share'
 
 export function ExportModal({ onClose }: { onClose: () => void }) {
   const objects = useScene((s) => s.objects)
   const environment = useScene((s) => s.environment)
+  const isRecording = useScene((s) => s.isRecording)
+  const setRecording = useScene((s) => s.setRecording)
+  const showNotification = useScene((s) => s.showNotification)
   const [tab, setTab] = useState<ExportTab>('embed')
   const [copied, setCopied] = useState(false)
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [glbExporting, setGlbExporting] = useState(false)
   const [iframeWidth, setIframeWidth] = useState(800)
   const [iframeHeight, setIframeHeight] = useState(600)
 
@@ -26,6 +32,9 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     json: JSON.stringify({ objects, environment }, null, 2),
     screenshot: '',
     iframe: '',
+    video: '',
+    glb: '',
+    share: '',
   }
 
   const iframeSnippet = `<iframe\n  srcdoc="${embedHtml.replace(/"/g, '&quot;').replace(/\n/g, '')}"\n  width="${iframeWidth}" height="${iframeHeight}"\n  style="border:none;border-radius:12px"\n  allowfullscreen\n></iframe>`
@@ -49,18 +58,68 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     URL.revokeObjectURL(url)
   }
 
+  function handleStartRecording() {
+    const canvas = captureCanvas.dom
+    if (!canvas) { showNotification('Canvas not ready', 'error'); return }
+    const ok = videoRecorder.start(canvas, 30)
+    if (ok) { setRecording(true); setVideoUrl(null); showNotification('Recording started') }
+    else showNotification('Recording not supported in this browser', 'error')
+  }
+
+  async function handleStopRecording() {
+    const url = await videoRecorder.stop()
+    setRecording(false)
+    if (url) { setVideoUrl(url); showNotification('Recording ready for download') }
+  }
+
+  async function handleExportGLB() {
+    setGlbExporting(true)
+    try {
+      await exportSceneGLB(objects)
+      showNotification('GLB exported')
+    } catch (e) {
+      console.error(e); showNotification('GLB export failed', 'error')
+    } finally {
+      setGlbExporting(false)
+    }
+  }
+
+  function handleCopyShareUrl() {
+    try {
+      const data = JSON.stringify({ objects, environment })
+      const compressed = btoa(encodeURIComponent(data))
+      const url = `${window.location.origin}${window.location.pathname}?scene=${compressed}`
+      navigator.clipboard.writeText(url)
+      showNotification('Share URL copied to clipboard')
+    } catch {
+      showNotification('Scene too large to share via URL', 'error')
+    }
+  }
+
+  function handleSaveWBP() {
+    const data = JSON.stringify({ objects, environment }, null, 2)
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'scene.wbp'; a.click()
+    URL.revokeObjectURL(url)
+    showNotification('Scene saved as .wbp')
+  }
+
   const TABS: { id: ExportTab; label: string; icon: typeof Code }[] = [
     { id: 'embed', label: 'Embed HTML', icon: Monitor },
     { id: 'threejs', label: 'Three.js', icon: Code },
     { id: 'json', label: 'Scene JSON', icon: FileJson },
     { id: 'screenshot', label: 'Screenshot', icon: Camera },
+    { id: 'video', label: 'Video', icon: Video },
+    { id: 'glb', label: 'GLB', icon: Package },
+    { id: 'share', label: 'Share', icon: Share2 },
     { id: 'iframe', label: 'iFrame', icon: Frame },
   ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
-        className="w-[700px] max-w-[95vw] h-[520px] max-h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden"
+        className="w-[760px] max-w-[95vw] h-[520px] max-h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden"
         style={{ background: '#111318', border: '1px solid #1E2028' }}
       >
         {/* Header */}
@@ -94,7 +153,101 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          {tab === 'iframe' ? (
+          {tab === 'video' ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: '#1E2028' }}>
+                <Video size={22} style={{ color: isRecording ? '#ff5c5c' : '#5B6CFF' }} />
+              </div>
+              {isRecording ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-[13px] font-semibold" style={{ color: '#ff6060' }}>Recording…</span>
+                  </div>
+                  <p className="text-[12px] text-center" style={{ color: '#7A7E92' }}>Close this modal to see the scene while recording, then reopen to stop.</p>
+                  <button onClick={handleStopRecording}
+                    className="px-4 py-2 rounded-lg text-[12px] font-medium"
+                    style={{ background: '#ff3a3a', color: '#fff' }}>
+                    Stop &amp; Save
+                  </button>
+                </>
+              ) : videoUrl ? (
+                <>
+                  <p className="text-[12px]" style={{ color: '#7A7E92' }}>Recording complete!</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setVideoUrl(null)}
+                      className="px-4 py-2 rounded-lg text-[12px] font-medium border"
+                      style={{ color: '#7A7E92', borderColor: '#1E2028' }}>
+                      Discard
+                    </button>
+                    <a href={videoUrl} download="world-recording.webm"
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-medium"
+                      style={{ background: '#5B6CFF', color: '#fff' }}>
+                      <Download size={12} strokeWidth={2} />
+                      Download WebM
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-[12px] text-center" style={{ color: '#7A7E92' }}>
+                    Captures the viewport as a WebM video. Close this modal while recording to interact with the scene.
+                  </p>
+                  <button onClick={handleStartRecording}
+                    className="px-4 py-2 rounded-lg text-[12px] font-medium flex items-center gap-2"
+                    style={{ background: '#5B6CFF', color: '#fff' }}>
+                    <Video size={13} strokeWidth={2} />
+                    Start Recording
+                  </button>
+                </>
+              )}
+            </div>
+          ) : tab === 'glb' ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: '#1E2028' }}>
+                <Package size={22} style={{ color: '#5B6CFF' }} />
+              </div>
+              <p className="text-[12px] text-center" style={{ color: '#7A7E92' }}>
+                Exports mesh objects as a binary GLTF (.glb) file. Lights, particles, terrain, and water are not included.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={handleSaveWBP}
+                  className="px-4 py-2 rounded-lg text-[12px] font-medium border"
+                  style={{ color: '#7A7E92', borderColor: '#1E2028' }}>
+                  Save as .wbp
+                </button>
+                <button onClick={handleExportGLB} disabled={glbExporting}
+                  className="px-4 py-2 rounded-lg text-[12px] font-medium flex items-center gap-1.5"
+                  style={{ background: glbExporting ? '#2a2a3a' : '#5B6CFF', color: '#fff', opacity: glbExporting ? 0.7 : 1 }}>
+                  <Download size={12} strokeWidth={2} />
+                  {glbExporting ? 'Exporting…' : 'Export GLB'}
+                </button>
+              </div>
+            </div>
+          ) : tab === 'share' ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: '#1E2028' }}>
+                <Share2 size={22} style={{ color: '#5B6CFF' }} />
+              </div>
+              <p className="text-[12px] text-center" style={{ color: '#7A7E92' }}>
+                Generates a shareable URL containing the full scene. The URL may be long for complex scenes.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={handleSaveWBP}
+                  className="px-4 py-2 rounded-lg text-[12px] font-medium border"
+                  style={{ color: '#7A7E92', borderColor: '#1E2028' }}>
+                  <Download size={12} strokeWidth={2} className="inline mr-1" />
+                  Save .wbp File
+                </button>
+                <button onClick={handleCopyShareUrl}
+                  className="px-4 py-2 rounded-lg text-[12px] font-medium flex items-center gap-1.5"
+                  style={{ background: '#5B6CFF', color: '#fff' }}>
+                  <Share2 size={12} strokeWidth={2} />
+                  Copy Share URL
+                </button>
+              </div>
+            </div>
+          ) : tab === 'iframe' ? (
             <div className="flex flex-col h-full p-4 gap-3">
               {/* Size controls */}
               <div className="flex items-center gap-4 shrink-0">
@@ -187,7 +340,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer */}
-        {tab !== 'screenshot' && tab !== 'iframe' && (
+        {tab !== 'screenshot' && tab !== 'iframe' && tab !== 'video' && tab !== 'glb' && tab !== 'share' && (
           <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderTop: '1px solid #1E2028' }}>
             <span className="text-[11px]" style={{ color: '#7A7E92' }}>
               {Object.keys(objects).length} objects · {(new TextEncoder().encode(content[tab]).length / 1024).toFixed(1)} KB

@@ -122,7 +122,7 @@ export default function WorldBuilderPage() {
       const key = e.key.toLowerCase()
       const ctrl = e.ctrlKey || e.metaKey
 
-      const TOOL_MAP: Record<string, ActiveTool> = { q: 'select', w: 'translate', e: 'rotate', r: 'scale' }
+      const TOOL_MAP: Record<string, ActiveTool> = { q: 'select', w: 'translate', e: 'rotate', r: 'scale', t: 'sculpt' }
       if (!ctrl && TOOL_MAP[key]) {
         if (cameraMode === 'fly') return
         e.preventDefault()

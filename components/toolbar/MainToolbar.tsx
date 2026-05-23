@@ -5,10 +5,11 @@ import {
   Globe2, MousePointer2, Move, RotateCw, Maximize2,
   PanelLeft, PanelRight, PanelBottom, Play, Square,
   Undo2, Redo2, Grid3X3, Settings, Download, Upload,
-  ChevronDown, Zap, Eye
+  ChevronDown, Zap, Eye, Paintbrush, Mountain
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { WORLD_TEMPLATES } from '@/lib/ai/WorldTemplates'
+import { DEFAULT_TERRAIN, DEFAULT_WATER } from '@/lib/scene/SceneStore'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
 import { ExportModal } from '@/components/modals/ExportModal'
 import { ImportModal } from '@/components/modals/ImportModal'
@@ -18,6 +19,7 @@ const TOOLS: { id: ActiveTool; icon: typeof MousePointer2; label: string; key: s
   { id: 'translate', icon: Move, label: 'Move', key: 'W' },
   { id: 'rotate', icon: RotateCw, label: 'Rotate', key: 'E' },
   { id: 'scale', icon: Maximize2, label: 'Scale', key: 'R' },
+  { id: 'sculpt', icon: Paintbrush, label: 'Sculpt', key: 'T' },
 ]
 
 export function MainToolbar() {
@@ -218,6 +220,16 @@ export function MainToolbar() {
                 addObject({ name: 'Snow', type: 'particle', geometry: { type: 'sphere', radius: 0.1 }, particle: { count: 400, spread: [10, 8, 10], instanceGeometry: 'sphere', instanceScale: 0.05, randomScale: 0.5, preset: 'snow' }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
                 setShowAdd(false)
               }}>✦ Snow</DropdownItem>
+              <div className="w-full h-px my-1" style={{ background: '#1E2028' }} />
+              <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Environment</div>
+              <DropdownItem onClick={() => {
+                addObject({ name: 'Terrain', type: 'terrain', geometry: { type: 'plane' }, terrain: { ...DEFAULT_TERRAIN }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
+                setShowAdd(false)
+              }}>⛰ Terrain</DropdownItem>
+              <DropdownItem onClick={() => {
+                addObject({ name: 'Water', type: 'water', geometry: { type: 'plane' }, water: { ...DEFAULT_WATER }, transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [1, 1, 1] } })
+                setShowAdd(false)
+              }}>🌊 Water</DropdownItem>
               <div className="w-full h-px my-1" style={{ background: '#1E2028' }} />
               <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Lights</div>
               {LIGHTS.map((l) => (
