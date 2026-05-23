@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Sparkles, ArrowUp, Loader2, Undo2, AlertCircle, CheckCircle2, X } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Sparkles, ArrowUp, Loader2, Undo2, AlertCircle, CheckCircle2, Mic, MicOff } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { parseCommands, executeCommands } from '@/lib/ai/CommandParser'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
-import { WORLD_TEMPLATES } from '@/lib/ai/WorldTemplates'
 
 interface UserMessage { role: 'user'; content: string }
 interface AssistantMessage {
@@ -13,8 +12,12 @@ interface AssistantMessage {
   content: string
   commandCount: number
   status: 'streaming' | 'complete' | 'error'
+  suggestions?: string[]
+  actionErrors?: string[]
 }
 type Message = UserMessage | AssistantMessage
+
+type HistoryMessage = { role: 'user' | 'assistant'; content: string }
 
 const ALL_SUGGESTIONS = [
   { label: 'Ancient Forest', icon: '🌲', prompt: 'Build a dense ancient forest with towering trees, mossy rocks, atmospheric fog, and dappled light filtering through the canopy' },
@@ -48,10 +51,14 @@ export function ChatPanel() {
   const past = useScene((s) => s.past)
 
   const [messages, setMessages] = useState<Message[]>([])
+  const [conversationHistory, setConversationHistory] = useState<HistoryMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [listening, setListening] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -74,6 +81,36 @@ export function ChatPanel() {
     })
   }
 
+  const toggleVoice = useCallback(() => {
+    if (listening) {
+      recognitionRef.current?.stop()
+      setListening(false)
+      return
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any
+    const SR = win.SpeechRecognition || win.webkitSpeechRecognition
+    if (!SR) return
+
+    const recognition = new SR()
+    recognition.continuous = false
+    recognition.interimResults = false
+    recognition.lang = 'en-US'
+
+    recognition.onresult = (e: { results: { [key: number]: { [key: number]: { transcript: string } } } }) => {
+      const transcript = e.results[0][0].transcript
+      setInput((prev) => prev ? `${prev} ${transcript}` : transcript)
+    }
+
+    recognition.onend = () => setListening(false)
+    recognition.onerror = () => setListening(false)
+
+    recognitionRef.current = recognition
+    recognition.start()
+    setListening(true)
+  }, [listening])
+
   async function send(promptOverride?: string) {
     const prompt = (promptOverride ?? input).trim()
     if (!prompt || loading) return
@@ -88,14 +125,13 @@ export function ChatPanel() {
     setMessages((m) => [...m, userMsg, assistantMsg])
     setLoading(true)
 
-    // Push history snapshot before AI changes
     useScene.getState().pushHistory()
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: enhancedPrompt, systemPrompt }),
+        body: JSON.stringify({ prompt: enhancedPrompt, systemPrompt, history: conversationHistory }),
       })
 
       const reader = res.body?.getReader()
@@ -123,13 +159,18 @@ export function ChatPanel() {
             fullText += event.text as string
             patchLast({ content: fullText })
 
-            // Execute commands as they arrive (on completion of code block)
+            // Execute commands eagerly once a complete code block arrives while streaming
             if (!executed && fullText.includes('```') && fullText.split('```').length > 2) {
-              const { commands, text } = parseCommands(fullText)
-              if (commands.length > 0) {
-                executeCommands(commands)
+              const { commands, actions, text, suggestions } = parseCommands(fullText)
+              if (commands.length > 0 || actions.length > 0) {
+                const result = executeCommands(commands, actions)
                 executed = true
-                patchLast({ content: text || fullText, commandCount: commands.length })
+                patchLast({
+                  content: text || fullText,
+                  commandCount: result.executed,
+                  actionErrors: result.errors.length > 0 ? result.errors : undefined,
+                  suggestions,
+                })
               }
             }
           } else if (event.type === 'error') {
@@ -138,18 +179,35 @@ export function ChatPanel() {
         }
       }
 
-      // Final pass for any remaining commands
-      if (!executed) {
-        const { commands, text } = parseCommands(fullText)
-        if (commands.length > 0) {
-          executeCommands(commands)
-          patchLast({ content: text || fullText, commandCount: commands.length, status: 'complete' })
-        } else {
-          patchLast({ status: 'complete' })
-        }
+      // Final pass for remaining commands
+      const { commands, actions, text, suggestions } = parseCommands(fullText)
+      if (!executed && (commands.length > 0 || actions.length > 0)) {
+        const result = executeCommands(commands, actions)
+        patchLast({
+          content: text || fullText,
+          commandCount: result.executed,
+          actionErrors: result.errors.length > 0 ? result.errors : undefined,
+          suggestions,
+          status: 'complete',
+        })
+      } else if (!executed && suggestions) {
+        patchLast({ suggestions, status: 'complete' })
       } else {
-        patchLast({ status: 'complete' })
+        // Still update suggestions even if commands already ran
+        if (suggestions) patchLast({ suggestions, status: 'complete' })
+        else patchLast({ status: 'complete' })
       }
+
+      // Update conversation history (keep last 10 turns = 20 messages)
+      const cleanText = text || fullText
+      setConversationHistory((prev) => {
+        const updated: HistoryMessage[] = [
+          ...prev,
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: cleanText },
+        ]
+        return updated.slice(-20)
+      })
     } catch (e) {
       patchLast({ content: e instanceof Error ? e.message : 'Connection failed.', status: 'error' })
     } finally {
@@ -158,6 +216,9 @@ export function ChatPanel() {
   }
 
   const isEmpty = messages.length === 0
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const voiceSupported = typeof window !== 'undefined' && !!(((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition))
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: '#111318' }}>
@@ -169,6 +230,12 @@ export function ChatPanel() {
         </div>
         <span className="text-[12px] font-medium" style={{ color: '#E8E9F0' }}>AI Assistant</span>
         <span className="text-[10px] font-mono" style={{ color: '#7A7E92' }}>claude-sonnet-4-6</span>
+        {conversationHistory.length > 0 && (
+          <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-mono"
+            style={{ background: '#1a2050', color: '#5B6CFF' }}>
+            {conversationHistory.length / 2} turn{conversationHistory.length / 2 !== 1 ? 's' : ''}
+          </span>
+        )}
       </div>
 
       {/* Messages */}
@@ -218,6 +285,7 @@ export function ChatPanel() {
                   isLast={i === messages.length - 1}
                   loading={loading && i === messages.length - 1}
                   onUndo={past.length > 0 ? undo : undefined}
+                  onSuggestion={send}
                 />
               )
             )}
@@ -240,32 +308,55 @@ export function ChatPanel() {
             placeholder="Describe a world, scene, or change…"
             disabled={loading}
             rows={1}
-            className="w-full bg-transparent resize-none px-3.5 py-2.5 pr-11 text-[12px] leading-relaxed outline-none"
+            className="w-full bg-transparent resize-none px-3.5 py-2.5 pr-20 text-[12px] leading-relaxed outline-none"
             style={{ color: '#E8E9F0', minHeight: '42px' }}
           />
-          <button
-            onClick={() => send()}
-            disabled={loading || !input.trim()}
-            className="absolute right-2 bottom-2 w-7 h-7 flex items-center justify-center rounded-lg transition-all"
-            style={{
-              background: loading || !input.trim() ? '#1E2028' : 'linear-gradient(135deg, #5B6CFF, #7c3aed)',
-              color: loading || !input.trim() ? '#3a3a4a' : '#ffffff',
-            }}
-          >
-            {loading ? <Loader2 size={12} className="animate-spin" /> : <ArrowUp size={13} strokeWidth={2.5} />}
-          </button>
+          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+            {voiceSupported && (
+              <button
+                onClick={toggleVoice}
+                disabled={loading}
+                title={listening ? 'Stop listening' : 'Voice input'}
+                className="w-7 h-7 flex items-center justify-center rounded-lg transition-all relative"
+                style={{
+                  background: listening ? '#2a0a3a' : '#1E2028',
+                  color: listening ? '#c084fc' : '#7A7E92',
+                }}
+              >
+                {listening && (
+                  <span className="absolute inset-0 rounded-lg animate-ping"
+                    style={{ background: '#a855f730' }} />
+                )}
+                {listening ? <MicOff size={11} /> : <Mic size={11} />}
+              </button>
+            )}
+            <button
+              onClick={() => send()}
+              disabled={loading || !input.trim()}
+              className="w-7 h-7 flex items-center justify-center rounded-lg transition-all"
+              style={{
+                background: loading || !input.trim() ? '#1E2028' : 'linear-gradient(135deg, #5B6CFF, #7c3aed)',
+                color: loading || !input.trim() ? '#3a3a4a' : '#ffffff',
+              }}
+            >
+              {loading ? <Loader2 size={12} className="animate-spin" /> : <ArrowUp size={13} strokeWidth={2.5} />}
+            </button>
+          </div>
         </div>
-        <p className="mt-1 px-1 text-[9px]" style={{ color: '#3a3a4a' }}>Enter to send · Shift+Enter for newline</p>
+        <p className="mt-1 px-1 text-[9px]" style={{ color: '#3a3a4a' }}>
+          Enter to send · Shift+Enter for newline{voiceSupported ? ' · Mic for voice' : ''}
+        </p>
       </div>
     </div>
   )
 }
 
-function AssistantBubble({ msg, loading, onUndo }: {
+function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
   msg: AssistantMessage
   isLast: boolean
   loading: boolean
   onUndo?: () => void
+  onSuggestion?: (prompt: string) => void
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -305,6 +396,20 @@ function AssistantBubble({ msg, loading, onUndo }: {
         </div>
       ) : null}
 
+      {/* Inline action errors */}
+      {msg.actionErrors && msg.actionErrors.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {msg.actionErrors.map((err, i) => (
+            <div key={i} className="flex items-start gap-1.5 px-2 py-1 rounded-md text-[10px]"
+              style={{ background: '#1a0808', border: '1px solid #4a1515', color: '#f87171' }}>
+              <AlertCircle size={10} className="shrink-0 mt-0.5" />
+              <span>{err}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Undo button */}
       {msg.status === 'complete' && msg.commandCount > 0 && onUndo && (
         <button
           onClick={onUndo}
@@ -316,6 +421,24 @@ function AssistantBubble({ msg, loading, onUndo }: {
           <Undo2 size={9} strokeWidth={1.75} />
           Undo changes
         </button>
+      )}
+
+      {/* Smart suggestion chips */}
+      {msg.status === 'complete' && msg.suggestions && msg.suggestions.length > 0 && onSuggestion && (
+        <div className="flex flex-wrap gap-1.5 mt-0.5">
+          {msg.suggestions.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => onSuggestion(s)}
+              className="text-[10px] px-2.5 py-1 rounded-full border transition-all"
+              style={{ borderColor: '#2a3060', color: '#8B9CF4', background: '#0d1022' }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#5B6CFF'; e.currentTarget.style.background = '#151a40'; e.currentTarget.style.color = '#a5b4fc' }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#2a3060'; e.currentTarget.style.background = '#0d1022'; e.currentTarget.style.color = '#8B9CF4' }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )

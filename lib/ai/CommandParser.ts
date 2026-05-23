@@ -203,14 +203,29 @@ export type SceneCommand =
   | AddTextCmd | AddParticleCmd | ScatterObjectsCmd | SetViewModeCmd
   | AddKeyframeAnimationCmd | AddSceneCmd
 
-export interface ParsedResponse {
-  commands: SceneCommand[]
-  text: string
+export interface SceneAction {
+  op: 'add' | 'move' | 'delete' | 'scale' | 'material' | 'light'
+  target?: string
+  params?: Record<string, unknown>
 }
 
-// Extract JSON command blocks from Claude's response
+export interface ExecutionResult {
+  executed: number
+  errors: string[]
+}
+
+export interface ParsedResponse {
+  commands: SceneCommand[]
+  actions: SceneAction[]
+  text: string
+  suggestions?: string[]
+}
+
+// Extract JSON command blocks and action/suggestion blocks from Claude's response
 export function parseCommands(raw: string): ParsedResponse {
   const commands: SceneCommand[] = []
+  const actions: SceneAction[] = []
+  let suggestions: string[] | undefined
   const codeBlockRe = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/g
   let match: RegExpExecArray | null
 
@@ -225,13 +240,97 @@ export function parseCommands(raw: string): ParsedResponse {
         }
       } else if (typeof parsed.action === 'string') {
         commands.push(parsed as SceneCommand)
+      } else if (Array.isArray(parsed.actions)) {
+        for (const action of parsed.actions) {
+          if (typeof action === 'object' && typeof action.op === 'string') {
+            actions.push(action as SceneAction)
+          }
+        }
+      } else if (Array.isArray(parsed.suggestions)) {
+        suggestions = parsed.suggestions.slice(0, 3).map(String)
       }
     } catch {}
   }
 
   // Strip code blocks from text
   const text = raw.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
-  return { commands, text }
+  return { commands, actions, text, suggestions }
+}
+
+// Execute a SceneAction (op-based format for modifying existing objects)
+export function executeAction(action: SceneAction): void {
+  const store = useScene.getState()
+  const { op, target, params = {} } = action
+
+  switch (op) {
+    case 'move': {
+      const obj = findObjectByName(store.objects, target)
+      if (!obj) throw new Error(`Object "${target}" not found`)
+      store.updateObject(obj.id, { transform: { position: params.position as [number, number, number] } })
+      break
+    }
+    case 'scale': {
+      const obj = findObjectByName(store.objects, target)
+      if (!obj) throw new Error(`Object "${target}" not found`)
+      store.updateObject(obj.id, { transform: { scale: params.scale as [number, number, number] } })
+      break
+    }
+    case 'delete': {
+      const obj = findObjectByName(store.objects, target) ?? (target ? store.objects[target] : undefined)
+      if (obj) store.removeObject(obj.id)
+      break
+    }
+    case 'material': {
+      const obj = findObjectByName(store.objects, target)
+      if (!obj) throw new Error(`Object "${target}" not found`)
+      store.updateObject(obj.id, { material: params as Partial<MaterialConfig> })
+      break
+    }
+    case 'light': {
+      const existing = target ? findObjectByName(store.objects, target) : undefined
+      if (existing?.light) {
+        store.updateObject(existing.id, { light: params as unknown as LightConfig })
+      } else {
+        const lightType = ((params.lightType ?? params.type ?? 'point') as string) as LightConfig['type']
+        store.addObject({
+          name: target ?? `${lightType} light`,
+          type: 'light',
+          geometry: { type: 'sphere', radius: 0.1 },
+          material: {} as MaterialConfig,
+          light: {
+            type: lightType as LightConfig['type'],
+            intensity: (params.intensity as number) ?? 1,
+            color: (params.color as string) ?? '#ffffff',
+            distance: (params.distance as number) ?? 20,
+            decay: 2,
+            angle: (params.angle as number) ?? Math.PI / 4,
+            penumbra: (params.penumbra as number) ?? 0.1,
+            castShadow: (params.castShadow as boolean) ?? true,
+          },
+          transform: {
+            position: (params.position as [number, number, number]) ?? [0, 5, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          },
+        })
+      }
+      break
+    }
+    case 'add': {
+      executeCommand({
+        action: 'add_object',
+        name: (params.name as string) ?? target ?? 'Object',
+        geometry: (params.geometry as string) ?? 'box',
+        position: params.position as [number, number, number] | undefined,
+        size: params.size as [number, number, number] | number | undefined,
+        color: params.color as string | undefined,
+        roughness: params.roughness as number | undefined,
+        metalness: params.metalness as number | undefined,
+        material: params.material as string | undefined,
+      } as AddObjectCmd)
+      break
+    }
+  }
 }
 
 // Resolve geometry from string name
@@ -598,13 +697,32 @@ export function executeCommand(cmd: SceneCommand): void {
   }
 }
 
-// Execute all commands from parsed response
-export function executeCommands(commands: SceneCommand[]): void {
+// Execute all commands and actions from parsed response
+export function executeCommands(commands: SceneCommand[], actions: SceneAction[] = []): ExecutionResult {
+  const errors: string[] = []
+  let executed = 0
+
   for (const cmd of commands) {
     try {
       executeCommand(cmd)
+      executed++
     } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error'
       console.error('Command execution error:', cmd.action, e)
+      errors.push(`${cmd.action}: ${msg}`)
     }
   }
+
+  for (const action of actions) {
+    try {
+      executeAction(action)
+      executed++
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error'
+      console.error('Action execution error:', action.op, e)
+      errors.push(`${action.op}${action.target ? ` "${action.target}"` : ''}: ${msg}`)
+    }
+  }
+
+  return { executed, errors }
 }

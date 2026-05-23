@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, useRef, useEffect, useMemo } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
 import {
   OrbitControls,
   TransformControls,
@@ -12,6 +12,7 @@ import {
   Stars,
   Text3D,
   Outlines,
+  Sky,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -22,11 +23,13 @@ import {
 } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { cameraFrameFn } from '@/lib/cameraFrame'
+import { fbmNoise } from '@/lib/noise'
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
@@ -42,6 +45,7 @@ function SceneGeometry({ geo }: { geo: GeometryConfig }) {
     case 'tetrahedron': return <tetrahedronGeometry args={[geo.radius ?? 0.5]} />
     case 'octahedron': return <octahedronGeometry args={[geo.radius ?? 0.5]} />
     case 'icosahedron': return <icosahedronGeometry args={[geo.radius ?? 0.5, geo.segments ?? 0]} />
+    case 'torusknot': return <torusKnotGeometry args={[geo.radius ?? 0.4, geo.tube ?? 0.15, 100, 16]} />
     default: return <boxGeometry args={[geo.width ?? 1, geo.height ?? 1, geo.depth ?? 1]} />
   }
 }
@@ -506,20 +510,58 @@ function ParticleObject({ obj }: { obj: SceneObject }) {
     meshRef.current.instanceMatrix.needsUpdate = true
   }, [matrices])
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!meshRef.current) return
-    if (cfg.preset !== 'rain' && cfg.preset !== 'snow' && cfg.preset !== 'sparks') return
+    const preset = cfg.preset
+    const animated = ['rain', 'snow', 'sparks', 'fire', 'smoke', 'magic']
+    if (!animated.includes(preset)) return
     const dummy = new THREE.Object3D()
-    const speed = cfg.preset === 'rain' ? 4 : cfg.preset === 'sparks' ? 2.5 : 0.5
     const [sx, sy, sz] = cfg.spread
+    const t = state.clock.elapsedTime
+
+    if (preset === 'magic') {
+      for (let i = 0; i < cfg.count; i++) {
+        const phase = (i / cfg.count) * Math.PI * 2
+        const layer = i % 3
+        const speed = 0.3 + ((i * 37) % 7) * 0.07
+        const angle = phase + t * speed
+        const radius = sx * 0.35 * (0.4 + 0.6 * ((i * 173) % 100) / 100)
+        const hy = Math.sin(phase * 2 + t * 0.5) * sy * 0.4 + (layer - 1) * sy * 0.15
+        dummy.position.set(Math.cos(angle) * radius, hy, Math.sin(angle) * radius)
+        const sc = cfg.instanceScale * (0.5 + 0.5 * Math.abs(Math.sin(t * 3 + phase)))
+        dummy.scale.setScalar(Math.max(0.001, sc))
+        dummy.updateMatrix()
+        meshRef.current.setMatrixAt(i, dummy.matrix)
+      }
+      meshRef.current.instanceMatrix.needsUpdate = true
+      return
+    }
+
+    const isRising = preset === 'fire' || preset === 'smoke'
+    const speed = preset === 'rain' ? 4 : preset === 'sparks' ? 2.5 : preset === 'snow' ? 0.5 : preset === 'fire' ? 1.8 : 0.7
     for (let i = 0; i < cfg.count; i++) {
       meshRef.current.getMatrixAt(i, dummy.matrix)
       dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale)
-      dummy.position.y -= speed * delta
-      if (dummy.position.y < -sy * 0.5) {
-        dummy.position.y = sy * 0.5
-        dummy.position.x = (Math.random() - 0.5) * sx
-        dummy.position.z = (Math.random() - 0.5) * sz
+      if (isRising) {
+        const speedMult = 0.5 + ((i * 1619) % 100) / 100
+        dummy.position.y += speed * delta * speedMult
+        if (preset === 'smoke') {
+          dummy.position.x += Math.sin(t + i) * delta * 0.08
+          dummy.position.z += Math.cos(t * 0.7 + i) * delta * 0.08
+        }
+        if (dummy.position.y > sy * 0.5) {
+          const r = (preset === 'fire' ? 0.3 : 0.5) * (((i * 997) % 100) / 100)
+          const a = ((i * 127) % 100) / 100 * Math.PI * 2
+          dummy.position.set(Math.cos(a) * r * sx, -sy * 0.5 + ((i * 43) % 30) / 100, Math.sin(a) * r * sz)
+          dummy.scale.setScalar(cfg.instanceScale * (0.3 + ((i * 317) % 100) / 100 * 0.7))
+        }
+      } else {
+        dummy.position.y -= speed * delta
+        if (dummy.position.y < -sy * 0.5) {
+          dummy.position.y = sy * 0.5
+          dummy.position.x = (Math.random() - 0.5) * sx
+          dummy.position.z = (Math.random() - 0.5) * sz
+        }
       }
       dummy.updateMatrix()
       meshRef.current.setMatrixAt(i, dummy.matrix)
@@ -547,6 +589,195 @@ function ParticleObject({ obj }: { obj: SceneObject }) {
   )
 }
 
+// ─── Terrain Object ──────────────────────────────────────────────────────────
+
+function TerrainObject({ obj }: { obj: SceneObject }) {
+  const meshRef = useRef<THREE.Mesh>(null)
+  const geoRef = useRef<THREE.BufferGeometry | null>(null)
+  const { selectObject, sculptTerrain, updateTerrain } = useScene()
+  const activeTool = useScene((s) => s.activeTool)
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const sculpting = useRef(false)
+  const cfg = obj.terrain!
+
+  const geometry = useMemo(() => {
+    const res = cfg.resolution
+    const size = cfg.size
+    const half = size / 2
+    const step = size / (res - 1)
+    const count = res * res
+
+    const positions = new Float32Array(count * 3)
+    const uvs = new Float32Array(count * 2)
+
+    for (let iy = 0; iy < res; iy++) {
+      for (let ix = 0; ix < res; ix++) {
+        const i = iy * res + ix
+        const x = -half + ix * step
+        const z = -half + iy * step
+        const h = fbmNoise(x, z, cfg.seed, cfg.layers, cfg.noiseScale) * cfg.heightScale
+        positions[i * 3] = x
+        positions[i * 3 + 1] = h
+        positions[i * 3 + 2] = z
+        uvs[i * 2] = ix / (res - 1)
+        uvs[i * 2 + 1] = iy / (res - 1)
+      }
+    }
+
+    const indices: number[] = []
+    for (let iy = 0; iy < res - 1; iy++) {
+      for (let ix = 0; ix < res - 1; ix++) {
+        const a = iy * res + ix
+        const b = iy * res + ix + 1
+        const c = (iy + 1) * res + ix
+        const d = (iy + 1) * res + ix + 1
+        indices.push(a, c, b, b, c, d)
+      }
+    }
+
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+    geo.setIndex(indices)
+    geo.computeVertexNormals()
+    geoRef.current = geo
+    return geo
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.resolution, cfg.size, cfg.seed, cfg.layers, cfg.noiseScale, cfg.heightScale])
+
+  // Apply sculpted heights imperatively
+  useEffect(() => {
+    const geo = geoRef.current
+    if (!geo || !cfg.vertexHeights || cfg.vertexHeights.length !== cfg.resolution * cfg.resolution) return
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute
+    cfg.vertexHeights.forEach((h, i) => pos.setY(i, h))
+    pos.needsUpdate = true
+    geo.computeVertexNormals()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.vertexHeights, cfg.resolution])
+
+  const terrainMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      lowColor: { value: new THREE.Color(cfg.lowColor) },
+      midColor: { value: new THREE.Color(cfg.midColor) },
+      highColor: { value: new THREE.Color(cfg.highColor) },
+      maxH: { value: Math.max(cfg.heightScale, 0.001) },
+    },
+    vertexShader: `varying float vY; void main() { vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 lowColor; uniform vec3 midColor; uniform vec3 highColor; uniform float maxH;
+      varying float vY;
+      void main() {
+        float t = clamp(vY/maxH,0.0,1.0);
+        vec3 col = t<0.5 ? mix(lowColor,midColor,t*2.0) : mix(midColor,highColor,(t-0.5)*2.0);
+        gl_FragColor = vec4(col,1.0);
+      }`,
+  }), [cfg.lowColor, cfg.midColor, cfg.highColor, cfg.heightScale])
+
+  function handleSculptAt(point: THREE.Vector3) {
+    const lx = point.x - obj.transform.position[0]
+    const lz = point.z - obj.transform.position[2]
+    if (!cfg.vertexHeights || cfg.vertexHeights.length !== cfg.resolution * cfg.resolution) {
+      const geo = geoRef.current
+      if (!geo) return
+      const pos = geo.getAttribute('position') as THREE.BufferAttribute
+      const heights = Array.from({ length: pos.count }, (_, i) => pos.getY(i))
+      updateTerrain(obj.id, { vertexHeights: heights })
+    }
+    sculptTerrain(obj.id, lx, lz)
+  }
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      visible={obj.visible}
+      castShadow={obj.castShadow}
+      receiveShadow={obj.receiveShadow}
+      geometry={geometry}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (activeTool === 'sculpt') handleSculptAt(e.point)
+        else selectObject(obj.id, e.shiftKey)
+      }}
+      onPointerDown={(e) => {
+        if (activeTool === 'sculpt') { e.stopPropagation(); sculpting.current = true; handleSculptAt(e.point) }
+      }}
+      onPointerUp={() => { sculpting.current = false }}
+      onPointerLeave={() => { sculpting.current = false }}
+      onPointerMove={(e) => {
+        if (activeTool === 'sculpt' && sculpting.current) { e.stopPropagation(); handleSculptAt(e.point) }
+      }}
+    >
+      <primitive object={terrainMat} attach="material" />
+      {isSelected && (
+        <mesh>
+          <boxGeometry args={[cfg.size * 1.01, 0.05, cfg.size * 1.01]} />
+          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.3} />
+        </mesh>
+      )}
+    </mesh>
+  )
+}
+
+// ─── Water Object ─────────────────────────────────────────────────────────────
+
+function WaterObject({ obj }: { obj: SceneObject }) {
+  const ref = useRef<THREE.Mesh>(null)
+  const { selectObject } = useScene()
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const cfg = obj.water!
+
+  const waterGeo = useMemo(() => new THREE.PlaneGeometry(cfg.size, cfg.size, 32, 32), [cfg.size])
+
+  const waterMat = useMemo(() => new THREE.MeshPhongMaterial({
+    color: new THREE.Color(cfg.color),
+    opacity: cfg.opacity,
+    transparent: cfg.opacity < 1,
+    shininess: 120,
+    specular: new THREE.Color('#aaccff'),
+    side: THREE.DoubleSide,
+  }), [cfg.color, cfg.opacity])
+
+  useFrame((state) => {
+    if (!ref.current) return
+    const geo = ref.current.geometry as THREE.BufferGeometry
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute
+    const t = state.clock.elapsedTime * cfg.waveSpeed
+    const scale = cfg.waveScale
+    const h = cfg.waveHeight
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i)
+      const y = pos.getY(i)
+      pos.setZ(i, Math.sin(x * scale + t) * h * 0.5 + Math.cos(y * scale * 0.7 + t * 1.3) * h * 0.5)
+    }
+    pos.needsUpdate = true
+    geo.computeVertexNormals()
+  })
+
+  return (
+    <mesh
+      ref={ref}
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      visible={obj.visible}
+      geometry={waterGeo}
+      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+    >
+      <primitive object={waterMat} attach="material" />
+      {isSelected && (
+        <mesh>
+          <planeGeometry args={[cfg.size * 1.01, cfg.size * 1.01]} />
+          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.3} />
+        </mesh>
+      )}
+    </mesh>
+  )
+}
+
 // ─── Camera Controller ────────────────────────────────────────────────────────
 
 function CameraController() {
@@ -571,29 +802,110 @@ function CameraController() {
   return null
 }
 
+// ─── Light Gizmo ─────────────────────────────────────────────────────────────
+
+function LightGizmo({ obj }: { obj: SceneObject }) {
+  const cfg = obj.light!
+  const selectObject = useScene((s) => s.selectObject)
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+
+  if (cfg.type === 'ambient' || cfg.type === 'hemisphere') return null
+
+  const [px, py, pz] = obj.transform.position
+  const dist = cfg.distance ?? 10
+  const angle = cfg.angle ?? Math.PI / 4
+  const spotRadius = Math.tan(angle) * dist
+
+  return (
+    <group position={[px, py, pz]}>
+      {/* Clickable gizmo sphere — always visible */}
+      <mesh onClick={(e) => { e.stopPropagation(); selectObject(obj.id) }}>
+        <sphereGeometry args={[0.18, 10, 10]} />
+        <meshBasicMaterial color={cfg.color} />
+      </mesh>
+
+      {/* Selection ring */}
+      {isSelected && (
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.28, 0.025, 8, 32]} />
+          <meshBasicMaterial color="#5B6CFF" depthTest={false} />
+        </mesh>
+      )}
+
+      {/* Point light: distance sphere wireframe */}
+      {isSelected && cfg.type === 'point' && dist > 0 && (
+        <mesh>
+          <sphereGeometry args={[dist, 20, 14]} />
+          <meshBasicMaterial color={cfg.color} wireframe transparent opacity={0.1} depthTest={false} />
+        </mesh>
+      )}
+
+      {/* Spot light: cone wireframe opening downward */}
+      {isSelected && cfg.type === 'spot' && (
+        <group rotation={[Math.PI, 0, 0]}>
+          <mesh position={[0, dist / 2, 0]}>
+            <coneGeometry args={[spotRadius, dist, 18, 1, true]} />
+            <meshBasicMaterial color={cfg.color} wireframe transparent opacity={0.2} side={THREE.DoubleSide} depthTest={false} />
+          </mesh>
+        </group>
+      )}
+
+      {/* Directional light: arrow pointing down */}
+      {isSelected && cfg.type === 'directional' && (
+        <>
+          <mesh position={[0, -1, 0]}>
+            <cylinderGeometry args={[0.03, 0.03, 2, 6]} />
+            <meshBasicMaterial color={cfg.color} depthTest={false} />
+          </mesh>
+          <mesh position={[0, -2.25, 0]}>
+            <coneGeometry args={[0.14, 0.45, 8]} />
+            <meshBasicMaterial color={cfg.color} depthTest={false} />
+          </mesh>
+        </>
+      )}
+
+      {/* Area light: rectangle wireframe */}
+      {isSelected && cfg.type === 'rectarea' && (
+        <mesh>
+          <planeGeometry args={[cfg.rectAreaWidth ?? 4, cfg.rectAreaHeight ?? 4]} />
+          <meshBasicMaterial color={cfg.color} side={THREE.DoubleSide} wireframe transparent opacity={0.4} depthTest={false} />
+        </mesh>
+      )}
+    </group>
+  )
+}
+
 // ─── Light Object ─────────────────────────────────────────────────────────────
 
 function LightObject({ obj }: { obj: SceneObject }) {
   const cfg = obj.light!
   const pos = obj.transform.position
+  const shadowMapSize = useScene((s) => s.environment.shadowMapSize)
+  const mapSize = shadowMapSize ?? 2048
 
-  switch (cfg.type) {
-    case 'ambient':
-      return <ambientLight color={cfg.color} intensity={cfg.intensity} />
-    case 'hemisphere':
-      return <hemisphereLight args={[cfg.skyColor ?? cfg.color, cfg.groundColor ?? '#444444', cfg.intensity]} />
-    case 'directional':
-      return (
+  return (
+    <>
+      {cfg.type === 'ambient' && (
+        <ambientLight color={cfg.color} intensity={cfg.intensity} />
+      )}
+      {cfg.type === 'hemisphere' && (
+        <hemisphereLight args={[cfg.skyColor ?? cfg.color, cfg.groundColor ?? '#444444', cfg.intensity]} />
+      )}
+      {cfg.type === 'directional' && (
         <directionalLight
           position={pos}
           color={cfg.color}
           intensity={cfg.intensity}
           castShadow={cfg.castShadow}
-          shadow-mapSize={[2048, 2048]}
+          shadow-mapSize={[mapSize, mapSize]}
+          shadow-camera-far={100}
+          shadow-camera-left={-20}
+          shadow-camera-right={20}
+          shadow-camera-top={20}
+          shadow-camera-bottom={-20}
         />
-      )
-    case 'point':
-      return (
+      )}
+      {cfg.type === 'point' && (
         <pointLight
           position={pos}
           color={cfg.color}
@@ -601,10 +913,10 @@ function LightObject({ obj }: { obj: SceneObject }) {
           distance={cfg.distance}
           decay={cfg.decay}
           castShadow={cfg.castShadow}
+          shadow-mapSize={[mapSize, mapSize]}
         />
-      )
-    case 'spot':
-      return (
+      )}
+      {cfg.type === 'spot' && (
         <spotLight
           position={pos}
           color={cfg.color}
@@ -613,11 +925,21 @@ function LightObject({ obj }: { obj: SceneObject }) {
           angle={cfg.angle}
           penumbra={cfg.penumbra}
           castShadow={cfg.castShadow}
+          shadow-mapSize={[mapSize, mapSize]}
         />
-      )
-    default:
-      return null
-  }
+      )}
+      {cfg.type === 'rectarea' && (
+        <rectAreaLight
+          position={pos}
+          color={cfg.color}
+          intensity={cfg.intensity}
+          width={cfg.rectAreaWidth ?? 4}
+          height={cfg.rectAreaHeight ?? 4}
+        />
+      )}
+      <LightGizmo obj={obj} />
+    </>
+  )
 }
 
 // ─── Scene Object Router ──────────────────────────────────────────────────────
@@ -627,6 +949,8 @@ function SceneObjectNode({ id }: { id: string }) {
   if (!obj || !obj.visible) return null
 
   if (obj.type === 'light' && obj.light) return <LightObject obj={obj} />
+  if (obj.type === 'terrain' && obj.terrain) return <TerrainObject obj={obj} />
+  if (obj.type === 'water' && obj.water) return <WaterObject obj={obj} />
   if (obj.type === 'particle') return <ParticleObject obj={obj} />
   if (obj.geometry?.type === 'text') return <TextObject obj={obj} />
   if (obj.type === 'group') {
@@ -674,7 +998,7 @@ function GizmoControl() {
     }
   }, [obj, selectedId])
 
-  if (!obj || isPlaying || activeTool === 'select') return null
+  if (!obj || isPlaying || activeTool === 'select' || activeTool === 'sculpt') return null
 
   const mode = activeTool === 'rotate' ? 'rotate' : activeTool === 'scale' ? 'scale' : 'translate'
 
@@ -725,6 +1049,52 @@ function FPSCounter() {
   return null
 }
 
+// ─── Shadow Map + RectAreaLight Setup ────────────────────────────────────────
+
+function ShadowMapSetup() {
+  const { gl } = useThree()
+  useEffect(() => {
+    gl.shadowMap.type = THREE.PCFSoftShadowMap
+    gl.shadowMap.needsUpdate = true
+    // Initialize RectAreaLight uniforms so area lights illuminate standard materials
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { RectAreaLightUniformsLib } = require('three/examples/jsm/lights/RectAreaLightUniformsLib.js') as any
+      RectAreaLightUniformsLib.init()
+    } catch {
+      // Gracefully skip if unavailable
+    }
+  }, [gl])
+  return null
+}
+
+// ─── Sky System ──────────────────────────────────────────────────────────────
+
+function SkySystem() {
+  const env = useScene((s) => s.environment)
+  if (!env.skyEnabled) return null
+
+  const DEG2RAD = Math.PI / 180
+  const elev = env.sunElevation * DEG2RAD
+  const azim = env.sunAzimuth * DEG2RAD
+  const sunPosition: [number, number, number] = [
+    Math.cos(elev) * Math.sin(azim),
+    Math.sin(elev),
+    Math.cos(elev) * Math.cos(azim),
+  ]
+
+  return (
+    <Sky
+      distance={450000}
+      sunPosition={sunPosition}
+      turbidity={env.skyTurbidity}
+      rayleigh={env.skyRayleigh}
+      mieCoefficient={0.005}
+      mieDirectionalG={0.8}
+    />
+  )
+}
+
 // ─── Fog Controller ──────────────────────────────────────────────────────────
 
 function FogController() {
@@ -747,9 +1117,39 @@ function FogController() {
 
 // ─── HDRI Environment ────────────────────────────────────────────────────────
 
+function BlobHDRIEnvironment({ url, showBackground, intensity }: { url: string; showBackground: boolean; intensity: number }) {
+  const { gl, scene } = useThree()
+  const texture = useLoader(RGBELoader, url)
+
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl)
+    pmrem.compileEquirectangularShader()
+    const envMap = pmrem.fromEquirectangular(texture).texture
+    scene.environment = envMap
+    ;(scene as THREE.Scene & { environmentIntensity?: number }).environmentIntensity = intensity
+    if (showBackground) scene.background = envMap
+    else scene.background = null
+    pmrem.dispose()
+    return () => {
+      envMap.dispose()
+      scene.environment = null
+    }
+  }, [texture, gl, scene, showBackground, intensity])
+
+  return null
+}
+
 function HDRIEnvironment() {
   const env = useScene((s) => s.environment)
   if (!env.hdriUrl) return null
+
+  if (env.hdriUrl.startsWith('blob:')) {
+    return (
+      <Suspense fallback={null}>
+        <BlobHDRIEnvironment url={env.hdriUrl} showBackground={env.showBackground} intensity={env.hdriIntensity} />
+      </Suspense>
+    )
+  }
 
   return (
     <Environment
@@ -865,16 +1265,26 @@ function InnerScene() {
   const deselectAll = useScene((s) => s.deselectAll)
   const transformSpace = useScene((s) => s.transformSpace)
 
+  const mapSize = environment.shadowMapSize ?? 2048
+
+  // When sky is enabled, position the default directional light at the sun position
+  const DEG2RAD = Math.PI / 180
+  const skyDirPos: [number, number, number] = environment.skyEnabled ? [
+    Math.cos(environment.sunElevation * DEG2RAD) * Math.sin(environment.sunAzimuth * DEG2RAD) * 50,
+    Math.sin(environment.sunElevation * DEG2RAD) * 50,
+    Math.cos(environment.sunElevation * DEG2RAD) * Math.cos(environment.sunAzimuth * DEG2RAD) * 50,
+  ] : environment.directionalPosition
+
   const sceneObjects = (
     <>
-      {/* Default environment lights (when no HDRI light objects) */}
+      {/* Default environment lights */}
       <ambientLight color={environment.ambientColor} intensity={environment.ambientIntensity} />
       <directionalLight
         color={environment.directionalColor}
         intensity={environment.directionalIntensity}
-        position={environment.directionalPosition}
+        position={skyDirPos}
         castShadow={environment.shadowsEnabled}
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[mapSize, mapSize]}
         shadow-camera-far={100}
         shadow-camera-left={-20}
         shadow-camera-right={20}
@@ -889,6 +1299,8 @@ function InnerScene() {
       <CameraController />
       <FogController />
       <HDRIEnvironment />
+      <SkySystem />
+      <ShadowMapSetup />
       <PostProcessing />
 
       {/* Grid */}
@@ -904,8 +1316,8 @@ function InnerScene() {
         sectionColor="#2a2a4e"
       />
 
-      {/* Stars when no HDRI */}
-      {!environment.hdriUrl && <Stars radius={100} depth={50} count={3000} factor={4} fade />}
+      {/* Stars when no HDRI and no sky shader */}
+      {!environment.hdriUrl && !environment.skyEnabled && <Stars radius={100} depth={50} count={3000} factor={4} fade />}
     </>
   )
 
@@ -936,6 +1348,7 @@ export function ViewportCanvas() {
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure,
           powerPreference: 'high-performance',
+          preserveDrawingBuffer: true,
         }}
         camera={{ position: [10, 8, 10], fov: 60, near: 0.1, far: 1000 }}
         onPointerMissed={() => deselectAll()}

@@ -4,14 +4,37 @@ import { subscribeWithSelector } from 'zustand/middleware'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type ObjectType = 'mesh' | 'light' | 'group' | 'particle'
-export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'octahedron' | 'icosahedron' | 'text' | 'gltf'
-export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere'
+export type ObjectType = 'mesh' | 'light' | 'group' | 'particle' | 'terrain' | 'water'
+export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'torusknot' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'octahedron' | 'icosahedron' | 'text' | 'gltf'
+export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere' | 'rectarea'
 export type MaterialType = 'standard' | 'physical' | 'toon' | 'wireframe' | 'glass' | 'hologram'
 export type AnimationPreset = 'none' | 'float' | 'spin' | 'pulse' | 'orbit' | 'shake' | 'wave' | 'bounce'
 export type PhysicsBodyType = 'dynamic' | 'static' | 'kinematic'
 export type PhysicsShape = 'auto' | 'box' | 'sphere' | 'capsule' | 'hull'
-export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale'
+export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale' | 'sculpt'
+export type SculptMode = 'raise' | 'lower' | 'smooth' | 'flatten'
+
+export interface TerrainConfig {
+  size: number
+  resolution: number
+  heightScale: number
+  noiseScale: number
+  seed: number
+  layers: number
+  lowColor: string
+  midColor: string
+  highColor: string
+  vertexHeights?: number[]
+}
+
+export interface WaterConfig {
+  size: number
+  color: string
+  opacity: number
+  waveHeight: number
+  waveSpeed: number
+  waveScale: number
+}
 
 export interface Transform {
   position: [number, number, number]
@@ -79,6 +102,8 @@ export interface LightConfig {
   castShadow: boolean
   skyColor?: string
   groundColor?: string
+  rectAreaWidth?: number
+  rectAreaHeight?: number
 }
 
 export interface PhysicsConfig {
@@ -129,7 +154,7 @@ export interface ParticleConfig {
   instanceGeometry: 'sphere' | 'box' | 'cone' | 'tetrahedron'
   instanceScale: number
   randomScale: number
-  preset: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'custom'
+  preset: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'fire' | 'smoke' | 'magic' | 'custom'
 }
 
 export interface SceneObject {
@@ -152,6 +177,8 @@ export interface SceneObject {
   receiveShadow: boolean
   particle?: ParticleConfig
   interaction?: ObjectInteraction
+  terrain?: TerrainConfig
+  water?: WaterConfig
 }
 
 export interface EnvironmentState {
@@ -172,6 +199,12 @@ export interface EnvironmentState {
   directionalIntensity: number
   directionalPosition: [number, number, number]
   shadowsEnabled: boolean
+  shadowMapSize: number
+  skyEnabled: boolean
+  skyTurbidity: number
+  skyRayleigh: number
+  sunElevation: number
+  sunAzimuth: number
 }
 
 export interface PostFXState {
@@ -193,7 +226,7 @@ export interface PanelState {
   leftOpen: boolean
   rightOpen: boolean
   bottomOpen: boolean
-  leftTab: 'outliner' | 'material'
+  leftTab: 'outliner' | 'material' | 'lighting'
   rightTab: 'chat' | 'assets'
   bottomTab: 'animation' | 'physics'
 }
@@ -240,6 +273,27 @@ export const DEFAULT_PHYSICS: PhysicsConfig = {
   friction: 0.5,
   linearDamping: 0.1,
   gravityScale: 1,
+}
+
+export const DEFAULT_TERRAIN: TerrainConfig = {
+  size: 20,
+  resolution: 64,
+  heightScale: 3,
+  noiseScale: 0.15,
+  seed: 42,
+  layers: 4,
+  lowColor: '#3a6b28',
+  midColor: '#7a6a4a',
+  highColor: '#9a9a9a',
+}
+
+export const DEFAULT_WATER: WaterConfig = {
+  size: 20,
+  color: '#1a4a7a',
+  opacity: 0.75,
+  waveHeight: 0.15,
+  waveSpeed: 1.0,
+  waveScale: 1.5,
 }
 
 export const MATERIAL_PRESETS: Record<string, Partial<MaterialConfig>> = {
@@ -297,6 +351,14 @@ interface SceneActions {
   setCameraFov: (fov: number) => void
 
   showNotification: (msg: string, type?: 'success' | 'error' | 'info') => void
+  setBakePreview: (url: string | null) => void
+  setBakeBlend: (v: number) => void
+  setRecording: (v: boolean) => void
+  setSculptMode: (m: SculptMode) => void
+  setSculptRadius: (v: number) => void
+  setSculptStrength: (v: number) => void
+  updateTerrain: (objectId: string, patch: Partial<TerrainConfig>) => void
+  sculptTerrain: (objectId: string, cx: number, cz: number) => void
 
   pushHistory: () => void
   undo: () => void
@@ -345,6 +407,13 @@ interface SceneState extends SceneActions {
   cameraFov: number
 
   notification: { message: string; type: 'success' | 'error' | 'info'; id: string } | null
+  bakePreviewUrl: string | null
+  bakeBlend: number
+
+  isRecording: boolean
+  sculptMode: SculptMode
+  sculptRadius: number
+  sculptStrength: number
 
   past: string[]
   future: string[]
@@ -426,6 +495,12 @@ export const useScene = create<SceneState>()(
         directionalIntensity: 1.5,
         directionalPosition: [5, 10, 5],
         shadowsEnabled: true,
+        shadowMapSize: 2048,
+        skyEnabled: false,
+        skyTurbidity: 10,
+        skyRayleigh: 3,
+        sunElevation: 45,
+        sunAzimuth: 180,
       },
 
       postFX: {
@@ -467,6 +542,13 @@ export const useScene = create<SceneState>()(
       cameraFov: 60,
 
       notification: null,
+      bakePreviewUrl: null,
+      bakeBlend: 0.5,
+
+      isRecording: false,
+      sculptMode: 'raise',
+      sculptRadius: 3,
+      sculptStrength: 0.3,
 
       past: [],
       future: [],
@@ -759,6 +841,72 @@ export const useScene = create<SceneState>()(
         _notifTimer = setTimeout(() => set((s) => { s.notification = null }), 3000)
       },
 
+      setBakePreview(url) { set((s) => { s.bakePreviewUrl = url }) },
+      setBakeBlend(v) { set((s) => { s.bakeBlend = v }) },
+      setRecording(v) { set((s) => { s.isRecording = v }) },
+      setSculptMode(m) { set((s) => { s.sculptMode = m }) },
+      setSculptRadius(v) { set((s) => { s.sculptRadius = v }) },
+      setSculptStrength(v) { set((s) => { s.sculptStrength = v }) },
+
+      updateTerrain(objectId, patch) {
+        set((s) => {
+          const obj = s.objects[objectId]
+          if (!obj || obj.type !== 'terrain') return
+          obj.terrain = { ...obj.terrain!, ...patch }
+        })
+      },
+
+      sculptTerrain(objectId, cx, cz) {
+        set((s) => {
+          const obj = s.objects[objectId]
+          if (!obj || obj.type !== 'terrain' || !obj.terrain) return
+          const cfg = obj.terrain
+          const res = cfg.resolution
+          const halfSize = cfg.size / 2
+          const step = cfg.size / (res - 1)
+
+          if (!cfg.vertexHeights || cfg.vertexHeights.length !== res * res) {
+            // Initialize from flat (will be overridden by noise in component)
+            cfg.vertexHeights = new Array(res * res).fill(0)
+          }
+
+          const heights = cfg.vertexHeights
+          const r = s.sculptRadius
+          const str = s.sculptStrength
+          const mode = s.sculptMode
+
+          for (let iy = 0; iy < res; iy++) {
+            for (let ix = 0; ix < res; ix++) {
+              const vx = -halfSize + ix * step
+              const vz = -halfSize + iy * step
+              const dx = vx - cx
+              const dz = vz - cz
+              const dist = Math.sqrt(dx * dx + dz * dz)
+              if (dist > r) continue
+
+              const falloff = 1 - dist / r
+              const idx = iy * res + ix
+              const delta = str * falloff * falloff
+
+              if (mode === 'raise') heights[idx] += delta
+              else if (mode === 'lower') heights[idx] -= delta
+              else if (mode === 'smooth') {
+                let avg = 0, cnt = 0
+                for (let dy = -1; dy <= 1; dy++) {
+                  for (let dx2 = -1; dx2 <= 1; dx2++) {
+                    const ni = (iy + dy) * res + (ix + dx2)
+                    if (ni >= 0 && ni < heights.length) { avg += heights[ni]; cnt++ }
+                  }
+                }
+                heights[idx] += (avg / cnt - heights[idx]) * falloff * str * 2
+              } else if (mode === 'flatten') {
+                heights[idx] += (0 - heights[idx]) * falloff * str
+              }
+            }
+          }
+        })
+      },
+
       // ── Undo / Redo ──────────────────────────────────────────────────────
 
       pushHistory() {
@@ -971,7 +1119,17 @@ if (typeof window !== 'undefined') {
       clearTimeout((window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer)
       ;(window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer = setTimeout(() => {
         try {
-          localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(state))
+          // Blob URLs are session-scoped — strip them before persisting so they
+          // don't cause ERR_FILE_NOT_FOUND on the next page load.
+          const toSave = {
+            ...state,
+            environment: {
+              ...state.environment,
+              hdriUrl: state.environment.hdriUrl?.startsWith('blob:') ? null : state.environment.hdriUrl,
+              hdriName: state.environment.hdriUrl?.startsWith('blob:') ? 'None' : state.environment.hdriName,
+            },
+          }
+          localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(toSave))
         } catch {}
       }, 500)
     }
@@ -1011,7 +1169,10 @@ export function loadPersistedScene() {
     useScene.setState((s) => {
       s.objects = objects
       s.rootIds = Array.isArray(data.rootIds) ? data.rootIds : []
-      s.environment = { ...s.environment, ...data.environment }
+      const loadedEnv = { ...s.environment, ...data.environment }
+      // Guard against stale blob URLs from a previous session
+      if (loadedEnv.hdriUrl?.startsWith('blob:')) { loadedEnv.hdriUrl = null; loadedEnv.hdriName = 'None' }
+      s.environment = loadedEnv
       s.postFX = { ...s.postFX, ...data.postFX }
       if (Array.isArray(data.scenes)) s.scenes = data.scenes
       if (data.activeSceneId) s.activeSceneId = data.activeSceneId
