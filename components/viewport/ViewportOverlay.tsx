@@ -15,6 +15,7 @@ export function ViewportOverlay() {
   const setViewMode = useScene((s) => s.setViewMode)
   const cameraFov = useScene((s) => s.cameraFov)
   const setCameraFov = useScene((s) => s.setCameraFov)
+  const isRecording = useScene((s) => s.isRecording)
 
   const objCount = Object.keys(objects).length
   const selectedObj = selectedIds.length === 1 ? objects[selectedIds[0]] : null
@@ -54,6 +55,16 @@ export function ViewportOverlay() {
           </>
         )}
       </div>
+
+      {/* REC indicator */}
+      {isRecording && (
+        <div className="absolute top-3 right-3 z-30 pointer-events-none">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full backdrop-blur-md border" style={{ background: 'rgba(180,0,0,0.25)', borderColor: 'rgba(220,50,50,0.6)' }}>
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[11px] font-bold tracking-widest" style={{ color: '#ff6060' }}>REC</span>
+          </div>
+        </div>
+      )}
 
       {/* Playing badge */}
       {isPlaying && (

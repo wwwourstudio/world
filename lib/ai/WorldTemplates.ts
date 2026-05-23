@@ -122,6 +122,11 @@ export const WORLD_TEMPLATES: WorldTemplate[] = [
       directionalColor: '#ffe8b0',
       directionalIntensity: 0.8,
       directionalPosition: [3, 10, 3],
+      skyEnabled: true,
+      skyTurbidity: 8,
+      skyRayleigh: 3,
+      sunElevation: 35,
+      sunAzimuth: 150,
     },
     objects: [
       mesh('Ground', { type: 'plane', width: 40, height: 40 }, { color: '#2d5016', roughness: 0.95 }, [0, 0, 0], [-Math.PI / 2, 0, 0]),
@@ -328,6 +333,11 @@ export const WORLD_TEMPLATES: WorldTemplate[] = [
       directionalColor: '#ffcc55',
       directionalIntensity: 2,
       directionalPosition: [10, 5, 10],
+      skyEnabled: true,
+      skyTurbidity: 12,
+      skyRayleigh: 2,
+      sunElevation: 12,
+      sunAzimuth: 200,
     },
     objects: [
       mesh('Ground', { type: 'plane', width: 60, height: 60 }, { color: '#6a8a3a', roughness: 0.9 }, [0, 0, 0], [-Math.PI / 2, 0, 0]),

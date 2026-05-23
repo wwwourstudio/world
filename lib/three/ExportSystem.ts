@@ -1,4 +1,60 @@
+import * as THREE from 'three'
 import type { SceneObject, EnvironmentState } from '@/lib/scene/SceneStore'
+
+export async function exportSceneGLB(objects: Record<string, SceneObject>): Promise<void> {
+  // Dynamic import to avoid SSR issues
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js') as any
+
+  const root = new THREE.Scene()
+
+  for (const obj of Object.values(objects)) {
+    if (!obj.visible) continue
+    if (obj.type !== 'mesh' && obj.type !== 'group') continue
+
+    const g = obj.geometry
+    let geo: THREE.BufferGeometry
+    if (g.type === 'sphere') geo = new THREE.SphereGeometry(g.radius ?? 0.5, 16, 16)
+    else if (g.type === 'cylinder') geo = new THREE.CylinderGeometry(g.radiusTop ?? 0.5, g.radiusBottom ?? 0.5, g.height ?? 1, 16)
+    else if (g.type === 'cone') geo = new THREE.ConeGeometry(g.radius ?? 0.5, g.height ?? 1, 12)
+    else if (g.type === 'torus') geo = new THREE.TorusGeometry(g.radius ?? 0.5, g.tube ?? 0.2, 12, 32)
+    else if (g.type === 'plane') geo = new THREE.PlaneGeometry(g.width ?? 1, g.height ?? 1)
+    else geo = new THREE.BoxGeometry(g.width ?? 1, g.height ?? 1, g.depth ?? 1)
+
+    const m = obj.material
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(m.color),
+      roughness: m.roughness,
+      metalness: m.metalness,
+      emissive: new THREE.Color(m.emissive),
+      emissiveIntensity: m.emissiveIntensity,
+      opacity: m.opacity,
+      transparent: m.transparent,
+    })
+
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.name = obj.name
+    mesh.position.set(...obj.transform.position)
+    mesh.rotation.set(...obj.transform.rotation)
+    mesh.scale.set(...obj.transform.scale)
+    root.add(mesh)
+  }
+
+  return new Promise((resolve, reject) => {
+    new GLTFExporter().parse(root, (result: ArrayBuffer | object) => {
+      const blob = result instanceof ArrayBuffer
+        ? new Blob([result], { type: 'model/gltf-binary' })
+        : new Blob([JSON.stringify(result)], { type: 'model/gltf+json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = result instanceof ArrayBuffer ? 'scene.glb' : 'scene.gltf'
+      a.click()
+      URL.revokeObjectURL(url)
+      resolve()
+    }, reject, { binary: true })
+  })
+}
 
 export function generateEmbedCode(scene: { objects: Record<string, SceneObject>; environment: EnvironmentState }): string {
   const sceneJSON = JSON.stringify(scene, null, 2)

@@ -3,10 +3,10 @@
 import { useState } from 'react'
 import {
   ChevronDown, ChevronRight, Move3D, RotateCcw, Eye, Lightbulb, Sun,
-  Type, Sparkles, Play, Box, Group, Flame, Maximize2,
+  Type, Sparkles, Play, Box, Group, Flame, Maximize2, Mountain, Droplets, Paintbrush,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig, SceneObject } from '@/lib/scene/SceneStore'
+import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig, SceneObject, SculptMode } from '@/lib/scene/SceneStore'
 
 function getNaturalSize(geo: GeometryConfig): number {
   switch (geo.type) {
@@ -215,6 +215,89 @@ function SmallBtn({ onClick, children }: { onClick: () => void; children: React.
     >
       {children}
     </button>
+  )
+}
+
+function TerrainSection({
+  id, terrain, updateObject,
+}: {
+  id: string
+  terrain: NonNullable<SceneObject['terrain']>
+  updateObject: (id: string, patch: import('@/lib/scene/SceneStore').DeepPartial<SceneObject>) => void
+}) {
+  const activeTool = useScene((s) => s.activeTool)
+  const sculptMode = useScene((s) => s.sculptMode)
+  const sculptRadius = useScene((s) => s.sculptRadius)
+  const sculptStrength = useScene((s) => s.sculptStrength)
+  const setSculptMode = useScene((s) => s.setSculptMode)
+  const setSculptRadius = useScene((s) => s.setSculptRadius)
+  const setSculptStrength = useScene((s) => s.setSculptStrength)
+  const tc = terrain
+
+  return (
+    <>
+      <Section label="Terrain" icon={<Mountain size={11} />}>
+        <div className="flex flex-col gap-2">
+          <SliderRow label="Size" value={tc.size} min={5} max={100} step={1}
+            onChange={(v) => updateObject(id, { terrain: { ...tc, size: v, vertexHeights: undefined } })} />
+          <SliderRow label="Resolution" value={tc.resolution} min={16} max={128} step={16}
+            onChange={(v) => updateObject(id, { terrain: { ...tc, resolution: Math.round(v), vertexHeights: undefined } })} />
+          <SliderRow label="Height Scale" value={tc.heightScale} min={0} max={20} step={0.1}
+            onChange={(v) => updateObject(id, { terrain: { ...tc, heightScale: v, vertexHeights: undefined } })} />
+          <SliderRow label="Noise Scale" value={tc.noiseScale} min={0.01} max={1} step={0.01}
+            onChange={(v) => updateObject(id, { terrain: { ...tc, noiseScale: v, vertexHeights: undefined } })} />
+          <SliderRow label="Seed" value={tc.seed} min={0} max={100} step={1}
+            onChange={(v) => updateObject(id, { terrain: { ...tc, seed: Math.round(v), vertexHeights: undefined } })} />
+          <SliderRow label="Layers" value={tc.layers} min={1} max={8} step={1}
+            onChange={(v) => updateObject(id, { terrain: { ...tc, layers: Math.round(v), vertexHeights: undefined } })} />
+          <Row label="Low Color">
+            <input type="color" value={tc.lowColor} className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }}
+              onChange={(e) => updateObject(id, { terrain: { ...tc, lowColor: e.target.value } })} />
+            <span className="text-[10px] font-mono ml-1" style={{ color: '#7A7E92' }}>{tc.lowColor}</span>
+          </Row>
+          <Row label="Mid Color">
+            <input type="color" value={tc.midColor} className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }}
+              onChange={(e) => updateObject(id, { terrain: { ...tc, midColor: e.target.value } })} />
+            <span className="text-[10px] font-mono ml-1" style={{ color: '#7A7E92' }}>{tc.midColor}</span>
+          </Row>
+          <Row label="High Color">
+            <input type="color" value={tc.highColor} className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }}
+              onChange={(e) => updateObject(id, { terrain: { ...tc, highColor: e.target.value } })} />
+            <span className="text-[10px] font-mono ml-1" style={{ color: '#7A7E92' }}>{tc.highColor}</span>
+          </Row>
+          {tc.vertexHeights && (
+            <SmallBtn onClick={() => updateObject(id, { terrain: { ...tc, vertexHeights: undefined } })}>
+              Clear Sculpt Data
+            </SmallBtn>
+          )}
+        </div>
+      </Section>
+      <Section label="Sculpt" icon={<Paintbrush size={11} />} defaultOpen={activeTool === 'sculpt'}>
+        <div className="flex flex-col gap-2">
+          <Row label="Mode">
+            <div className="flex gap-1">
+              {(['raise', 'lower', 'smooth', 'flatten'] as SculptMode[]).map((m) => (
+                <button key={m}
+                  onClick={() => setSculptMode(m)}
+                  className="px-1.5 h-5 rounded text-[9px] font-medium capitalize transition-all"
+                  style={{
+                    background: sculptMode === m ? '#5B6CFF' : '#1E2028',
+                    color: sculptMode === m ? '#fff' : '#7A7E92',
+                    border: '1px solid #2a2d3a',
+                  }}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          </Row>
+          <SliderRow label="Radius" value={sculptRadius} min={0.5} max={10} step={0.1} onChange={setSculptRadius} />
+          <SliderRow label="Strength" value={sculptStrength} min={0.01} max={1} step={0.01} onChange={setSculptStrength} />
+          <p className="text-[10px] leading-relaxed" style={{ color: '#4a4e62' }}>
+            Select Sculpt tool (T) then click/drag on terrain to sculpt.
+          </p>
+        </div>
+      </Section>
+    </>
   )
 }
 
@@ -443,6 +526,34 @@ export function PropertiesPanel() {
                 ))}
               </div>
             </Row>
+          </div>
+        </Section>
+      )}
+
+      {/* Terrain */}
+      {obj.type === 'terrain' && obj.terrain && (
+        <TerrainSection id={id} terrain={obj.terrain} updateObject={updateObject} />
+      )}
+
+      {/* Water */}
+      {obj.type === 'water' && obj.water && (
+        <Section label="Water" icon={<Droplets size={11} />}>
+          <div className="flex flex-col gap-2">
+            <SliderRow label="Size" value={obj.water.size} min={5} max={100} step={1}
+              onChange={(v) => updateObject(id, { water: { ...obj.water!, size: v } })} />
+            <Row label="Color">
+              <input type="color" value={obj.water.color} className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }}
+                onChange={(e) => updateObject(id, { water: { ...obj.water!, color: e.target.value } })} />
+              <span className="text-[11px] font-mono ml-1" style={{ color: '#7A7E92' }}>{obj.water.color}</span>
+            </Row>
+            <SliderRow label="Opacity" value={obj.water.opacity} min={0} max={1} step={0.01}
+              onChange={(v) => updateObject(id, { water: { ...obj.water!, opacity: v } })} />
+            <SliderRow label="Wave Height" value={obj.water.waveHeight} min={0} max={1} step={0.01}
+              onChange={(v) => updateObject(id, { water: { ...obj.water!, waveHeight: v } })} />
+            <SliderRow label="Wave Speed" value={obj.water.waveSpeed} min={0} max={5} step={0.1}
+              onChange={(v) => updateObject(id, { water: { ...obj.water!, waveSpeed: v } })} />
+            <SliderRow label="Wave Scale" value={obj.water.waveScale} min={0.1} max={5} step={0.1}
+              onChange={(v) => updateObject(id, { water: { ...obj.water!, waveScale: v } })} />
           </div>
         </Section>
       )}
