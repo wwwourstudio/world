@@ -2,8 +2,14 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+type HistoryMessage = { role: 'user' | 'assistant'; content: string }
+
 export async function POST(request: Request) {
-  const { prompt, systemPrompt } = await request.json()
+  const { prompt, systemPrompt, history = [] } = await request.json() as {
+    prompt: string
+    systemPrompt: string
+    history?: HistoryMessage[]
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   const encoder = new TextEncoder()
@@ -41,12 +47,18 @@ export async function POST(request: Request) {
     })
   }
 
+  // Keep last 10 turns (20 messages) to bound context size
+  const trimmedHistory = history.slice(-20)
+
   const stream = makeStream(async (send) => {
     const claudeStream = client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: systemPrompt,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        ...trimmedHistory.map((m) => ({ role: m.role, content: m.content })),
+        { role: 'user', content: prompt },
+      ],
     })
 
     for await (const event of claudeStream) {
