@@ -45,7 +45,7 @@ function getRotatingSuggestions() {
   return out
 }
 
-const SUGGESTIONS = getRotatingSuggestions()
+// Not computed at module level — would differ between SSR and client, causing React #418 hydration error
 
 const BEHAVIOR_ICONS: Record<BehaviorConfig['type'], string> = {
   rotate: '↻', sway: '≈', oscillate: '↕', scalePulse: '⊕',
@@ -113,6 +113,10 @@ function getBehaviorSuggestions(attachments: BehaviorAttachment[]): string[] {
 }
 
 export function ChatPanel() {
+  // Computed client-side only via useEffect to avoid SSR/client Date.now() mismatch (React #418)
+  const [startSuggestions, setStartSuggestions] = useState<typeof ALL_SUGGESTIONS>(() => ALL_SUGGESTIONS.slice(0, 6))
+  useEffect(() => { setStartSuggestions(getRotatingSuggestions()) }, [])
+
   const objects = useScene((s) => s.objects)
   const environment = useScene((s) => s.environment)
   const undo = useScene((s) => s.undo)
@@ -329,7 +333,7 @@ export function ChatPanel() {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-1.5 w-full">
-              {SUGGESTIONS.map((s) => (
+              {startSuggestions.map((s) => (
                 <button
                   key={s.label}
                   onClick={() => send(s.prompt)}

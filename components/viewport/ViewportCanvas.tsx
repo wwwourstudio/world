@@ -222,9 +222,8 @@ function useBehaviors(
   const wanderTarget = useRef(new THREE.Vector3())
   const wanderTimer = useRef(0)
   const patrolIdx = useRef(0)
-  const { camera } = useThree()
 
-  useFrame(({ clock }, delta) => {
+  useFrame(({ clock, camera }, delta) => {
     if (!ref.current || !behaviors?.length) return
     const obj = ref.current
     const t = clock.getElapsedTime()
