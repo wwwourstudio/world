@@ -420,6 +420,11 @@ function MeshObject({ obj }: { obj: SceneObject }) {
           useScene.getState().setPlaying(!playing)
         }
       }}
+      onContextMenu={(e) => {
+        e.stopPropagation()
+        selectObject(obj.id, false)
+        useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+      }}
       onPointerEnter={(e) => {
         e.stopPropagation()
         if (!ix || ix.hoverEffect === 'none') return
@@ -525,6 +530,11 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
       scale={obj.transform.scale}
       visible={obj.visible}
       onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+      onContextMenu={(e) => {
+        e.stopPropagation()
+        selectObject(obj.id, false)
+        useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+      }}
     >
       <primitive object={cloned} />
       {isSelected && !isPlaying && (
@@ -583,6 +593,11 @@ function TextObject({ obj }: { obj: SceneObject }) {
         castShadow={obj.castShadow}
         visible={obj.visible}
         onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+        onContextMenu={(e) => {
+          e.stopPropagation()
+          selectObject(obj.id, false)
+          useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+        }}
       >
         {obj.geometry.text ?? 'Text'}
         <meshStandardMaterial
@@ -834,6 +849,13 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
         e.stopPropagation()
         if (activeTool === 'sculpt') handleSculptAt(e.point)
         else selectObject(obj.id, e.shiftKey)
+      }}
+      onContextMenu={(e) => {
+        e.stopPropagation()
+        if (useScene.getState().activeTool !== 'sculpt') {
+          selectObject(obj.id, false)
+          useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+        }
       }}
       onPointerDown={(e) => {
         if (activeTool === 'sculpt') { e.stopPropagation(); sculpting.current = true; handleSculptAt(e.point) }
@@ -1421,6 +1443,19 @@ function InnerScene() {
 
       {/* Stars when no HDRI and no sky shader */}
       {!environment.hdriUrl && !environment.skyEnabled && <Stars radius={100} depth={50} count={3000} factor={4} fade />}
+
+      {/* Invisible background plane for right-click context menu on empty space */}
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -0.03, 0]}
+        onContextMenu={(e) => {
+          e.stopPropagation()
+          useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: null })
+        }}
+      >
+        <planeGeometry args={[10000, 10000]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
     </>
   )
 
@@ -1443,7 +1478,7 @@ export function ViewportCanvas() {
   const toneMappingExposure = useScene((s) => s.postFX.toneMappingExposure)
 
   return (
-    <div className="w-full h-full" style={{ background: '#0B0C0F' }}>
+    <div className="w-full h-full" style={{ background: '#0B0C0F' }} onContextMenu={(e) => e.preventDefault()}>
       <Canvas
         shadows
         gl={{

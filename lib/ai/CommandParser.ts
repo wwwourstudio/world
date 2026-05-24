@@ -223,11 +223,18 @@ export interface ExecutionResult {
   behaviorAttachments: BehaviorAttachment[]
 }
 
+export interface GallerySpec {
+  type: 'hdri' | 'material' | 'sketchfab' | 'texture'
+  query: string
+  current?: string
+}
+
 export interface ParsedResponse {
   commands: SceneCommand[]
   actions: SceneAction[]
   text: string
   suggestions?: string[]
+  gallery?: GallerySpec
 }
 
 // Extract JSON command blocks and action/suggestion blocks from Claude's response
@@ -235,6 +242,7 @@ export function parseCommands(raw: string): ParsedResponse {
   const commands: SceneCommand[] = []
   const actions: SceneAction[] = []
   let suggestions: string[] | undefined
+  let gallery: GallerySpec | undefined
   const codeBlockRe = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/g
   let match: RegExpExecArray | null
 
@@ -257,13 +265,15 @@ export function parseCommands(raw: string): ParsedResponse {
         }
       } else if (Array.isArray(parsed.suggestions)) {
         suggestions = parsed.suggestions.slice(0, 3).map(String)
+      } else if (parsed.gallery && typeof parsed.gallery.type === 'string') {
+        gallery = parsed.gallery as GallerySpec
       }
     } catch {}
   }
 
   // Strip code blocks from text
   const text = raw.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
-  return { commands, actions, text, suggestions }
+  return { commands, actions, text, suggestions, gallery }
 }
 
 // Execute a SceneAction (op-based format for modifying existing objects)

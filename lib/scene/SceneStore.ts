@@ -11,7 +11,7 @@ export type MaterialType = 'standard' | 'physical' | 'toon' | 'wireframe' | 'gla
 export type AnimationPreset = 'none' | 'float' | 'spin' | 'pulse' | 'orbit' | 'shake' | 'wave' | 'bounce'
 export type PhysicsBodyType = 'dynamic' | 'static' | 'kinematic'
 export type PhysicsShape = 'auto' | 'box' | 'sphere' | 'capsule' | 'hull'
-export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale' | 'sculpt'
+export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale' | 'sculpt' | 'edit'
 export type SculptMode = 'raise' | 'lower' | 'smooth' | 'flatten'
 export type BehaviorType =
   | 'rotate' | 'patrol' | 'follow' | 'lookAt' | 'oscillate'
@@ -388,6 +388,7 @@ interface SceneActions {
   setSculptMode: (m: SculptMode) => void
   setSculptRadius: (v: number) => void
   setSculptStrength: (v: number) => void
+  setContextMenu: (menu: { x: number; y: number; objectId: string | null } | null) => void
   updateTerrain: (objectId: string, patch: Partial<TerrainConfig>) => void
   sculptTerrain: (objectId: string, cx: number, cz: number) => void
 
@@ -450,6 +451,7 @@ interface SceneState extends SceneActions {
   sculptMode: SculptMode
   sculptRadius: number
   sculptStrength: number
+  contextMenu: { x: number; y: number; objectId: string | null } | null
 
   past: string[]
   future: string[]
@@ -583,8 +585,9 @@ export const useScene = create<SceneState>()(
 
       isRecording: false,
       sculptMode: 'raise',
-      sculptRadius: 3,
-      sculptStrength: 0.3,
+      sculptRadius: 5,
+      sculptStrength: 1.5,
+      contextMenu: null,
 
       past: [],
       future: [],
@@ -784,6 +787,10 @@ export const useScene = create<SceneState>()(
 
       setActiveTool(tool) {
         set((s) => { s.activeTool = tool })
+      },
+
+      setContextMenu(menu) {
+        set((s) => { s.contextMenu = menu })
       },
 
       setTransformSpace(space) {

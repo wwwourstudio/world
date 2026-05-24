@@ -1,6 +1,21 @@
 'use client'
 
+import { useEffect, useCallback } from 'react'
 import { useScene } from '@/lib/scene/SceneStore'
+import { ContextMenu } from '@/components/toolbar/ContextMenu'
+import {
+  MousePointer2, Move, RotateCcw, Maximize2, Mountain, Pencil,
+  Copy, Trash2, Focus, Layers, Box, Circle, Cylinder,
+} from 'lucide-react'
+
+const TOOLS = [
+  { id: 'select' as const,    label: 'Select',    key: 'Q', Icon: MousePointer2 },
+  { id: 'translate' as const, label: 'Move',      key: 'W', Icon: Move },
+  { id: 'rotate' as const,    label: 'Rotate',    key: 'E', Icon: RotateCcw },
+  { id: 'scale' as const,     label: 'Scale',     key: 'R', Icon: Maximize2 },
+  { id: 'sculpt' as const,    label: 'Sculpt',    key: 'T', Icon: Mountain },
+  { id: 'edit' as const,      label: 'Edit',      key: 'V', Icon: Pencil },
+]
 
 export function ViewportOverlay() {
   const fps = useScene((s) => s.fps)
@@ -9,6 +24,7 @@ export function ViewportOverlay() {
   const isPlaying = useScene((s) => s.isPlaying)
   const selectedIds = useScene((s) => s.selectedIds)
   const activeTool = useScene((s) => s.activeTool)
+  const setActiveTool = useScene((s) => s.setActiveTool)
   const transformSpace = useScene((s) => s.transformSpace)
   const snapEnabled = useScene((s) => s.snapEnabled)
   const viewMode = useScene((s) => s.viewMode)
@@ -16,9 +32,64 @@ export function ViewportOverlay() {
   const cameraFov = useScene((s) => s.cameraFov)
   const setCameraFov = useScene((s) => s.setCameraFov)
   const isRecording = useScene((s) => s.isRecording)
+  const contextMenu = useScene((s) => s.contextMenu)
+  const setContextMenu = useScene((s) => s.setContextMenu)
+  const addObject = useScene((s) => s.addObject)
+  const deleteObject = useScene((s) => s.removeObject)
+  const duplicateObject = useScene((s) => s.duplicateObject)
+  const deselectAll = useScene((s) => s.deselectAll)
+  const selectAll = useScene((s) => s.selectAll)
 
   const objCount = Object.keys(objects).length
   const selectedObj = selectedIds.length === 1 ? objects[selectedIds[0]] : null
+
+  // Keyboard shortcuts for tools
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === 'q' || e.key === 'Q') setActiveTool('select')
+      if (e.key === 'w' || e.key === 'W') setActiveTool('translate')
+      if (e.key === 'e' || e.key === 'E') setActiveTool('rotate')
+      if (e.key === 'r' || e.key === 'R') setActiveTool('scale')
+      if (e.key === 't' || e.key === 'T') setActiveTool('sculpt')
+      if (e.key === 'v' || e.key === 'V') setActiveTool('edit')
+      if (e.key === 'Escape') setContextMenu(null)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [setActiveTool, setContextMenu])
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), [setContextMenu])
+
+  // Build context menu items based on whether an object is selected
+  const buildContextItems = () => {
+    if (contextMenu?.objectId) {
+      const obj = objects[contextMenu.objectId]
+      return [
+        { label: 'Move', icon: <Move size={12} />, onClick: () => setActiveTool('translate') },
+        { label: 'Rotate', icon: <RotateCcw size={12} />, onClick: () => setActiveTool('rotate') },
+        { label: 'Scale', icon: <Maximize2 size={12} />, onClick: () => setActiveTool('scale') },
+        { label: '', divider: true, onClick: () => {} },
+        { label: 'Duplicate', icon: <Copy size={12} />, onClick: () => {
+          if (contextMenu.objectId) duplicateObject(contextMenu.objectId)
+        }},
+        { label: 'Select All', icon: <Layers size={12} />, onClick: () => selectAll?.() },
+        { label: '', divider: true, onClick: () => {} },
+        { label: `Delete "${obj?.name ?? 'Object'}"`, icon: <Trash2 size={12} />, danger: true, onClick: () => {
+          if (contextMenu.objectId) deleteObject(contextMenu.objectId)
+        }},
+      ]
+    }
+    // Background right-click
+    return [
+      { label: 'Add Box', icon: <Box size={12} />, onClick: () => addObject({ type: 'mesh', name: 'Box', geometry: { type: 'box' } }) },
+      { label: 'Add Sphere', icon: <Circle size={12} />, onClick: () => addObject({ type: 'mesh', name: 'Sphere', geometry: { type: 'sphere' } }) },
+      { label: 'Add Cylinder', icon: <Cylinder size={12} />, onClick: () => addObject({ type: 'mesh', name: 'Cylinder', geometry: { type: 'cylinder' } }) },
+      { label: '', divider: true, onClick: () => {} },
+      { label: 'Select All', icon: <Layers size={12} />, onClick: () => selectAll?.() },
+      { label: 'Deselect All', icon: <Focus size={12} />, onClick: () => deselectAll() },
+    ]
+  }
 
   return (
     <>
@@ -55,6 +126,130 @@ export function ViewportOverlay() {
           </>
         )}
       </div>
+
+      {/* Left-edge tool icon strip */}
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1">
+        {TOOLS.map(({ id, label, key, Icon }) => {
+          const isActive = activeTool === id
+          return (
+            <button
+              key={id}
+              onClick={() => setActiveTool(id)}
+              title={`${label} (${key})`}
+              className="w-8 h-8 flex items-center justify-center rounded-lg transition-all relative group"
+              style={{
+                background: isActive ? '#5B6CFF' : 'rgba(11,12,15,0.85)',
+                border: `1px solid ${isActive ? '#5B6CFF' : '#1E2028'}`,
+                backdropFilter: 'blur(4px)',
+                color: isActive ? '#fff' : '#7A7E92',
+                boxShadow: isActive ? '0 0 10px rgba(91,108,255,0.4)' : 'none',
+              }}
+            >
+              <Icon size={14} strokeWidth={isActive ? 2.5 : 1.75} />
+              {/* Tooltip */}
+              <div className="absolute left-full ml-2 px-2 py-1 rounded text-[10px] whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50"
+                style={{ background: '#1E2028', color: '#E8E9F0', border: '1px solid #2a2d40' }}>
+                {label}
+                <span className="ml-1.5 opacity-50">{key}</span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Floating mini-toolbar above selected object */}
+      {selectedObj && selectedIds.length === 1 && !isPlaying && (
+        <div className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto"
+          style={{ top: '48px' }}>
+          <div className="flex items-center gap-0 rounded-xl overflow-hidden border shadow-xl"
+            style={{ background: 'rgba(11,12,15,0.92)', borderColor: '#2a2d40', backdropFilter: 'blur(8px)' }}>
+            <div className="px-3 py-1.5 text-[11px] font-medium border-r max-w-[120px] truncate"
+              style={{ color: '#C8C9D0', borderColor: '#2a2d40' }}>
+              {selectedObj.name}
+            </div>
+            {[
+              { tool: 'translate' as const, Icon: Move, label: 'Move (W)' },
+              { tool: 'rotate' as const, Icon: RotateCcw, label: 'Rotate (E)' },
+              { tool: 'scale' as const, Icon: Maximize2, label: 'Scale (R)' },
+            ].map(({ tool, Icon, label }) => (
+              <button
+                key={tool}
+                onClick={() => setActiveTool(tool)}
+                title={label}
+                className="w-8 h-8 flex items-center justify-center transition-colors border-r"
+                style={{
+                  background: activeTool === tool ? '#5B6CFF22' : 'transparent',
+                  color: activeTool === tool ? '#5B6CFF' : '#7A7E92',
+                  borderColor: '#2a2d40',
+                }}
+                onMouseEnter={(e) => { if (activeTool !== tool) e.currentTarget.style.background = '#1E2028' }}
+                onMouseLeave={(e) => { if (activeTool !== tool) e.currentTarget.style.background = 'transparent' }}
+              >
+                <Icon size={12} />
+              </button>
+            ))}
+            <button
+              onClick={() => { if (selectedIds[0]) duplicateObject(selectedIds[0]) }}
+              title="Duplicate"
+              className="w-8 h-8 flex items-center justify-center transition-colors border-r"
+              style={{ color: '#7A7E92', borderColor: '#2a2d40' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#1E2028'; e.currentTarget.style.color = '#C8C9D0' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7E92' }}
+            >
+              <Copy size={12} />
+            </button>
+            <button
+              onClick={() => { if (selectedIds[0]) deleteObject(selectedIds[0]) }}
+              title="Delete"
+              className="w-8 h-8 flex items-center justify-center transition-colors"
+              style={{ color: '#FF5C8A' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#2a0a18' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-selection badge */}
+      {selectedIds.length > 1 && !isPlaying && (
+        <div className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-auto"
+          style={{ top: '48px' }}>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border shadow-xl"
+            style={{ background: 'rgba(11,12,15,0.92)', borderColor: '#2a2d40', backdropFilter: 'blur(8px)' }}>
+            <span className="text-[11px] font-medium" style={{ color: '#C8C9D0' }}>
+              {selectedIds.length} selected
+            </span>
+            <div className="w-px h-4" style={{ background: '#2a2d40' }} />
+            <button
+              onClick={() => {
+                if (selectedIds.length > 0) duplicateObject(selectedIds[0])
+              }}
+              title="Duplicate"
+              className="flex items-center gap-1 text-[10px] transition-colors"
+              style={{ color: '#7A7E92' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#C8C9D0' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92' }}
+            >
+              <Copy size={11} /> Group
+            </button>
+            <button
+              onClick={() => {
+                selectedIds.forEach((id) => deleteObject(id))
+                deselectAll()
+              }}
+              title="Delete selected"
+              className="flex items-center gap-1 text-[10px] transition-colors"
+              style={{ color: '#FF5C8A' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#ff8aaa' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = '#FF5C8A' }}
+            >
+              <Trash2 size={11} /> Delete
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* REC indicator */}
       {isRecording && (
@@ -93,7 +288,7 @@ export function ViewportOverlay() {
       )}
 
       {/* Tool / space indicator */}
-      <div className="absolute bottom-16 left-3 z-20 pointer-events-none flex flex-col gap-1">
+      <div className="absolute bottom-16 left-14 z-20 pointer-events-none flex flex-col gap-1">
         <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 backdrop-blur-md border border-zinc-800">
           <span className="text-[10px] text-zinc-500 uppercase tracking-widest">{activeTool}</span>
           {activeTool !== 'select' && (
@@ -144,7 +339,7 @@ export function ViewportOverlay() {
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
           <div className="flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-zinc-800/50">
             {[
-              ['Q', 'Select'], ['W', 'Move'], ['E', 'Rotate'], ['R', 'Scale'],
+              ['Q', 'Select'], ['W', 'Move'], ['E', 'Rotate'], ['R', 'Scale'], ['T', 'Sculpt'],
               ['G', 'Snap'], ['F3', 'Stats'],
             ].map(([k, l]) => (
               <span key={k} className="flex items-center gap-1 text-[10px]">
@@ -154,6 +349,16 @@ export function ViewportOverlay() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={buildContextItems()}
+          onClose={closeContextMenu}
+        />
       )}
     </>
   )
