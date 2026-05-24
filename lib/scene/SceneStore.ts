@@ -1295,7 +1295,17 @@ if (typeof window !== 'undefined') {
       clearTimeout((window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer)
       ;(window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer = setTimeout(() => {
         try {
-          localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(state))
+          // Blob URLs are session-scoped — strip them before persisting so they
+          // don't cause ERR_FILE_NOT_FOUND on the next page load.
+          const toSave = {
+            ...state,
+            environment: {
+              ...state.environment,
+              hdriUrl: state.environment.hdriUrl?.startsWith('blob:') ? null : state.environment.hdriUrl,
+              hdriName: state.environment.hdriUrl?.startsWith('blob:') ? 'None' : state.environment.hdriName,
+            },
+          }
+          localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(toSave))
         } catch {}
       }, 500)
     }
@@ -1338,7 +1348,10 @@ export function loadPersistedScene() {
     useScene.setState((s) => {
       s.objects = objects
       s.rootIds = Array.isArray(data.rootIds) ? data.rootIds : []
-      s.environment = { ...s.environment, ...data.environment }
+      const loadedEnv = { ...s.environment, ...data.environment }
+      // Guard against stale blob URLs from a previous session
+      if (loadedEnv.hdriUrl?.startsWith('blob:')) { loadedEnv.hdriUrl = null; loadedEnv.hdriName = 'None' }
+      s.environment = loadedEnv
       s.postFX = { ...s.postFX, ...data.postFX }
       if (Array.isArray(data.scenes)) s.scenes = data.scenes
       if (data.activeSceneId) s.activeSceneId = data.activeSceneId
