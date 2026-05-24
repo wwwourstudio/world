@@ -2,10 +2,10 @@
 
 import { useState } from 'react'
 import {
-  Globe2, MousePointer2, Move, RotateCw, Maximize2,
+  MousePointer2, Move, RotateCw, Maximize2,
   PanelLeft, PanelRight, PanelBottom, Play, Square,
-  Undo2, Redo2, Grid3X3, Settings, Download, Upload,
-  ChevronDown, Zap, Eye, Paintbrush, Mountain
+  Undo2, Redo2, Grid3X3, Download, Upload,
+  ChevronDown, Zap, Eye, Paintbrush, Mountain, Monitor, Globe2, Type,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { WORLD_TEMPLATES } from '@/lib/ai/WorldTemplates'
@@ -20,6 +20,15 @@ const TOOLS: { id: ActiveTool; icon: typeof MousePointer2; label: string; key: s
   { id: 'rotate', icon: RotateCw, label: 'Rotate', key: 'E' },
   { id: 'scale', icon: Maximize2, label: 'Scale', key: 'R' },
   { id: 'sculpt', icon: Paintbrush, label: 'Sculpt', key: 'T' },
+]
+
+const HTML_ELEMENTS = [
+  { label: 'Heading', htmlType: 'heading' as const, fontSize: 64, content: 'Your Title Here' },
+  { label: 'Paragraph', htmlType: 'paragraph' as const, fontSize: 16, content: 'Your paragraph text here. Edit to add your content.' },
+  { label: 'Image', htmlType: 'image' as const, fontSize: 16, content: '' },
+  { label: 'Video', htmlType: 'video' as const, fontSize: 16, content: '' },
+  { label: 'Button', htmlType: 'button' as const, fontSize: 18, content: 'Click Me' },
+  { label: 'Form', htmlType: 'form' as const, fontSize: 16, content: '' },
 ]
 
 export function MainToolbar() {
@@ -41,16 +50,15 @@ export function MainToolbar() {
   const redo = useScene((s) => s.redo)
   const past = useScene((s) => s.past)
   const future = useScene((s) => s.future)
-  const objects = useScene((s) => s.objects)
-  const rootIds = useScene((s) => s.rootIds)
   const addObject = useScene((s) => s.addObject)
-  const setEnvironment = useScene((s) => s.setEnvironment)
-  const showNotification = useScene((s) => s.showNotification)
+  const appMode = useScene((s) => s.appMode)
+  const setAppMode = useScene((s) => s.setAppMode)
 
   const [showTemplates, setShowTemplates] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  const [showAddHtml, setShowAddHtml] = useState(false)
 
   function loadTemplate(templateId: string) {
     const tpl = WORLD_TEMPLATES.find((t) => t.id === templateId)
@@ -89,40 +97,61 @@ export function MainToolbar() {
     <>
       <header
         className="flex items-center h-11 shrink-0 select-none z-30 px-3 gap-2"
-        style={{ background: '#111318', borderBottom: '1px solid #1E2028' }}
+        style={{ background: '#0a0a0a', borderBottom: '1px solid #1a1a1a' }}
       >
         {/* Logo */}
-        <div className="flex items-center gap-2 mr-2">
-          <div className="w-6 h-6 rounded-lg flex items-center justify-center shadow-sm shadow-blue-500/20"
-            style={{ background: 'linear-gradient(135deg, #5B6CFF, #8B5CF6)' }}>
-            <Globe2 size={13} className="text-white" strokeWidth={2} />
-          </div>
-          <span className="text-[13px] font-semibold tracking-tight" style={{ color: '#E8E9F0' }}>World Builder</span>
+        <div className="flex items-center gap-2.5 mr-2">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="8.5" stroke="white" strokeWidth="1.2" />
+            <ellipse cx="10" cy="10" rx="4.2" ry="8.5" stroke="white" strokeWidth="1.2" />
+            <line x1="1.5" y1="10" x2="18.5" y2="10" stroke="white" strokeWidth="1.2" />
+            <line x1="10" y1="4" x2="10" y2="16" stroke="white" strokeWidth="1.2" />
+          </svg>
+          <span className="text-[13px] font-light tracking-widest uppercase" style={{ color: '#f0f0f0' }}>World</span>
         </div>
 
         {/* Divider */}
-        <div className="w-px h-5 mx-1" style={{ background: '#1E2028' }} />
+        <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
 
         {/* Panel toggles */}
         <div className="flex items-center gap-0.5">
-          <ToolBtn
-            icon={PanelLeft} active={panels.leftOpen}
-            onClick={() => togglePanel('left')} title="Left Panel (Outliner)"
-          />
-          <ToolBtn
-            icon={PanelRight} active={panels.rightOpen}
-            onClick={() => togglePanel('right')} title="Right Panel (Chat)"
-          />
-          <ToolBtn
-            icon={PanelBottom} active={panels.bottomOpen}
-            onClick={() => togglePanel('bottom')} title="Bottom Panel (Animation)"
-          />
+          <ToolBtn icon={PanelLeft} active={panels.leftOpen} onClick={() => togglePanel('left')} title="Left Panel" />
+          <ToolBtn icon={PanelRight} active={panels.rightOpen} onClick={() => togglePanel('right')} title="Right Panel" />
+          <ToolBtn icon={PanelBottom} active={panels.bottomOpen} onClick={() => togglePanel('bottom')} title="Bottom Panel" />
         </div>
 
-        <div className="w-px h-5 mx-1" style={{ background: '#1E2028' }} />
+        <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
+
+        {/* AppMode switcher */}
+        <div className="flex items-center p-0.5 rounded-lg" style={{ background: '#000', border: '1px solid #1a1a1a' }}>
+          <button
+            onClick={() => setAppMode('world')}
+            className="flex items-center gap-1.5 px-2.5 h-6 rounded-md text-[11px] font-medium transition-all"
+            style={appMode === 'world'
+              ? { background: '#ffffff', color: '#000000' }
+              : { background: 'transparent', color: '#555555' }
+            }
+          >
+            <Globe2 size={11} strokeWidth={2} />
+            World
+          </button>
+          <button
+            onClick={() => setAppMode('website')}
+            className="flex items-center gap-1.5 px-2.5 h-6 rounded-md text-[11px] font-medium transition-all"
+            style={appMode === 'website'
+              ? { background: '#ffffff', color: '#000000' }
+              : { background: 'transparent', color: '#555555' }
+            }
+          >
+            <Monitor size={11} strokeWidth={2} />
+            Website
+          </button>
+        </div>
+
+        <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
 
         {/* Transform tools */}
-        <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: '#0B0C0F' }}>
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: '#000' }}>
           {TOOLS.map(({ id, icon: Icon, label, key }) => (
             <button
               key={id}
@@ -130,11 +159,11 @@ export function MainToolbar() {
               title={`${label} (${key})`}
               className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[12px] font-medium transition-all duration-150"
               style={activeTool === id
-                ? { background: '#5B6CFF', color: '#ffffff' }
-                : { color: '#7A7E92' }
+                ? { background: 'rgba(255,255,255,0.12)', color: '#ffffff' }
+                : { color: '#555555' }
               }
-              onMouseEnter={(e) => { if (activeTool !== id) e.currentTarget.style.color = '#E8E9F0' }}
-              onMouseLeave={(e) => { if (activeTool !== id) e.currentTarget.style.color = '#7A7E92' }}
+              onMouseEnter={(e) => { if (activeTool !== id) e.currentTarget.style.color = '#f0f0f0' }}
+              onMouseLeave={(e) => { if (activeTool !== id) e.currentTarget.style.color = '#555555' }}
             >
               <Icon size={13} strokeWidth={1.75} />
               <span className="hidden md:inline">{label}</span>
@@ -142,7 +171,7 @@ export function MainToolbar() {
           ))}
         </div>
 
-        <div className="w-px h-5 mx-1" style={{ background: '#1E2028' }} />
+        <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
 
         {/* Space toggle */}
         <button
@@ -150,9 +179,9 @@ export function MainToolbar() {
           title="Toggle Local/World Space (X)"
           className="px-2.5 h-7 rounded-md text-[11px] font-mono font-medium transition-colors border"
           style={{
-            background: transformSpace === 'local' ? '#1a1a4a' : 'transparent',
-            color: transformSpace === 'local' ? '#5B6CFF' : '#7A7E92',
-            borderColor: transformSpace === 'local' ? '#3a3a8a' : '#1E2028',
+            background: transformSpace === 'local' ? 'rgba(255,255,255,0.08)' : 'transparent',
+            color: transformSpace === 'local' ? '#ffffff' : '#555555',
+            borderColor: transformSpace === 'local' ? '#333' : '#1a1a1a',
           }}
         >
           {transformSpace === 'local' ? 'LOCAL' : 'WORLD'}
@@ -164,9 +193,9 @@ export function MainToolbar() {
           title="Toggle Grid Snap (G)"
           className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[11px] transition-colors border"
           style={{
-            background: snapEnabled ? '#1a1a00' : 'transparent',
-            color: snapEnabled ? '#d4b400' : '#7A7E92',
-            borderColor: snapEnabled ? '#3a3000' : '#1E2028',
+            background: snapEnabled ? 'rgba(255,255,255,0.08)' : 'transparent',
+            color: snapEnabled ? '#ffffff' : '#555555',
+            borderColor: snapEnabled ? '#333' : '#1a1a1a',
           }}
         >
           <Grid3X3 size={12} strokeWidth={1.75} />
@@ -181,29 +210,29 @@ export function MainToolbar() {
           <ToolBtn icon={Redo2} disabled={future.length === 0} onClick={redo} title="Redo (Ctrl+Y)" />
         </div>
 
-        <div className="w-px h-5 mx-1" style={{ background: '#1E2028' }} />
+        <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
 
         {/* Add object */}
         <div className="relative">
           <button
             onClick={() => setShowAdd((v) => !v)}
             className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors"
-            style={{ background: '#1a2a4a', color: '#5B6CFF', border: '1px solid #2a3a6a' }}
+            style={{ background: 'rgba(255,255,255,0.08)', color: '#f0f0f0', border: '1px solid #2a2a2a' }}
           >
             + Add
             <ChevronDown size={11} strokeWidth={2} />
           </button>
           {showAdd && (
             <Dropdown onClose={() => setShowAdd(false)}>
-              <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1 mt-1">Primitives</div>
+              <div className="text-[10px] uppercase tracking-wider px-2 py-1 mt-1" style={{ color: '#444' }}>Primitives</div>
               {PRIMITIVES.map((p) => (
                 <DropdownItem key={p.label} onClick={() => {
                   addObject({ name: p.label, type: 'mesh', geometry: p.geo, transform: { position: [0, p.geo.type === 'plane' ? 0 : 0.5, 0], rotation: [p.geo.type === 'plane' ? -Math.PI / 2 : 0, 0, 0], scale: [1, 1, 1] } })
                   setShowAdd(false)
                 }}>{p.label}</DropdownItem>
               ))}
-              <div className="w-full h-px my-1" style={{ background: '#1E2028' }} />
-              <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Special</div>
+              <div className="w-full h-px my-1" style={{ background: '#1a1a1a' }} />
+              <div className="text-[10px] uppercase tracking-wider px-2 py-1" style={{ color: '#444' }}>Special</div>
               <DropdownItem onClick={() => {
                 addObject({ name: '3D Text', type: 'mesh', geometry: { type: 'text', text: 'Hello', fontSize: 0.5 }, transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
                 setShowAdd(false)
@@ -220,8 +249,8 @@ export function MainToolbar() {
                 addObject({ name: 'Snow', type: 'particle', geometry: { type: 'sphere', radius: 0.1 }, particle: { count: 400, spread: [10, 8, 10], instanceGeometry: 'sphere', instanceScale: 0.05, randomScale: 0.5, preset: 'snow' }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
                 setShowAdd(false)
               }}>✦ Snow</DropdownItem>
-              <div className="w-full h-px my-1" style={{ background: '#1E2028' }} />
-              <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Environment</div>
+              <div className="w-full h-px my-1" style={{ background: '#1a1a1a' }} />
+              <div className="text-[10px] uppercase tracking-wider px-2 py-1" style={{ color: '#444' }}>Environment</div>
               <DropdownItem onClick={() => {
                 addObject({ name: 'Terrain', type: 'terrain', geometry: { type: 'plane' }, terrain: { ...DEFAULT_TERRAIN }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
                 setShowAdd(false)
@@ -230,8 +259,8 @@ export function MainToolbar() {
                 addObject({ name: 'Water', type: 'water', geometry: { type: 'plane' }, water: { ...DEFAULT_WATER }, transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [1, 1, 1] } })
                 setShowAdd(false)
               }}>🌊 Water</DropdownItem>
-              <div className="w-full h-px my-1" style={{ background: '#1E2028' }} />
-              <div className="text-[10px] text-zinc-600 uppercase tracking-wider px-2 py-1">Lights</div>
+              <div className="w-full h-px my-1" style={{ background: '#1a1a1a' }} />
+              <div className="text-[10px] uppercase tracking-wider px-2 py-1" style={{ color: '#444' }}>Lights</div>
               {LIGHTS.map((l) => (
                 <DropdownItem key={l.label} onClick={() => {
                   addObject({ name: l.label, type: 'light', light: { type: l.ltype, intensity: 1, color: '#ffffff', distance: 20, decay: 2, angle: Math.PI / 4, penumbra: 0.1, castShadow: true, ...l.extra }, transform: { position: [0, 5, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
@@ -242,14 +271,45 @@ export function MainToolbar() {
           )}
         </div>
 
+        {/* Add HTML (website mode only) */}
+        {appMode === 'website' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowAddHtml((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors"
+              style={{ background: 'rgba(255,255,255,0.06)', color: '#aaaaaa', border: '1px solid #2a2a2a' }}
+            >
+              <Type size={11} strokeWidth={2} />
+              HTML
+              <ChevronDown size={11} strokeWidth={2} />
+            </button>
+            {showAddHtml && (
+              <Dropdown onClose={() => setShowAddHtml(false)}>
+                {HTML_ELEMENTS.map((el) => (
+                  <DropdownItem key={el.htmlType} onClick={() => {
+                    addObject({
+                      name: el.label,
+                      type: 'html',
+                      geometry: { type: 'box' },
+                      htmlConfig: { htmlType: el.htmlType, content: el.content, fontSize: el.fontSize, color: '#ffffff', width: 400 },
+                      transform: { position: [0, 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+                    })
+                    setShowAddHtml(false)
+                  }}>{el.label}</DropdownItem>
+                ))}
+              </Dropdown>
+            )}
+          </div>
+        )}
+
         {/* Templates */}
         <div className="relative">
           <button
             onClick={() => setShowTemplates((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors"
-            style={{ color: '#7A7E92', border: '1px solid #1E2028' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = '#E8E9F0' }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92' }}
+            className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors border"
+            style={{ color: '#555555', borderColor: '#1a1a1a' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#f0f0f0' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#555555' }}
           >
             Templates
             <ChevronDown size={11} strokeWidth={2} />
@@ -265,7 +325,7 @@ export function MainToolbar() {
           )}
         </div>
 
-        <div className="w-px h-5 mx-1" style={{ background: '#1E2028' }} />
+        <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
 
         {/* Stats */}
         <ToolBtn icon={Eye} active={showStats} onClick={() => setShowStats(!showStats)} title="Toggle Stats (F3)" />
@@ -276,9 +336,9 @@ export function MainToolbar() {
           title="Toggle Physics"
           className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[11px] font-medium transition-colors border"
           style={{
-            background: physicsEnabled ? '#1a0a2a' : 'transparent',
-            color: physicsEnabled ? '#a855f7' : '#7A7E92',
-            borderColor: physicsEnabled ? '#5a2a8a' : '#1E2028',
+            background: physicsEnabled ? 'rgba(255,255,255,0.1)' : 'transparent',
+            color: physicsEnabled ? '#ffffff' : '#555555',
+            borderColor: physicsEnabled ? '#333' : '#1a1a1a',
           }}
         >
           <Zap size={12} strokeWidth={1.75} />
@@ -289,7 +349,7 @@ export function MainToolbar() {
         <ToolBtn icon={Upload} onClick={() => setShowImport(true)} title="Import" />
         <ToolBtn icon={Download} onClick={() => setShowExport(true)} title="Export" />
 
-        <div className="w-px h-5 mx-1" style={{ background: '#1E2028' }} />
+        <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
 
         {/* Play */}
         <button
@@ -297,8 +357,8 @@ export function MainToolbar() {
           title={isPlaying ? 'Stop (Space)' : 'Play (Space)'}
           className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[12px] font-semibold transition-all"
           style={isPlaying
-            ? { background: '#FF5C8A', color: '#ffffff', boxShadow: '0 0 12px rgba(255,92,138,0.4)' }
-            : { background: 'linear-gradient(135deg, #5B6CFF, #7c3aed)', color: '#ffffff', boxShadow: '0 0 8px rgba(91,108,255,0.3)' }
+            ? { background: '#333333', color: '#ffffff' }
+            : { background: '#ffffff', color: '#000000' }
           }
         >
           {isPlaying ? <Square size={13} strokeWidth={2} /> : <Play size={13} strokeWidth={2} />}
@@ -332,12 +392,12 @@ function ToolBtn({
       title={title}
       className="w-7 h-7 flex items-center justify-center rounded-md transition-colors"
       style={{
-        background: active ? '#5B6CFF22' : 'transparent',
-        color: disabled ? '#3a3a4a' : active ? '#5B6CFF' : '#7A7E92',
+        background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+        color: disabled ? '#2a2a2a' : active ? '#ffffff' : '#555555',
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}
-      onMouseEnter={(e) => { if (!disabled && !active) e.currentTarget.style.color = '#E8E9F0' }}
-      onMouseLeave={(e) => { if (!disabled && !active) e.currentTarget.style.color = '#7A7E92' }}
+      onMouseEnter={(e) => { if (!disabled && !active) e.currentTarget.style.color = '#f0f0f0' }}
+      onMouseLeave={(e) => { if (!disabled && !active) e.currentTarget.style.color = '#555555' }}
     >
       <Icon size={14} strokeWidth={1.75} />
     </button>
@@ -350,7 +410,7 @@ function Dropdown({ children, onClose, align = 'left' }: { children: React.React
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         className={`absolute top-full mt-1 z-50 min-w-[180px] rounded-lg border py-1 shadow-2xl ${align === 'right' ? 'right-0' : 'left-0'}`}
-        style={{ background: '#111318', borderColor: '#1E2028' }}
+        style={{ background: '#0a0a0a', borderColor: '#1a1a1a' }}
       >
         {children}
       </div>
@@ -363,9 +423,9 @@ function DropdownItem({ children, onClick }: { children: React.ReactNode; onClic
     <button
       onClick={onClick}
       className="w-full flex items-center px-3 py-1.5 text-[12px] text-left transition-colors"
-      style={{ color: '#7A7E92' }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = '#1E2028'; e.currentTarget.style.color = '#E8E9F0' }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7E92' }}
+      style={{ color: '#555555' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.color = '#f0f0f0' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#555555' }}
     >
       {children}
     </button>

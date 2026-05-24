@@ -1,7 +1,7 @@
 'use client'
 
-import { Suspense, useRef, useEffect, useMemo } from 'react'
-import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
+import { Suspense, useRef, useEffect, useMemo, Component, type ReactNode } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   OrbitControls,
   TransformControls,
@@ -30,6 +30,18 @@ import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, Animatio
 import { captureCanvas } from '@/lib/canvasCapture'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 import { fbmNoise } from '@/lib/noise'
+import { interpolateCameraPath } from '@/lib/cameraPath'
+
+// ─── GLTF Error Boundary ─────────────────────────────────────────────────────
+
+class GLTFErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  render() {
+    if (this.state.failed) return null
+    return this.props.children
+  }
+}
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
@@ -1098,12 +1110,108 @@ function LightObject({ obj }: { obj: SceneObject }) {
   )
 }
 
+// ─── HTML Overlay Object ─────────────────────────────────────────────────────
+
+function HtmlObject({ obj }: { obj: SceneObject }) {
+  const cfg = obj.htmlConfig!
+  const selectObject = useScene((s) => s.selectObject)
+  const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+
+  return (
+    <Html
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      transform
+      occlude={false}
+      style={{ pointerEvents: 'auto' }}
+    >
+      <div
+        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, false) }}
+        style={{
+          width: `${cfg.width ?? 400}px`,
+          color: cfg.color ?? '#ffffff',
+          background: cfg.background ?? 'transparent',
+          padding: cfg.padding ? `${cfg.padding}px` : undefined,
+          borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined,
+          opacity: cfg.opacity ?? 1,
+          textAlign: cfg.textAlign ?? 'left',
+          outline: isSelected ? '2px solid rgba(255,255,255,0.8)' : 'none',
+          outlineOffset: '4px',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+      >
+        {cfg.htmlType === 'heading' && (
+          <h1 style={{ fontSize: `${cfg.fontSize ?? 64}px`, fontWeight: cfg.fontWeight ?? '700', margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
+            {cfg.content ?? 'Heading'}
+          </h1>
+        )}
+        {cfg.htmlType === 'paragraph' && (
+          <p style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '400', margin: 0, lineHeight: 1.6 }}>
+            {cfg.content ?? 'Paragraph text'}
+          </p>
+        )}
+        {cfg.htmlType === 'image' && cfg.content && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={cfg.content} alt="" style={{ width: '100%', borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined }} />
+        )}
+        {cfg.htmlType === 'video' && cfg.videoUrl && (
+          <video src={cfg.videoUrl} autoPlay muted loop playsInline style={{ width: '100%' }} />
+        )}
+        {cfg.htmlType === 'button' && (
+          <button style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '600', background: cfg.color ?? '#ffffff', color: cfg.background ?? '#000000', padding: '14px 36px', border: 'none', borderRadius: `${cfg.borderRadius ?? 8}px`, cursor: 'pointer', letterSpacing: '0.04em' }}>
+            {cfg.content ?? 'Click Me'}
+          </button>
+        )}
+        {cfg.htmlType === 'form' && (
+          <form style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} onSubmit={(e) => e.preventDefault()}>
+            <input placeholder="Your name" style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px' }} />
+            <input placeholder="Email" type="email" style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px' }} />
+            <textarea placeholder="Message" rows={3} style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px', resize: 'none' }} />
+            <button type="submit" style={{ padding: '12px', background: '#fff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Send</button>
+          </form>
+        )}
+      </div>
+    </Html>
+  )
+}
+
+// ─── Scroll-Driven Camera ─────────────────────────────────────────────────────
+
+function ScrollCamera() {
+  const appMode = useScene((s) => s.appMode)
+  const cameraPath = useScene((s) => s.cameraPath)
+  const scrollProgress = useScene((s) => s.scrollProgress)
+  const { camera, controls } = useThree()
+  const targetPos = useRef(new THREE.Vector3())
+  const targetLook = useRef(new THREE.Vector3())
+
+  useFrame(() => {
+    if (appMode !== 'website' || cameraPath.length < 2) return
+    const { position, target, fov } = interpolateCameraPath(cameraPath, scrollProgress)
+    targetPos.current.copy(position)
+    targetLook.current.copy(target)
+    camera.position.lerp(targetPos.current, 0.08)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctrl = controls as any
+    if (ctrl?.target) ctrl.target.lerp(targetLook.current, 0.08)
+    const cam = camera as THREE.PerspectiveCamera
+    if (cam.fov !== undefined) {
+      cam.fov = THREE.MathUtils.lerp(cam.fov, fov, 0.05)
+      cam.updateProjectionMatrix()
+    }
+  })
+
+  return null
+}
+
 // ─── Scene Object Router ──────────────────────────────────────────────────────
 
 function SceneObjectNode({ id }: { id: string }) {
   const obj = useScene((s) => s.objects[id])
   if (!obj || !obj.visible) return null
 
+  if (obj.type === 'html' && obj.htmlConfig) return <HtmlObject obj={obj} />
   if (obj.type === 'light' && obj.light) return <LightObject obj={obj} />
   if (obj.type === 'terrain' && obj.terrain) return <TerrainObject obj={obj} />
   if (obj.type === 'water' && obj.water) return <WaterObject obj={obj} />
@@ -1420,6 +1528,7 @@ function InnerScene() {
   const activeTool = useScene((s) => s.activeTool)
   const deselectAll = useScene((s) => s.deselectAll)
   const transformSpace = useScene((s) => s.transformSpace)
+  const appMode = useScene((s) => s.appMode)
 
   const mapSize = environment.shadowMapSize ?? 2048
 
@@ -1459,18 +1568,20 @@ function InnerScene() {
       <ShadowMapSetup />
       <PostProcessing />
 
-      {/* Grid */}
-      <Grid
-        infiniteGrid
-        fadeDistance={50}
-        fadeStrength={2}
-        cellSize={1}
-        cellThickness={0.5}
-        cellColor="#1a1a2e"
-        sectionSize={5}
-        sectionThickness={1}
-        sectionColor="#2a2a4e"
-      />
+      {/* Grid — hidden in website mode */}
+      {appMode !== 'website' && (
+        <Grid
+          infiniteGrid
+          fadeDistance={50}
+          fadeStrength={2}
+          cellSize={1}
+          cellThickness={0.5}
+          cellColor="#1a1a2e"
+          sectionSize={5}
+          sectionThickness={1}
+          sectionColor="#2a2a4e"
+        />
+      )}
 
       {/* Stars when no HDRI and no sky shader */}
       {!environment.hdriUrl && !environment.skyEnabled && <Stars radius={100} depth={50} count={3000} factor={4} fade />}
@@ -1505,11 +1616,27 @@ function InnerScene() {
 
 export function ViewportCanvas() {
   const cameraMode = useScene((s) => s.cameraMode)
+  const appMode = useScene((s) => s.appMode)
   const deselectAll = useScene((s) => s.deselectAll)
   const toneMappingExposure = useScene((s) => s.postFX.toneMappingExposure)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      const state = useScene.getState()
+      if (!state.websiteScrollEnabled) return
+      e.preventDefault()
+      const delta = e.deltaY / 3000
+      state.setScrollProgress(state.scrollProgress + delta)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   return (
-    <div className="w-full h-full" style={{ background: '#0B0C0F' }} onContextMenu={(e) => e.preventDefault()}>
+    <div ref={wrapperRef} className="w-full h-full" style={{ background: '#000000' }} onContextMenu={(e) => e.preventDefault()}>
       <Canvas
         shadows
         gl={{
@@ -1527,11 +1654,12 @@ export function ViewportCanvas() {
           <CanvasCaptureSetup />
           <FrameController />
           <FlyCamera />
+          <ScrollCamera />
           <OrbitControls
             makeDefault
             enableDamping
             dampingFactor={0.05}
-            enabled={cameraMode === 'orbit'}
+            enabled={cameraMode === 'orbit' && appMode !== 'website'}
           />
         </Suspense>
       </Canvas>
