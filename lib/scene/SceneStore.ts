@@ -4,7 +4,8 @@ import { subscribeWithSelector } from 'zustand/middleware'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type ObjectType = 'mesh' | 'light' | 'group' | 'particle' | 'terrain' | 'water'
+export type ObjectType = 'mesh' | 'light' | 'group' | 'particle' | 'terrain' | 'water' | 'html'
+export type AppMode = 'world' | 'website'
 export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'torusknot' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'octahedron' | 'icosahedron' | 'text' | 'gltf'
 export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere' | 'rectarea'
 export type MaterialType = 'standard' | 'physical' | 'toon' | 'wireframe' | 'glass' | 'hologram'
@@ -152,11 +153,39 @@ export interface Keyframe {
   transform: Transform
 }
 
+export interface CameraKeypoint {
+  id: string
+  label: string
+  position: [number, number, number]
+  target: [number, number, number]
+  fov: number
+  easing: 'linear' | 'ease' | 'ease-in' | 'ease-out'
+  sceneId?: string
+}
+
+export interface HtmlObjectConfig {
+  htmlType: 'heading' | 'paragraph' | 'image' | 'video' | 'button' | 'form' | 'instagram'
+  content?: string
+  videoUrl?: string
+  instagramToken?: string
+  fontSize?: number
+  fontWeight?: string
+  color?: string
+  background?: string
+  padding?: number
+  borderRadius?: number
+  width?: number
+  height?: number
+  textAlign?: 'left' | 'center' | 'right'
+  opacity?: number
+}
+
 export interface ObjectInteraction {
   hoverEffect: 'none' | 'highlight' | 'scale'
-  clickAction: 'none' | 'toggle-anim' | 'link' | 'toggle-visible'
+  clickAction: 'none' | 'toggle-anim' | 'link' | 'toggle-visible' | 'camera-link'
   tooltipText?: string
   linkUrl?: string
+  cameraKeypointId?: string
 }
 
 export interface AnimationConfig {
@@ -210,6 +239,7 @@ export interface SceneObject {
   terrain?: TerrainConfig
   water?: WaterConfig
   behaviors?: BehaviorConfig[]
+  htmlConfig?: HtmlObjectConfig
 }
 
 export interface EnvironmentState {
@@ -411,6 +441,15 @@ interface SceneActions {
   duplicateScene: (id: string) => string
   removeScene: (id: string) => void
   renameScene: (id: string, name: string) => void
+
+  setAppMode: (mode: AppMode) => void
+  setScrollProgress: (v: number) => void
+  setWebsiteScrollEnabled: (v: boolean) => void
+  setPreviewMode: (v: boolean) => void
+  addCameraKeypoint: (kp: Omit<CameraKeypoint, 'id'>) => string
+  updateCameraKeypoint: (id: string, patch: Partial<CameraKeypoint>) => void
+  removeCameraKeypoint: (id: string) => void
+  reorderCameraKeypoints: (ids: string[]) => void
 }
 
 export type DeepPartial<T> = { [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P] }
@@ -458,6 +497,12 @@ interface SceneState extends SceneActions {
 
   scenes: SceneSnapshot[]
   activeSceneId: string
+
+  appMode: AppMode
+  cameraPath: CameraKeypoint[]
+  scrollProgress: number
+  websiteScrollEnabled: boolean
+  isPreviewMode: boolean
 }
 
 function makeId() {
@@ -594,6 +639,12 @@ export const useScene = create<SceneState>()(
 
       scenes: [],
       activeSceneId: 'default',
+
+      appMode: 'world',
+      cameraPath: [],
+      scrollProgress: 0,
+      websiteScrollEnabled: false,
+      isPreviewMode: false,
 
       // ── Object CRUD ──────────────────────────────────────────────────────
 
@@ -1184,6 +1235,52 @@ export const useScene = create<SceneState>()(
           if (sc) sc.name = name
         })
       },
+
+      // ── Website / Camera Path ─────────────────────────────────────────────
+
+      setAppMode(mode) {
+        set((s) => {
+          s.appMode = mode
+          s.websiteScrollEnabled = mode === 'website'
+        })
+      },
+
+      setScrollProgress(v) {
+        set((s) => { s.scrollProgress = Math.max(0, Math.min(1, v)) })
+      },
+
+      setWebsiteScrollEnabled(v) {
+        set((s) => { s.websiteScrollEnabled = v })
+      },
+
+      setPreviewMode(v) {
+        set((s) => { s.isPreviewMode = v })
+      },
+
+      addCameraKeypoint(kp) {
+        const id = makeId()
+        set((s) => { s.cameraPath.push({ ...kp, id }) })
+        return id
+      },
+
+      updateCameraKeypoint(id, patch) {
+        set((s) => {
+          const kp = s.cameraPath.find((k) => k.id === id)
+          if (kp) Object.assign(kp, patch)
+        })
+      },
+
+      removeCameraKeypoint(id) {
+        set((s) => { s.cameraPath = s.cameraPath.filter((k) => k.id !== id) })
+      },
+
+      reorderCameraKeypoints(ids) {
+        set((s) => {
+          const map: Record<string, CameraKeypoint> = {}
+          s.cameraPath.forEach((k) => { map[k.id] = k })
+          s.cameraPath = ids.map((id) => map[id]).filter(Boolean)
+        })
+      },
     }))
   )
 )
@@ -1193,7 +1290,7 @@ const SCENE_STORAGE_KEY = 'wbp-scene-v2'
 // Persist to localStorage
 if (typeof window !== 'undefined') {
   useScene.subscribe(
-    (s) => ({ objects: s.objects, rootIds: s.rootIds, environment: s.environment, postFX: s.postFX, scenes: s.scenes, activeSceneId: s.activeSceneId }),
+    (s) => ({ objects: s.objects, rootIds: s.rootIds, environment: s.environment, postFX: s.postFX, scenes: s.scenes, activeSceneId: s.activeSceneId, cameraPath: s.cameraPath }),
     (state) => {
       clearTimeout((window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer)
       ;(window as typeof window & { _persistTimer?: ReturnType<typeof setTimeout> })._persistTimer = setTimeout(() => {
@@ -1234,6 +1331,8 @@ export function loadPersistedScene() {
         castShadow: o.castShadow ?? true,
         receiveShadow: o.receiveShadow ?? true,
         behaviors: Array.isArray(o.behaviors) ? o.behaviors : undefined,
+        interaction: o.interaction ?? undefined,
+        htmlConfig: o.htmlConfig ?? undefined,
       }
     }
     useScene.setState((s) => {
@@ -1243,6 +1342,7 @@ export function loadPersistedScene() {
       s.postFX = { ...s.postFX, ...data.postFX }
       if (Array.isArray(data.scenes)) s.scenes = data.scenes
       if (data.activeSceneId) s.activeSceneId = data.activeSceneId
+      if (Array.isArray(data.cameraPath)) s.cameraPath = data.cameraPath
     })
   } catch {}
 }
