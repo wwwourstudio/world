@@ -5,7 +5,8 @@ import { Sparkles, ArrowUp, Loader2, Undo2, AlertCircle, CheckCircle2, Mic, MicO
 import { useScene } from '@/lib/scene/SceneStore'
 import type { BehaviorConfig } from '@/lib/scene/SceneStore'
 import { parseCommands, executeCommands } from '@/lib/ai/CommandParser'
-import type { BehaviorAttachment } from '@/lib/ai/CommandParser'
+import type { BehaviorAttachment, GallerySpec } from '@/lib/ai/CommandParser'
+import { ChatAssetCarousel } from '@/components/panels/ChatAssetCarousel'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
 
 interface UserMessage { role: 'user'; content: string }
@@ -17,6 +18,7 @@ interface AssistantMessage {
   suggestions?: string[]
   actionErrors?: string[]
   behaviorAttachments?: BehaviorAttachment[]
+  gallery?: GallerySpec
 }
 type Message = UserMessage | AssistantMessage
 
@@ -188,6 +190,27 @@ export function ChatPanel() {
     if (!prompt || loading) return
     setInput('')
 
+    // Detect "show me" gallery requests and respond immediately without API call
+    const showMeMatch = prompt.match(/show\s+(?:me\s+)?(?:some\s+)?(.+?)\s*(hdris?|environments?|textures?|materials?|sketchfab|models?)/i)
+    if (showMeMatch) {
+      const query = showMeMatch[1].trim()
+      const typeRaw = showMeMatch[2].toLowerCase()
+      const type = typeRaw.startsWith('hdri') || typeRaw.startsWith('env') ? 'hdri'
+        : typeRaw.startsWith('material') ? 'material'
+        : typeRaw.startsWith('texture') ? 'texture'
+        : 'sketchfab'
+      const userMsg: UserMessage = { role: 'user', content: prompt }
+      const assistantMsg: AssistantMessage = {
+        role: 'assistant',
+        content: `Here are some ${type === 'hdri' ? 'HDRI environments' : type} matching "${query}". Click to apply.`,
+        commandCount: 0,
+        status: 'complete',
+        gallery: { type, query },
+      }
+      setMessages((m) => [...m, userMsg, assistantMsg])
+      return
+    }
+
     const sceneContext = buildSceneContext(objects as Record<string, unknown>, environment as unknown as Record<string, unknown>)
     const enhancedPrompt = enhancePrompt(prompt, sceneContext)
     const systemPrompt = buildSystemPrompt(sceneContext)
@@ -229,23 +252,30 @@ export function ChatPanel() {
 
           if (event.type === 'text_delta') {
             fullText += event.text as string
-            patchLast({ content: fullText })
+            // Strip code blocks so users see natural language, not raw JSON
+            const displayText = fullText
+              .replace(/```(?:json)?\s*[\s\S]*?```/g, '')
+              .replace(/```[\s\S]*$/, '')
+              .trim()
+            patchLast({ content: displayText || '…' })
 
             // Execute commands eagerly once a complete code block arrives while streaming
             if (!executed && fullText.includes('```') && fullText.split('```').length > 2) {
-              const { commands, actions, text, suggestions } = parseCommands(fullText)
+              const { commands, actions, text, suggestions, gallery } = parseCommands(fullText)
               if (commands.length > 0 || actions.length > 0) {
                 const result = executeCommands(commands, actions)
                 const inferred = inferAmbientBehaviors(result.newObjectIds)
                 const allBehaviors = [...result.behaviorAttachments, ...inferred]
                 const bSuggs = getBehaviorSuggestions(allBehaviors)
                 executed = true
+                const cleanDisplay = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
                 patchLast({
-                  content: text || fullText,
+                  content: cleanDisplay,
                   commandCount: result.executed,
                   actionErrors: result.errors.length > 0 ? result.errors : undefined,
                   suggestions: bSuggs.length > 0 ? bSuggs : suggestions,
                   behaviorAttachments: allBehaviors.length > 0 ? allBehaviors : undefined,
+                  gallery: gallery ?? undefined,
                 })
               }
             }
@@ -256,30 +286,29 @@ export function ChatPanel() {
       }
 
       // Final pass for remaining commands
-      const { commands, actions, text, suggestions } = parseCommands(fullText)
+      const { commands, actions, text, suggestions, gallery } = parseCommands(fullText)
+      const cleanedText = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
       if (!executed && (commands.length > 0 || actions.length > 0)) {
         const result = executeCommands(commands, actions)
         const inferred = inferAmbientBehaviors(result.newObjectIds)
         const allBehaviors = [...result.behaviorAttachments, ...inferred]
         const bSuggs = getBehaviorSuggestions(allBehaviors)
         patchLast({
-          content: text || fullText,
+          content: cleanedText,
           commandCount: result.executed,
           actionErrors: result.errors.length > 0 ? result.errors : undefined,
           suggestions: bSuggs.length > 0 ? bSuggs : suggestions,
           behaviorAttachments: allBehaviors.length > 0 ? allBehaviors : undefined,
+          gallery: gallery ?? undefined,
           status: 'complete',
         })
-      } else if (!executed && suggestions) {
-        patchLast({ suggestions, status: 'complete' })
       } else {
-        // Still update suggestions even if commands already ran
-        if (suggestions) patchLast({ suggestions, status: 'complete' })
-        else patchLast({ status: 'complete' })
+        // Commands already ran mid-stream — just finalize with clean text, suggestions, and gallery
+        patchLast({ content: cleanedText, suggestions: suggestions ?? undefined, gallery: gallery ?? undefined, status: 'complete' })
       }
 
       // Update conversation history (keep last 10 turns = 20 messages)
-      const cleanText = text || fullText
+      const cleanText = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
       setConversationHistory((prev) => {
         const updated: HistoryMessage[] = [
           ...prev,
@@ -534,6 +563,11 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
             />
           ))}
         </div>
+      )}
+
+      {/* Asset gallery carousel */}
+      {msg.gallery && (
+        <ChatAssetCarousel spec={msg.gallery} />
       )}
 
       {/* Smart suggestion chips */}

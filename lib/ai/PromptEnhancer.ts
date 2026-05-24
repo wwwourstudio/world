@@ -89,6 +89,14 @@ Write a brief natural-language summary (1–3 sentences), then include the relev
 }
 \`\`\`
 
+4. GALLERY block — include when you apply an HDRI, suggest material presets, or the user asks to "show" something:
+\`\`\`json
+{
+  "gallery": { "type": "hdri", "query": "forest", "current": "forest_slope" }
+}
+\`\`\`
+Gallery types: "hdri", "material", "sketchfab", "texture". The "current" field is optional — set it to the currently applied item name.
+
 AVAILABLE COMMANDS (use inside the commands block):
 \`\`\`json
 {
