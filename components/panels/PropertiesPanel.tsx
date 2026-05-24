@@ -609,6 +609,119 @@ export function PropertiesPanel() {
         </div>
       </Section>
 
+      {/* HTML Content */}
+      {obj.type === 'html' && obj.htmlConfig && (
+        <Section label="HTML Content" icon={<Type size={11} />} defaultOpen={true}>
+          <div className="flex flex-col gap-2">
+            {(obj.htmlConfig.htmlType === 'heading' || obj.htmlConfig.htmlType === 'paragraph' || obj.htmlConfig.htmlType === 'button') && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Content</span>
+                <textarea
+                  value={obj.htmlConfig.content ?? ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, content: e.target.value } })}
+                  rows={2}
+                  className="px-2 py-1.5 rounded text-[11px] outline-none border resize-none"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            {(obj.htmlConfig.htmlType === 'image') && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Image URL</span>
+                <input
+                  value={obj.htmlConfig.content ?? ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, content: e.target.value } })}
+                  placeholder="https://..."
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            {(obj.htmlConfig.htmlType === 'video') && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Video URL</span>
+                <input
+                  value={obj.htmlConfig.videoUrl ?? ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, videoUrl: e.target.value } })}
+                  placeholder="https://..."
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            <SliderRow label="Font Size" value={obj.htmlConfig.fontSize ?? 32} min={8} max={200} step={1}
+              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, fontSize: v } })} />
+            <Row label="Font Weight">
+              <select
+                value={obj.htmlConfig.fontWeight ?? '400'}
+                onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, fontWeight: e.target.value } })}
+                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+              >
+                <option value="300">Light 300</option>
+                <option value="400">Regular 400</option>
+                <option value="600">Semi-Bold 600</option>
+                <option value="700">Bold 700</option>
+                <option value="900">Black 900</option>
+              </select>
+            </Row>
+            <Row label="Text Align">
+              <select
+                value={obj.htmlConfig.textAlign ?? 'left'}
+                onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, textAlign: e.target.value as 'left' | 'center' | 'right' } })}
+                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+              >
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </Row>
+            <Row label="Text Color">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="color"
+                  value={obj.htmlConfig.color ?? '#ffffff'}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, color: e.target.value } })}
+                  className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
+                />
+                <input
+                  value={obj.htmlConfig.color ?? '#ffffff'}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, color: e.target.value } })}
+                  className="flex-1 h-6 px-1.5 rounded text-[11px] font-mono outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            </Row>
+            <Row label="Background">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="color"
+                  value={obj.htmlConfig.background && obj.htmlConfig.background !== 'transparent' ? obj.htmlConfig.background : '#000000'}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, background: e.target.value } })}
+                  className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
+                />
+                <input
+                  value={obj.htmlConfig.background ?? 'transparent'}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, background: e.target.value } })}
+                  placeholder="transparent"
+                  className="flex-1 h-6 px-1.5 rounded text-[11px] font-mono outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            </Row>
+            <SliderRow label="Width (px)" value={obj.htmlConfig.width ?? 400} min={100} max={1200} step={10}
+              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, width: v } })} />
+            <SliderRow label="Padding (px)" value={obj.htmlConfig.padding ?? 0} min={0} max={60} step={1}
+              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, padding: v } })} />
+            <SliderRow label="Border Radius" value={obj.htmlConfig.borderRadius ?? 0} min={0} max={40} step={1}
+              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, borderRadius: v } })} />
+            <SliderRow label="Opacity" value={obj.htmlConfig.opacity ?? 1} min={0} max={1} step={0.01}
+              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, opacity: v } })} />
+          </div>
+        </Section>
+      )}
+
       {/* Interactions */}
       {(obj.type === 'mesh' || obj.type === 'group' || obj.geometry?.type === 'gltf') && (
         <Section label="Interactions" icon={<Flame size={11} />} defaultOpen={false}>

@@ -39,6 +39,12 @@ export function ViewportOverlay() {
   const duplicateObject = useScene((s) => s.duplicateObject)
   const deselectAll = useScene((s) => s.deselectAll)
   const selectAll = useScene((s) => s.selectAll)
+  const appMode = useScene((s) => s.appMode)
+  const isPreviewMode = useScene((s) => s.isPreviewMode)
+  const setPreviewMode = useScene((s) => s.setPreviewMode)
+  const scrollProgress = useScene((s) => s.scrollProgress)
+  const setScrollProgress = useScene((s) => s.setScrollProgress)
+  const websiteScrollEnabled = useScene((s) => s.websiteScrollEnabled)
 
   const objCount = Object.keys(objects).length
   const selectedObj = selectedIds.length === 1 ? objects[selectedIds[0]] : null
@@ -359,6 +365,77 @@ export function ViewportOverlay() {
           items={buildContextItems()}
           onClose={closeContextMenu}
         />
+      )}
+
+      {/* Website mode: scroll progress bar on right edge */}
+      {appMode === 'website' && !isPreviewMode && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2">
+          <span className="text-[9px] font-mono" style={{ color: '#5B6CFF' }}>
+            {Math.round(scrollProgress * 100)}%
+          </span>
+          <div
+            className="relative w-1.5 rounded-full overflow-hidden"
+            style={{ height: 120, background: '#1E2028' }}
+          >
+            <div
+              className="absolute bottom-0 left-0 right-0 rounded-full transition-all"
+              style={{ height: `${scrollProgress * 100}%`, background: '#5B6CFF' }}
+            />
+          </div>
+          <span className="text-[8px] font-mono uppercase tracking-widest" style={{ color: '#3a3e50' }}>
+            scroll
+          </span>
+        </div>
+      )}
+
+      {/* Preview mode overlay */}
+      {isPreviewMode && (
+        <div className="absolute inset-0 z-40 pointer-events-none">
+          {/* Exit button */}
+          <div className="absolute top-4 right-4 pointer-events-auto">
+            <button
+              onClick={() => setPreviewMode(false)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium backdrop-blur-md border transition-colors"
+              style={{ background: 'rgba(11,12,15,0.85)', color: '#E8E9F0', borderColor: '#2a2d40' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(30,32,40,0.95)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(11,12,15,0.85)' }}
+            >
+              ✕ Exit Preview
+            </button>
+          </div>
+
+          {/* Scroll progress in preview */}
+          <div className="absolute bottom-6 right-6 pointer-events-auto flex flex-col items-center gap-2">
+            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              {Math.round(scrollProgress * 100)}%
+            </span>
+            <div
+              className="relative w-1 rounded-full overflow-hidden"
+              style={{ height: 80, background: 'rgba(255,255,255,0.1)' }}
+            >
+              <div
+                className="absolute bottom-0 left-0 right-0 rounded-full"
+                style={{ height: `${scrollProgress * 100}%`, background: 'rgba(255,255,255,0.6)' }}
+              />
+            </div>
+          </div>
+
+          {/* Scroll hint */}
+          {websiteScrollEnabled && scrollProgress === 0 && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
+              <div className="flex flex-col items-center gap-1 animate-bounce">
+                <span className="text-[11px] font-light tracking-widest" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  SCROLL
+                </span>
+                <svg width="14" height="20" viewBox="0 0 14 20" fill="none">
+                  <rect x="5" y="1" width="4" height="7" rx="2" fill="rgba(255,255,255,0.3)" />
+                  <rect x="1" y="1" width="12" height="18" rx="6" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" />
+                  <path d="M7 14l-3 3h6l-3-3z" fill="rgba(255,255,255,0.3)" />
+                </svg>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </>
   )
