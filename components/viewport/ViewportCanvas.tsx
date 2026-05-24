@@ -13,6 +13,7 @@ import {
   Text3D,
   Outlines,
   Sky,
+  Line,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -28,6 +29,7 @@ import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
+import { captureCamera } from '@/lib/captureCamera'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 import { fbmNoise } from '@/lib/noise'
 import { interpolateCameraPath } from '@/lib/cameraPath'
@@ -1518,6 +1520,79 @@ function FrameController() {
   return null
 }
 
+// ─── Camera Capture Registration ─────────────────────────────────────────────
+
+function CameraCapture() {
+  const { camera, controls } = useThree()
+
+  useEffect(() => {
+    captureCamera.fn = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctrl = controls as any
+      const target = ctrl?.target ?? new THREE.Vector3(0, 0, 0)
+      const cam = camera as THREE.PerspectiveCamera
+      return {
+        position: camera.position.toArray() as [number, number, number],
+        target: (target as THREE.Vector3).toArray() as [number, number, number],
+        fov: cam.fov ?? 60,
+      }
+    }
+    return () => { captureCamera.fn = null }
+  }, [camera, controls])
+
+  return null
+}
+
+// ─── Camera Path Visualization ────────────────────────────────────────────────
+
+function CameraPathVisual() {
+  const appMode = useScene((s) => s.appMode)
+  const cameraPath = useScene((s) => s.cameraPath)
+
+  if (appMode !== 'website' || cameraPath.length < 2) {
+    if (appMode !== 'website' || cameraPath.length < 1) return null
+    // Single point: just show sphere
+    return (
+      <group>
+        {cameraPath.map((kp, i) => (
+          <group key={kp.id} position={kp.position}>
+            <mesh>
+              <sphereGeometry args={[0.2, 12, 12]} />
+              <meshBasicMaterial color="#5B6CFF" />
+            </mesh>
+            <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
+              <div style={{ color: '#5B6CFF', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', background: 'rgba(0,0,0,0.6)', padding: '2px 5px', borderRadius: 4 }}>
+                {i + 1}. {kp.label}
+              </div>
+            </Html>
+          </group>
+        ))}
+      </group>
+    )
+  }
+
+  const points = cameraPath.map((kp) => new THREE.Vector3(...kp.position))
+
+  return (
+    <group>
+      <Line points={points} color="#5B6CFF" lineWidth={1.5} dashed dashSize={0.4} gapSize={0.2} />
+      {cameraPath.map((kp, i) => (
+        <group key={kp.id} position={kp.position}>
+          <mesh>
+            <sphereGeometry args={[0.2, 12, 12]} />
+            <meshBasicMaterial color="#5B6CFF" />
+          </mesh>
+          <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
+            <div style={{ color: '#ffffff', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', background: 'rgba(91,108,255,0.85)', padding: '2px 6px', borderRadius: 4, marginTop: -24 }}>
+              {i + 1}. {kp.label}
+            </div>
+          </Html>
+        </group>
+      ))}
+    </group>
+  )
+}
+
 // ─── Inner Canvas Scene ───────────────────────────────────────────────────────
 
 function InnerScene() {
@@ -1567,6 +1642,9 @@ function InnerScene() {
       <SkySystem />
       <ShadowMapSetup />
       <PostProcessing />
+
+      {/* Camera path visualization — website mode only */}
+      <CameraPathVisual />
 
       {/* Grid — hidden in website mode */}
       {appMode !== 'website' && (
@@ -1652,6 +1730,7 @@ export function ViewportCanvas() {
         <Suspense fallback={null}>
           <InnerScene />
           <CanvasCaptureSetup />
+          <CameraCapture />
           <FrameController />
           <FlyCamera />
           <ScrollCamera />

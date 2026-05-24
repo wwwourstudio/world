@@ -15,8 +15,9 @@ import { SceneSwitcher } from '@/components/panels/SceneSwitcher'
 import { LightingPanel } from '@/components/panels/LightingPanel'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
-import { CheckCircle2, AlertCircle, Info, Layers, Palette, Sun } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, Layers, Palette, Sun, Globe2 } from 'lucide-react'
 import { cameraFrameFn } from '@/lib/cameraFrame'
+import { WebsitePanel } from '@/components/panels/WebsitePanel'
 
 class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state = { error: null }
@@ -106,6 +107,8 @@ export default function WorldBuilderPage() {
   const addKeyframe = useScene((s) => s.addKeyframe)
   const playhead = useScene((s) => s.playhead)
   const cameraMode = useScene((s) => s.cameraMode)
+  const appMode = useScene((s) => s.appMode)
+  const isPreviewMode = useScene((s) => s.isPreviewMode)
   const initialized = useRef(false)
 
   useEffect(() => {
@@ -113,6 +116,15 @@ export default function WorldBuilderPage() {
     initialized.current = true
     loadPersistedScene()
   }, [])
+
+  useEffect(() => {
+    if (appMode === 'website') {
+      useScene.getState().setPanelTab('left', 'website' as never)
+    } else {
+      const current = useScene.getState().panels.leftTab
+      if (current === 'website') useScene.getState().setPanelTab('left', 'outliner' as never)
+    }
+  }, [appMode])
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -171,11 +183,11 @@ export default function WorldBuilderPage() {
 
   return (
     <div className="flex flex-col w-screen h-screen overflow-hidden" style={{ background: '#0B0C0F', color: '#E8E9F0' }}>
-      <MainToolbar />
+      {!isPreviewMode && <MainToolbar />}
 
       <div className="flex flex-1 overflow-hidden min-h-0">
-        {/* Left panel */}
-        {panels.leftOpen && (
+        {/* Left panel — hidden in preview mode */}
+        {panels.leftOpen && !isPreviewMode && (
           <div className="flex flex-col w-64 shrink-0 overflow-hidden" style={{ borderRight: '1px solid #1E2028' }}>
             {/* Tab bar */}
             <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14' }}>
@@ -183,10 +195,11 @@ export default function WorldBuilderPage() {
                 { id: 'outliner', label: 'Scene', icon: <Layers size={12} strokeWidth={1.75} /> },
                 { id: 'material', label: 'Material', icon: <Palette size={12} strokeWidth={1.75} /> },
                 { id: 'lighting', label: 'Lighting', icon: <Sun size={12} strokeWidth={1.75} /> },
+                ...(appMode === 'website' ? [{ id: 'website', label: 'Website', icon: <Globe2 size={12} strokeWidth={1.75} /> }] : []),
               ] as const).map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => useScene.getState().setPanelTab('left', t.id)}
+                  onClick={() => useScene.getState().setPanelTab('left', t.id as never)}
                   className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium capitalize transition-colors"
                   style={{
                     color: panels.leftTab === t.id ? '#E8E9F0' : '#7A7E92',
@@ -212,6 +225,8 @@ export default function WorldBuilderPage() {
                 </>
               ) : panels.leftTab === 'material' ? (
                 <MaterialEditor />
+              ) : panels.leftTab === 'website' ? (
+                <WebsitePanel />
               ) : (
                 <LightingPanel />
               )}
@@ -227,8 +242,8 @@ export default function WorldBuilderPage() {
           <ViewportOverlay />
         </div>
 
-        {/* Right panel */}
-        {panels.rightOpen && (
+        {/* Right panel — hidden in preview mode */}
+        {panels.rightOpen && !isPreviewMode && (
           <div className="flex flex-col w-80 shrink-0 overflow-hidden" style={{ borderLeft: '1px solid #1E2028' }}>
             {/* Tab bar */}
             <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
@@ -253,10 +268,10 @@ export default function WorldBuilderPage() {
         )}
       </div>
 
-      <SceneSwitcher />
+      {!isPreviewMode && <SceneSwitcher />}
 
-      {/* Bottom panel */}
-      {panels.bottomOpen && (
+      {/* Bottom panel — hidden in preview mode */}
+      {panels.bottomOpen && !isPreviewMode && (
         <div className="shrink-0 h-56 overflow-hidden">
           <div className="flex h-9 shrink-0" style={{ borderTop: '1px solid #1E2028', borderBottom: '1px solid #1E2028', background: '#111318' }}>
             {(['animation', 'physics'] as const).map((t) => (

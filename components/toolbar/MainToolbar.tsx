@@ -53,6 +53,7 @@ export function MainToolbar() {
   const addObject = useScene((s) => s.addObject)
   const appMode = useScene((s) => s.appMode)
   const setAppMode = useScene((s) => s.setAppMode)
+  const setPreviewMode = useScene((s) => s.setPreviewMode)
 
   const [showTemplates, setShowTemplates] = useState(false)
   const [showExport, setShowExport] = useState(false)
@@ -147,6 +148,20 @@ export function MainToolbar() {
             Website
           </button>
         </div>
+
+        {/* Preview button — website mode only */}
+        {appMode === 'website' && (
+          <button
+            onClick={() => setPreviewMode(true)}
+            className="flex items-center gap-1.5 px-2.5 h-7 rounded-md text-[11px] font-medium transition-colors border"
+            style={{ background: 'rgba(255,255,255,0.06)', color: '#aaaaaa', borderColor: '#2a2a2a' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#f0f0f0'; e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#aaaaaa'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+          >
+            <Eye size={11} strokeWidth={2} />
+            Preview
+          </button>
+        )}
 
         <div className="w-px h-5 mx-1" style={{ background: '#1a1a1a' }} />
 
