@@ -1,7 +1,8 @@
-import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, AnimationConfig, PhysicsConfig, Transform } from '@/lib/scene/SceneStore'
+import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, AnimationConfig, PhysicsConfig, Transform, BehaviorConfig } from '@/lib/scene/SceneStore'
 import { MATERIAL_PRESETS } from '@/lib/scene/SceneStore'
 import { useScene } from '@/lib/scene/SceneStore'
 import { getTemplate } from '@/lib/ai/WorldTemplates'
+import { resolveObjectQuery } from '@/lib/ai/resolveObjectQuery'
 
 // Types for commands Claude emits
 export interface AddObjectCmd {
@@ -203,8 +204,14 @@ export type SceneCommand =
   | AddTextCmd | AddParticleCmd | ScatterObjectsCmd | SetViewModeCmd
   | AddKeyframeAnimationCmd | AddSceneCmd
 
+export interface BehaviorAttachment {
+  objectId: string
+  objectName: string
+  behavior: BehaviorConfig
+}
+
 export interface SceneAction {
-  op: 'add' | 'move' | 'delete' | 'scale' | 'material' | 'light'
+  op: 'add' | 'move' | 'delete' | 'scale' | 'material' | 'light' | 'behaviors'
   target?: string
   params?: Record<string, unknown>
 }
@@ -212,6 +219,8 @@ export interface SceneAction {
 export interface ExecutionResult {
   executed: number
   errors: string[]
+  newObjectIds: string[]
+  behaviorAttachments: BehaviorAttachment[]
 }
 
 export interface ParsedResponse {
@@ -258,7 +267,7 @@ export function parseCommands(raw: string): ParsedResponse {
 }
 
 // Execute a SceneAction (op-based format for modifying existing objects)
-export function executeAction(action: SceneAction): void {
+export function executeAction(action: SceneAction, collector?: BehaviorAttachment[]): void {
   const store = useScene.getState()
   const { op, target, params = {} } = action
 
@@ -328,6 +337,38 @@ export function executeAction(action: SceneAction): void {
         metalness: params.metalness as number | undefined,
         material: params.material as string | undefined,
       } as AddObjectCmd)
+      break
+    }
+    case 'behaviors': {
+      const ids = resolveObjectQuery(target ?? '', store.objects, store.selectedIds)
+      const p = params as {
+        attach?: Array<Omit<BehaviorConfig, 'id'>>
+        detach?: string[]
+        detach_all?: boolean
+        update?: Partial<BehaviorConfig> & { id: string }
+      }
+      for (const objId of ids) {
+        const obj = store.objects[objId]
+        if (!obj) continue
+        if (p.detach_all) {
+          store.detachAllBehaviors(objId)
+        }
+        if (Array.isArray(p.detach)) {
+          for (const bid of p.detach) store.detachBehavior(objId, bid)
+        }
+        if (p.update) {
+          store.updateBehavior(objId, p.update.id, p.update)
+        }
+        if (Array.isArray(p.attach)) {
+          for (const bCfg of p.attach) {
+            const bid = store.attachBehavior(objId, bCfg)
+            const attached = useScene.getState().objects[objId]?.behaviors?.find((x) => x.id === bid)
+            if (attached && collector) {
+              collector.push({ objectId: objId, objectName: obj.name, behavior: attached })
+            }
+          }
+        }
+      }
       break
     }
   }
@@ -701,6 +742,8 @@ export function executeCommand(cmd: SceneCommand): void {
 export function executeCommands(commands: SceneCommand[], actions: SceneAction[] = []): ExecutionResult {
   const errors: string[] = []
   let executed = 0
+  const behaviorAttachments: BehaviorAttachment[] = []
+  const beforeIds = new Set(Object.keys(useScene.getState().objects))
 
   for (const cmd of commands) {
     try {
@@ -715,7 +758,7 @@ export function executeCommands(commands: SceneCommand[], actions: SceneAction[]
 
   for (const action of actions) {
     try {
-      executeAction(action)
+      executeAction(action, behaviorAttachments)
       executed++
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Unknown error'
@@ -724,5 +767,7 @@ export function executeCommands(commands: SceneCommand[], actions: SceneAction[]
     }
   }
 
-  return { executed, errors }
+  const newObjectIds = Object.keys(useScene.getState().objects).filter((id) => !beforeIds.has(id))
+
+  return { executed, errors, newObjectIds, behaviorAttachments }
 }

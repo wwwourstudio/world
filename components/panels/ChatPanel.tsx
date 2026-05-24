@@ -3,7 +3,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Sparkles, ArrowUp, Loader2, Undo2, AlertCircle, CheckCircle2, Mic, MicOff } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
+import type { BehaviorConfig } from '@/lib/scene/SceneStore'
 import { parseCommands, executeCommands } from '@/lib/ai/CommandParser'
+import type { BehaviorAttachment } from '@/lib/ai/CommandParser'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
 
 interface UserMessage { role: 'user'; content: string }
@@ -14,6 +16,7 @@ interface AssistantMessage {
   status: 'streaming' | 'complete' | 'error'
   suggestions?: string[]
   actionErrors?: string[]
+  behaviorAttachments?: BehaviorAttachment[]
 }
 type Message = UserMessage | AssistantMessage
 
@@ -42,9 +45,78 @@ function getRotatingSuggestions() {
   return out
 }
 
-const SUGGESTIONS = getRotatingSuggestions()
+// Not computed at module level — would differ between SSR and client, causing React #418 hydration error
+
+const BEHAVIOR_ICONS: Record<BehaviorConfig['type'], string> = {
+  rotate: '↻', sway: '≈', oscillate: '↕', scalePulse: '⊕',
+  emissivePulse: '✦', lookAtCamera: '◎', randomWander: '↪',
+  patrol: '⬡', follow: '→', lookAt: '◉', onClick: '↖', proximityTrigger: '○',
+}
+
+function formatBehaviorParams(b: BehaviorConfig): string {
+  const parts: string[] = []
+  if (b.axis) parts.push(b.axis.toUpperCase())
+  if (b.speed !== undefined) parts.push(`×${b.speed.toFixed(1)}`)
+  if (b.amplitude !== undefined) parts.push(`amp:${b.amplitude}`)
+  if (b.frequency !== undefined) parts.push(`${b.frequency}Hz`)
+  if (b.minValue !== undefined && b.maxValue !== undefined) parts.push(`${b.minValue}–${b.maxValue}`)
+  if (b.range !== undefined) parts.push(`r:${b.range}`)
+  if (b.waypoints) parts.push(`${b.waypoints.length}pts`)
+  return parts.length > 0 ? ` · ${parts.join(' ')}` : ''
+}
+
+function inferAmbientBehaviors(newObjectIds: string[]): BehaviorAttachment[] {
+  const store = useScene.getState()
+  const attachments: BehaviorAttachment[] = []
+  for (const id of newObjectIds) {
+    const obj = store.objects[id]
+    if (!obj) continue
+    const name = obj.name.toLowerCase()
+    if (/tree|pine|oak|fir|bush|shrub|plant/.test(name)) {
+      const off = Math.random() * Math.PI * 2
+      const bid = store.attachBehavior(id, { type: 'sway', enabled: true, amplitude: 0.05 + Math.random() * 0.05, frequency: 0.6 + Math.random() * 0.4, offset: off })
+      const b = useScene.getState().objects[id]?.behaviors?.find((x) => x.id === bid)
+      if (b) attachments.push({ objectId: id, objectName: obj.name, behavior: b })
+    } else if (/torch|flame|fire|candle|lantern/.test(name)) {
+      const bid = store.attachBehavior(id, { type: 'emissivePulse', enabled: true, minValue: 0.5, maxValue: 2.5, frequency: 2 })
+      store.attachBehavior(id, { type: 'scalePulse', enabled: true, minValue: 0.95, maxValue: 1.05, frequency: 3 })
+      const b = useScene.getState().objects[id]?.behaviors?.find((x) => x.id === bid)
+      if (b) attachments.push({ objectId: id, objectName: obj.name, behavior: b })
+    } else if (/flag|banner|sail|pennant/.test(name)) {
+      const bid = store.attachBehavior(id, { type: 'sway', enabled: true, axis: 'x', amplitude: 0.15, frequency: 1.5 })
+      const b = useScene.getState().objects[id]?.behaviors?.find((x) => x.id === bid)
+      if (b) attachments.push({ objectId: id, objectName: obj.name, behavior: b })
+    } else if (/npc|guard|villager|soldier|wanderer/.test(name)) {
+      const bid = store.attachBehavior(id, { type: 'randomWander', enabled: true, speed: 1, range: 5, interval: 3 })
+      const b = useScene.getState().objects[id]?.behaviors?.find((x) => x.id === bid)
+      if (b) attachments.push({ objectId: id, objectName: obj.name, behavior: b })
+    }
+  }
+  return attachments
+}
+
+function getBehaviorSuggestions(attachments: BehaviorAttachment[]): string[] {
+  if (!attachments.length) return []
+  const types = [...new Set(attachments.map((a) => a.behavior.type))]
+  const out: string[] = []
+  for (const t of types) {
+    if (t === 'rotate') { out.push('Make it spin faster', 'Spin on the X axis instead'); break }
+    if (t === 'sway') { out.push('Make them sway more dramatically', 'Increase sway frequency'); break }
+    if (t === 'emissivePulse') { out.push('Make torches flicker faster', 'Add fog for atmosphere'); break }
+    if (t === 'randomWander') { out.push('Make them wander a bigger area', 'Add patrol waypoints instead'); break }
+    if (t === 'oscillate') { out.push('Increase oscillation amplitude', 'Change oscillation axis'); break }
+    if (t === 'patrol') { out.push('Make patrol loop faster', 'Add more patrol waypoints'); break }
+    if (t === 'follow') { out.push('Make follower faster', 'Add another follower'); break }
+    if (t === 'scalePulse') { out.push('Make pulse more dramatic', 'Add emissive glow to match'); break }
+  }
+  return out.slice(0, 3)
+}
 
 export function ChatPanel() {
+  // Computed client-side only via useEffect to avoid SSR/client Date.now() mismatch (React #418)
+  const [startSuggestions, setStartSuggestions] = useState<typeof ALL_SUGGESTIONS>(() => ALL_SUGGESTIONS.slice(0, 6))
+  useEffect(() => { setStartSuggestions(getRotatingSuggestions()) }, [])
+
   const objects = useScene((s) => s.objects)
   const environment = useScene((s) => s.environment)
   const undo = useScene((s) => s.undo)
@@ -164,12 +236,16 @@ export function ChatPanel() {
               const { commands, actions, text, suggestions } = parseCommands(fullText)
               if (commands.length > 0 || actions.length > 0) {
                 const result = executeCommands(commands, actions)
+                const inferred = inferAmbientBehaviors(result.newObjectIds)
+                const allBehaviors = [...result.behaviorAttachments, ...inferred]
+                const bSuggs = getBehaviorSuggestions(allBehaviors)
                 executed = true
                 patchLast({
                   content: text || fullText,
                   commandCount: result.executed,
                   actionErrors: result.errors.length > 0 ? result.errors : undefined,
-                  suggestions,
+                  suggestions: bSuggs.length > 0 ? bSuggs : suggestions,
+                  behaviorAttachments: allBehaviors.length > 0 ? allBehaviors : undefined,
                 })
               }
             }
@@ -183,11 +259,15 @@ export function ChatPanel() {
       const { commands, actions, text, suggestions } = parseCommands(fullText)
       if (!executed && (commands.length > 0 || actions.length > 0)) {
         const result = executeCommands(commands, actions)
+        const inferred = inferAmbientBehaviors(result.newObjectIds)
+        const allBehaviors = [...result.behaviorAttachments, ...inferred]
+        const bSuggs = getBehaviorSuggestions(allBehaviors)
         patchLast({
           content: text || fullText,
           commandCount: result.executed,
           actionErrors: result.errors.length > 0 ? result.errors : undefined,
-          suggestions,
+          suggestions: bSuggs.length > 0 ? bSuggs : suggestions,
+          behaviorAttachments: allBehaviors.length > 0 ? allBehaviors : undefined,
           status: 'complete',
         })
       } else if (!executed && suggestions) {
@@ -253,7 +333,7 @@ export function ChatPanel() {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-1.5 w-full">
-              {SUGGESTIONS.map((s) => (
+              {startSuggestions.map((s) => (
                 <button
                   key={s.label}
                   onClick={() => send(s.prompt)}
@@ -351,6 +431,26 @@ export function ChatPanel() {
   )
 }
 
+function BehaviorBadge({ attachment, onRemove }: { attachment: BehaviorAttachment; onRemove: () => void }) {
+  const icon = BEHAVIOR_ICONS[attachment.behavior.type] ?? '◉'
+  const desc = formatBehaviorParams(attachment.behavior)
+  return (
+    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] select-none"
+      style={{ background: '#071a1a', border: '1px solid #1a4040', color: '#4adece' }}>
+      <span className="opacity-70">{icon}</span>
+      <span className="font-medium" style={{ color: '#7deae4' }}>{attachment.objectName}</span>
+      <span style={{ color: '#1a5050' }}>·</span>
+      <span style={{ color: '#4adece' }}>{attachment.behavior.type}{desc}</span>
+      <button
+        onClick={onRemove}
+        title="Remove behavior"
+        className="ml-0.5 transition-opacity opacity-40 hover:opacity-100"
+        style={{ color: '#f87171', lineHeight: 1 }}
+      >×</button>
+    </div>
+  )
+}
+
 function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
   msg: AssistantMessage
   isLast: boolean
@@ -421,6 +521,19 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
           <Undo2 size={9} strokeWidth={1.75} />
           Undo changes
         </button>
+      )}
+
+      {/* Behavior badges */}
+      {msg.behaviorAttachments && msg.behaviorAttachments.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-0.5">
+          {msg.behaviorAttachments.map((a) => (
+            <BehaviorBadge
+              key={`${a.objectId}-${a.behavior.id}`}
+              attachment={a}
+              onRemove={() => useScene.getState().detachBehavior(a.objectId, a.behavior.id)}
+            />
+          ))}
+        </div>
       )}
 
       {/* Smart suggestion chips */}

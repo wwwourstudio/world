@@ -74,7 +74,10 @@ Write a brief natural-language summary (1–3 sentences), then include the relev
     { "op": "delete",   "target": "exact object name from scene" },
     { "op": "material", "target": "exact object name from scene", "params": { "color": "#hex", "roughness": 0.5, "metalness": 0, "emissiveIntensity": 0 } },
     { "op": "light",    "target": "light name", "params": { "intensity": 2, "color": "#ffffff" } },
-    { "op": "add",      "target": "new object name", "params": { "geometry": "box", "position": [0,0,0], "color": "#888" } }
+    { "op": "add",      "target": "new object name", "params": { "geometry": "box", "position": [0,0,0], "color": "#888" } },
+    { "op": "behaviors","target": "object name or 'all trees'", "params": { "attach": [{ "type": "rotate", "axis": "y", "speed": 1, "enabled": true }] } },
+    { "op": "behaviors","target": "object name", "params": { "detach_all": true } },
+    { "op": "behaviors","target": "object name", "params": { "update": { "id": "behavior-id", "speed": 2 } } }
   ]
 }
 \`\`\`
@@ -117,6 +120,20 @@ LIGHT TYPES: ambient, directional, point, spot, hemisphere
 ANIMATION PRESETS: float (bob), spin (rotate), pulse (scale), orbit (circle), shake (jitter), wave (sinusoidal), bounce (gravity)
 HDRI NAMES (Poly Haven): golden_bay, forest_slope, satara_night, kiara_interior, starlit_golf
 
+BEHAVIOR SYSTEM — use the "behaviors" op in the actions block to attach runtime behaviors:
+- rotate: continuous rotation. params: axis (x/y/z), speed (rad/s, default 1)
+- sway: gentle rocking. params: axis (x/z), amplitude (radians, 0.05–0.3), frequency (Hz, 0.5–2)
+- oscillate: position bounce. params: axis (x/y/z), amplitude (units), frequency (Hz)
+- scalePulse: breathing scale. params: minValue (0.8), maxValue (1.2), frequency (Hz)
+- emissivePulse: glowing flicker. params: minValue (0), maxValue (3), frequency (Hz)
+- lookAtCamera: always face camera. no extra params needed
+- randomWander: NPC wandering. params: speed (1), range (5), interval (seconds between direction changes)
+- patrol: follow waypoints. params: waypoints [[x,y,z],...], speed (1), loop (true)
+- follow: chase target object. params: targetId (object id), speed (2), minDistance (2)
+- lookAt: face specific object. params: targetId (object id)
+Target can be an object name, type keyword (trees, rocks, all lights), or "all"
+Always combine emissivePulse with a non-black emissive color on the material for visible effect.
+
 ITERATIVE REFINEMENT RULES:
 - "Make it more dramatic" → increase bloom, deepen fog, boost emissive intensities on existing objects
 - "Add fog" → set_fog command only; do NOT recreate existing objects
@@ -157,6 +174,7 @@ export function buildSceneContext(objects: Record<string, unknown>, environment:
     }
     light?: { type: string; intensity: number; color: string }
     animation?: { preset?: string; speed?: number }
+    behaviors?: Array<{ type: string; id: string; enabled: boolean; speed?: number; amplitude?: number; axis?: string }>
   }
 
   const objList = Object.values(objects).map((o: unknown) => {
@@ -184,9 +202,12 @@ export function buildSceneContext(objects: Record<string, unknown>, environment:
     const animStr = obj.animation?.preset && obj.animation.preset !== 'none'
       ? ` anim:${obj.animation.preset}`
       : ''
+    const behaviorStr = obj.behaviors && obj.behaviors.length > 0
+      ? ` behaviors:[${obj.behaviors.filter((b) => b.enabled).map((b) => b.type).join(',')}]`
+      : ''
     const geomStr = obj.geometry?.type ? `/${obj.geometry.type}` : ''
 
-    return `  - "${obj.name}" (${obj.type}${geomStr}) pos:[${pos}]${scaleStr}${details}${animStr} id:${obj.id}`
+    return `  - "${obj.name}" (${obj.type}${geomStr}) pos:[${pos}]${scaleStr}${details}${animStr}${behaviorStr} id:${obj.id}`
   })
 
   const env = environment as {

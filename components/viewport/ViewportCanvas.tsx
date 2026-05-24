@@ -26,7 +26,7 @@ import * as THREE from 'three'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe } from '@/lib/scene/SceneStore'
+import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 import { fbmNoise } from '@/lib/noise'
@@ -213,6 +213,137 @@ function useAnimation(ref: React.RefObject<THREE.Object3D | null>, anim: Animati
   })
 }
 
+// ─── Behavior Hook ───────────────────────────────────────────────────────────
+
+function useBehaviors(
+  ref: React.RefObject<THREE.Object3D | null>,
+  behaviors: BehaviorConfig[] | undefined,
+  objectId: string,
+) {
+  const wanderTarget = useRef(new THREE.Vector3())
+  const wanderTimer = useRef(0)
+  const patrolIdx = useRef(0)
+
+  useFrame(({ clock, camera }, delta) => {
+    if (!ref.current || !behaviors?.length) return
+    const obj = ref.current
+    const t = clock.getElapsedTime()
+
+    for (const b of behaviors) {
+      if (!b.enabled) continue
+      const speed = b.speed ?? 1
+      const amp = b.amplitude ?? 0.5
+      const freq = b.frequency ?? 1
+      const off = b.offset ?? 0
+
+      switch (b.type) {
+        case 'rotate': {
+          const ax = b.axis ?? 'y'
+          obj.rotation[ax] += delta * speed
+          break
+        }
+        case 'sway': {
+          const ax = b.axis ?? 'z'
+          obj.rotation[ax] = Math.sin(t * freq * 2 + off) * amp
+          break
+        }
+        case 'oscillate': {
+          const ax = b.axis ?? 'y'
+          const axIdx = ax === 'x' ? 0 : ax === 'y' ? 1 : 2
+          const sceneObj = useScene.getState().objects[objectId]
+          if (sceneObj) {
+            obj.position[ax] = sceneObj.transform.position[axIdx] + Math.sin(t * freq * 2 + off) * amp
+          }
+          break
+        }
+        case 'scalePulse': {
+          const min = b.minValue ?? 0.8
+          const max = b.maxValue ?? 1.2
+          const s = min + (Math.sin(t * freq * 2 + off) * 0.5 + 0.5) * (max - min)
+          obj.scale.setScalar(s)
+          break
+        }
+        case 'emissivePulse': {
+          if (obj instanceof THREE.Mesh) {
+            const mat = obj.material as THREE.MeshStandardMaterial
+            if ('emissiveIntensity' in mat) {
+              const min = b.minValue ?? 0
+              const max = b.maxValue ?? 2
+              mat.emissiveIntensity = min + (Math.sin(t * freq * 2 + off) * 0.5 + 0.5) * (max - min)
+            }
+          }
+          break
+        }
+        case 'lookAtCamera': {
+          obj.lookAt(camera.position)
+          break
+        }
+        case 'lookAt': {
+          if (b.targetId) {
+            const target = useScene.getState().objects[b.targetId]
+            if (target) obj.lookAt(...target.transform.position)
+          }
+          break
+        }
+        case 'follow': {
+          if (b.targetId) {
+            const target = useScene.getState().objects[b.targetId]
+            if (target) {
+              const [tx, , tz] = target.transform.position
+              const minDist = b.minDistance ?? 2
+              const dx = tx - obj.position.x
+              const dz = tz - obj.position.z
+              const dist = Math.sqrt(dx * dx + dz * dz)
+              if (dist > minDist) {
+                obj.position.x += (dx / dist) * speed * delta
+                obj.position.z += (dz / dist) * speed * delta
+              }
+            }
+          }
+          break
+        }
+        case 'randomWander': {
+          const range = b.range ?? 5
+          const interval = b.interval ?? 2
+          wanderTimer.current += delta
+          if (wanderTimer.current >= interval) {
+            wanderTimer.current = 0
+            wanderTarget.current.set(
+              obj.position.x + (Math.random() - 0.5) * range * 2,
+              obj.position.y,
+              obj.position.z + (Math.random() - 0.5) * range * 2,
+            )
+          }
+          const dx = wanderTarget.current.x - obj.position.x
+          const dz = wanderTarget.current.z - obj.position.z
+          const dist = Math.sqrt(dx * dx + dz * dz)
+          if (dist > 0.1) {
+            obj.position.x += (dx / dist) * speed * delta
+            obj.position.z += (dz / dist) * speed * delta
+          }
+          break
+        }
+        case 'patrol': {
+          const wps = b.waypoints
+          if (!wps || wps.length < 2) break
+          const wp = wps[patrolIdx.current % wps.length]
+          const [tx, , tz] = wp
+          const dx = tx - obj.position.x
+          const dz = tz - obj.position.z
+          const dist = Math.sqrt(dx * dx + dz * dz)
+          if (dist < 0.2) {
+            patrolIdx.current = (patrolIdx.current + 1) % wps.length
+          } else {
+            obj.position.x += (dx / dist) * speed * delta
+            obj.position.z += (dz / dist) * speed * delta
+          }
+          break
+        }
+      }
+    }
+  })
+}
+
 // ─── Mesh Object ─────────────────────────────────────────────────────────────
 
 function MeshObject({ obj }: { obj: SceneObject }) {
@@ -223,6 +354,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   const isPlaying = useScene((s) => s.isPlaying)
   const hovered = useRef(false)
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
+  useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
 
   // Load PBR texture maps imperatively when maps or repeat change
   const mapsKey = JSON.stringify(obj.material.maps)
@@ -360,6 +492,7 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
   const ref = useRef<THREE.Group>(null)
   const url = obj.geometry.url ?? ''
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
+  useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
   const { selectObject } = useScene()
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
@@ -420,6 +553,7 @@ function TextObject({ obj }: { obj: SceneObject }) {
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
+  useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
 
   const fontUrl = FONTS[obj.geometry.font ?? 'helvetiker'] ?? FONTS.helvetiker
   const fontSize = obj.geometry.fontSize ?? 0.5

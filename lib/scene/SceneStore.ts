@@ -13,6 +13,36 @@ export type PhysicsBodyType = 'dynamic' | 'static' | 'kinematic'
 export type PhysicsShape = 'auto' | 'box' | 'sphere' | 'capsule' | 'hull'
 export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale' | 'sculpt'
 export type SculptMode = 'raise' | 'lower' | 'smooth' | 'flatten'
+export type BehaviorType =
+  | 'rotate' | 'patrol' | 'follow' | 'lookAt' | 'oscillate'
+  | 'scalePulse' | 'onClick' | 'proximityTrigger' | 'emissivePulse'
+  | 'lookAtCamera' | 'randomWander' | 'sway'
+
+export interface BehaviorConfig {
+  id: string
+  type: BehaviorType
+  enabled: boolean
+  speed?: number
+  axis?: 'x' | 'y' | 'z'
+  amplitude?: number
+  frequency?: number
+  offset?: number
+  minValue?: number
+  maxValue?: number
+  waypoints?: [number, number, number][]
+  pauseTime?: number
+  loop?: boolean
+  targetId?: string
+  targetName?: string
+  minDistance?: number
+  radius?: number
+  color?: string
+  action?: string
+  linkUrl?: string
+  range?: number
+  interval?: number
+  randomOffset?: boolean
+}
 
 export interface TerrainConfig {
   size: number
@@ -179,6 +209,7 @@ export interface SceneObject {
   interaction?: ObjectInteraction
   terrain?: TerrainConfig
   water?: WaterConfig
+  behaviors?: BehaviorConfig[]
 }
 
 export interface EnvironmentState {
@@ -359,6 +390,11 @@ interface SceneActions {
   setSculptStrength: (v: number) => void
   updateTerrain: (objectId: string, patch: Partial<TerrainConfig>) => void
   sculptTerrain: (objectId: string, cx: number, cz: number) => void
+
+  attachBehavior: (objectId: string, config: Omit<BehaviorConfig, 'id'>) => string
+  detachBehavior: (objectId: string, behaviorId: string) => void
+  updateBehavior: (objectId: string, behaviorId: string, patch: Partial<BehaviorConfig>) => void
+  detachAllBehaviors: (objectId: string) => void
 
   pushHistory: () => void
   undo: () => void
@@ -848,6 +884,42 @@ export const useScene = create<SceneState>()(
       setSculptRadius(v) { set((s) => { s.sculptRadius = v }) },
       setSculptStrength(v) { set((s) => { s.sculptStrength = v }) },
 
+      attachBehavior(objectId, config) {
+        const id = makeId()
+        set((s) => {
+          const obj = s.objects[objectId]
+          if (!obj) return
+          if (!obj.behaviors) obj.behaviors = []
+          obj.behaviors = obj.behaviors.filter((b) => b.type !== config.type)
+          obj.behaviors.push({ ...config, id, enabled: config.enabled ?? true })
+        })
+        return id
+      },
+
+      detachBehavior(objectId, behaviorId) {
+        set((s) => {
+          const obj = s.objects[objectId]
+          if (!obj?.behaviors) return
+          obj.behaviors = obj.behaviors.filter((b) => b.id !== behaviorId)
+        })
+      },
+
+      updateBehavior(objectId, behaviorId, patch) {
+        set((s) => {
+          const obj = s.objects[objectId]
+          if (!obj?.behaviors) return
+          const b = obj.behaviors.find((x) => x.id === behaviorId)
+          if (b) Object.assign(b, patch)
+        })
+      },
+
+      detachAllBehaviors(objectId) {
+        set((s) => {
+          const obj = s.objects[objectId]
+          if (obj) obj.behaviors = []
+        })
+      },
+
       updateTerrain(objectId, patch) {
         set((s) => {
           const obj = s.objects[objectId]
@@ -1164,6 +1236,7 @@ export function loadPersistedScene() {
         expanded: o.expanded ?? false,
         castShadow: o.castShadow ?? true,
         receiveShadow: o.receiveShadow ?? true,
+        behaviors: Array.isArray(o.behaviors) ? o.behaviors : undefined,
       }
     }
     useScene.setState((s) => {
