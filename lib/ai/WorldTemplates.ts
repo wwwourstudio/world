@@ -8,7 +8,7 @@ interface WorldTemplate {
   objects: Omit<SceneObject, 'id'>[]
   environment: Partial<EnvironmentState>
   cameraPath?: Omit<CameraKeypoint, 'id'>[]
-  appMode?: 'editor' | 'website'
+  appMode?: 'world' | 'website'
 }
 
 function mesh(
