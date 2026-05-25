@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, useRef, useEffect, useMemo, Component, type ReactNode } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
 import {
   OrbitControls,
   TransformControls,
