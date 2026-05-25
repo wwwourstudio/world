@@ -119,10 +119,10 @@ export default function WorldBuilderPage() {
 
   useEffect(() => {
     if (appMode === 'website') {
-      useScene.getState().setPanelTab('left', 'website' as never)
+      useScene.getState().setPanelTab('left', 'website')
     } else {
       const current = useScene.getState().panels.leftTab
-      if (current === 'website') useScene.getState().setPanelTab('left', 'outliner' as never)
+      if (current === 'website') useScene.getState().setPanelTab('left', 'outliner')
     }
   }, [appMode])
 
