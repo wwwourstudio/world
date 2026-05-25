@@ -549,8 +549,11 @@ class GLTFErrorBoundary extends Component<{ objectId: string; children: ReactNod
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
   componentDidCatch() {
-    useScene.getState().updateObject(this.props.objectId, { geometry: { type: 'box', width: 1, height: 1, depth: 1 } })
-    useScene.getState().showNotification('Model URL expired — replaced with placeholder', 'error')
+    const id = this.props.objectId
+    setTimeout(() => {
+      useScene.getState().updateObject(id, { geometry: { type: 'box', width: 1, height: 1, depth: 1 } })
+      useScene.getState().showNotification('Model URL expired — replaced with placeholder', 'error')
+    }, 0)
   }
   render() { return this.state.failed ? null : this.props.children }
 }
