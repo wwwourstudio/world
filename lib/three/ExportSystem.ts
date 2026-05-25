@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { SceneObject, EnvironmentState } from '@/lib/scene/SceneStore'
+import type { SceneObject, EnvironmentState, CameraKeypoint } from '@/lib/scene/SceneStore'
 
 export async function exportSceneGLB(objects: Record<string, SceneObject>): Promise<void> {
   // Dynamic import to avoid SSR issues
@@ -257,4 +257,202 @@ export function generateThreeJSCode(scene: { objects: Record<string, SceneObject
   )
 
   return lines.join('\n')
+}
+
+export function generateWebsiteHTML(
+  objects: Record<string, SceneObject>,
+  cameraPath: CameraKeypoint[],
+): string {
+  const primitiveObjs = Object.values(objects).filter(
+    (o) => o.visible && (o.type === 'mesh' || o.type === 'group') && o.geometry.type !== 'gltf',
+  )
+
+  const sceneData = primitiveObjs.map((o) => ({
+    name: o.name,
+    geo: o.geometry,
+    mat: {
+      color: o.material.color,
+      roughness: o.material.roughness,
+      metalness: o.material.metalness,
+      emissive: o.material.emissive,
+      emissiveIntensity: o.material.emissiveIntensity,
+      opacity: o.material.opacity,
+      transparent: o.material.transparent,
+    },
+    pos: o.transform.position,
+    rot: o.transform.rotation,
+    scale: o.transform.scale,
+    scrollAnim: o.scrollAnim ?? null,
+  }))
+
+  const pathData = cameraPath.map((kp) => ({
+    position: kp.position,
+    target: kp.target,
+    fov: kp.fov,
+    easing: kp.easing,
+  }))
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>3D Website</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#000;overflow-x:hidden}
+    #canvas-wrap{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+    canvas{display:block;width:100%!important;height:100%!important}
+    #scroll-driver{height:500vh;position:relative;z-index:1;pointer-events:none}
+    #scroll-pct{position:fixed;bottom:20px;right:20px;color:rgba(255,255,255,0.4);font:11px/1 monospace;z-index:10}
+  </style>
+</head>
+<body>
+  <div id="canvas-wrap"><canvas id="c"></canvas></div>
+  <div id="scroll-driver"></div>
+  <div id="scroll-pct">0%</div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.min.js"></script>
+  <script>
+(function(){
+  const SCENE_DATA=${JSON.stringify(sceneData)};
+  const CAM_PATH=${JSON.stringify(pathData)};
+
+  // --- Three.js setup ---
+  const canvas=document.getElementById('c');
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.shadowMap.enabled=true;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color('#0b0c0f');
+
+  const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,1000);
+  camera.position.set(0,2,8);
+
+  const ambient=new THREE.AmbientLight('#ffffff',0.4);
+  const dirLight=new THREE.DirectionalLight('#ffffff',1.2);
+  dirLight.position.set(5,10,5);
+  scene.add(ambient,dirLight);
+
+  // --- Build meshes ---
+  const meshes=[];
+  SCENE_DATA.forEach(function(o){
+    let geo;
+    const g=o.geo;
+    if(g.type==='sphere') geo=new THREE.SphereGeometry(g.radius||0.5,32,32);
+    else if(g.type==='cylinder') geo=new THREE.CylinderGeometry(g.radiusTop||0.5,g.radiusBottom||0.5,g.height||1,16);
+    else if(g.type==='cone') geo=new THREE.ConeGeometry(g.radius||0.5,g.height||1,16);
+    else if(g.type==='torus') geo=new THREE.TorusGeometry(g.radius||0.5,g.tube||0.2,16,32);
+    else if(g.type==='plane') geo=new THREE.PlaneGeometry(g.width||1,g.height||1);
+    else geo=new THREE.BoxGeometry(g.width||1,g.height||1,g.depth||1);
+    const m=o.mat;
+    const mat=new THREE.MeshStandardMaterial({
+      color:m.color,roughness:m.roughness,metalness:m.metalness,
+      emissive:m.emissive,emissiveIntensity:m.emissiveIntensity,
+      opacity:m.opacity,transparent:m.transparent||false,
+    });
+    const mesh=new THREE.Mesh(geo,mat);
+    mesh.position.set(...o.pos);
+    mesh.rotation.set(...o.rot);
+    mesh.scale.set(...o.scale);
+    mesh.castShadow=true;
+    scene.add(mesh);
+    meshes.push({mesh,data:o});
+  });
+
+  // --- Catmull-Rom camera path ---
+  function ease(t,type){
+    if(type==='ease-in') return t*t;
+    if(type==='ease-out') return t*(2-t);
+    if(type==='ease') return t<0.5?2*t*t:-1+(4-2*t)*t;
+    return t;
+  }
+  function lerp3(a,b,t){return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+  function catmullRom(p0,p1,p2,p3,t){
+    const t2=t*t,t3=t2*t;
+    return[
+      0.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+      0.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3),
+      0.5*((2*p1[2])+(-p0[2]+p2[2])*t+(2*p0[2]-5*p1[2]+4*p2[2]-p3[2])*t2+(-p0[2]+3*p1[2]-3*p2[2]+p3[2])*t3),
+    ];
+  }
+  function interpolatePath(path,progress){
+    if(!path||path.length===0) return null;
+    if(path.length===1) return path[0];
+    const t=Math.max(0,Math.min(1,progress));
+    const seg=path.length-1;
+    const raw=t*seg;
+    const i=Math.min(Math.floor(raw),seg-1);
+    const localT=ease(raw-i,(path[i]||path[0]).easing||'linear');
+    const p0=path[Math.max(0,i-1)],p1=path[i],p2=path[i+1],p3=path[Math.min(seg,i+2)];
+    if(path.length===2){
+      return{position:lerp3(p1.position,p2.position,localT),target:lerp3(p1.target,p2.target,localT),fov:p1.fov+(p2.fov-p1.fov)*localT};
+    }
+    return{position:catmullRom(p0.position,p1.position,p2.position,p3.position,localT),target:catmullRom(p0.target,p1.target,p2.target,p3.target,localT),fov:p1.fov+(p2.fov-p1.fov)*localT};
+  }
+
+  // --- Scroll animation ---
+  function computeScrollT(progress,enter,exit){
+    let t=enter>0?Math.min(progress/enter,1):1;
+    if(exit>0&&progress>exit) t=Math.max(0,1-(progress-exit)/Math.max(0.001,1-exit));
+    return t;
+  }
+
+  // --- Resize ---
+  function onResize(){
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+  }
+  window.addEventListener('resize',onResize);
+  onResize();
+
+  // --- Scroll ---
+  let scrollProgress=0;
+  const pctEl=document.getElementById('scroll-pct');
+  window.addEventListener('scroll',function(){
+    const max=document.body.scrollHeight-innerHeight;
+    scrollProgress=max>0?scrollY/max:0;
+    if(pctEl) pctEl.textContent=Math.round(scrollProgress*100)+'%';
+  },{passive:true});
+
+  // --- Render loop ---
+  const target=new THREE.Vector3();
+  function animate(){
+    requestAnimationFrame(animate);
+    // Camera path
+    if(CAM_PATH.length>=2){
+      const kp=interpolatePath(CAM_PATH,scrollProgress);
+      if(kp){
+        camera.position.set(...kp.position);
+        target.set(...kp.target);
+        camera.lookAt(target);
+        camera.fov=kp.fov;
+        camera.updateProjectionMatrix();
+      }
+    }
+    // Per-object scroll animations
+    meshes.forEach(function(item){
+      const sa=item.data.scrollAnim;
+      if(!sa||sa.effect==='none') return;
+      const t=computeScrollT(scrollProgress,sa.enter,sa.exit);
+      const mesh=item.mesh;
+      const basePos=item.data.pos;
+      const d=sa.distance||2;
+      if(sa.effect==='fadeIn'){mesh.material.transparent=true;mesh.material.opacity=t*(item.data.mat.opacity||1);}
+      else if(sa.effect==='scaleIn'){const s=Math.max(0.001,t);mesh.scale.set(item.data.scale[0]*s,item.data.scale[1]*s,item.data.scale[2]*s);}
+      else if(sa.effect==='scaleOut'){const s=Math.max(0.001,1-t);mesh.scale.set(item.data.scale[0]*s,item.data.scale[1]*s,item.data.scale[2]*s);}
+      else if(sa.effect==='slideUp'){mesh.position.set(basePos[0],basePos[1]+d*(1-t),basePos[2]);}
+      else if(sa.effect==='slideDown'){mesh.position.set(basePos[0],basePos[1]-d*(1-t),basePos[2]);}
+      else if(sa.effect==='slideLeft'){mesh.position.set(basePos[0]-d*(1-t),basePos[1],basePos[2]);}
+      else if(sa.effect==='slideRight'){mesh.position.set(basePos[0]+d*(1-t),basePos[1],basePos[2]);}
+    });
+    renderer.render(scene,camera);
+  }
+  animate();
+})();
+  </script>
+  <!-- Note: External GLTF models and HDRI textures are not included in this standalone export -->
+</body>
+</html>`
 }

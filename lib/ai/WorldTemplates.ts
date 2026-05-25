@@ -1,4 +1,4 @@
-import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, EnvironmentState } from '@/lib/scene/SceneStore'
+import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, EnvironmentState, CameraKeypoint } from '@/lib/scene/SceneStore'
 
 interface WorldTemplate {
   id: string
@@ -7,6 +7,8 @@ interface WorldTemplate {
   description: string
   objects: Omit<SceneObject, 'id'>[]
   environment: Partial<EnvironmentState>
+  cameraPath?: Omit<CameraKeypoint, 'id'>[]
+  appMode?: 'world' | 'website'
 }
 
 function mesh(
@@ -390,6 +392,125 @@ export const WORLD_TEMPLATES: WorldTemplate[] = [
       // Lights
       light('Star Glow', { type: 'point', intensity: 8, color: '#ffffdd', distance: 60, decay: 1 }, [0, 0, 0]),
       light('Nebula', { type: 'hemisphere', intensity: 0.3, skyColor: '#220066', groundColor: '#004422' }, [0, 0, 0]),
+    ],
+  },
+
+  // ── Website-mode templates ────────────────────────────────────────────────
+
+  {
+    id: 'website_landing',
+    name: '3D Landing Page',
+    icon: '🌐',
+    description: 'Scroll-driven hero with floating geometry and neon materials.',
+    appMode: 'website',
+    environment: {
+      hdriUrl: null,
+      hdriName: 'None',
+      backgroundColor: '#050508',
+      ambientColor: '#1a1040',
+      ambientIntensity: 0.6,
+      directionalColor: '#8866ff',
+      directionalIntensity: 1.5,
+      directionalPosition: [5, 10, 5],
+      fogType: 'exponential',
+      fogColor: '#050508',
+      fogDensity: 0.04,
+    },
+    cameraPath: [
+      { label: 'Hero', position: [0, 2, 12], target: [0, 0, 0], fov: 60, easing: 'ease' },
+      { label: 'Close-up', position: [0, 0.5, 5], target: [0, 0.5, 0], fov: 50, easing: 'ease' },
+      { label: 'Reveal', position: [4, 2, 6], target: [0, 0, 0], fov: 55, easing: 'ease-out' },
+    ],
+    objects: [
+      // Hero torus
+      mesh('Hero Ring', { type: 'torus', radius: 2.5, tube: 0.18, segments: 64 },
+        { color: '#7744ff', emissive: '#5522cc', emissiveIntensity: 0.8, metalness: 0.9, roughness: 0.1 },
+        [0, 0, 0], [Math.PI / 2.5, 0, 0]),
+      // Floating spheres
+      mesh('Orb A', { type: 'sphere', radius: 0.5, segments: 32 },
+        { color: '#ff44aa', emissive: '#cc2277', emissiveIntensity: 0.6, metalness: 0.8, roughness: 0.05 },
+        [-3, 1.5, 1]),
+      mesh('Orb B', { type: 'sphere', radius: 0.3, segments: 32 },
+        { color: '#44ffcc', emissive: '#22ccaa', emissiveIntensity: 0.5, metalness: 0.7, roughness: 0.1 },
+        [3.5, -0.5, 2]),
+      mesh('Orb C', { type: 'sphere', radius: 0.4, segments: 32 },
+        { color: '#ffaa22', emissive: '#cc7700', emissiveIntensity: 0.5, metalness: 0.6, roughness: 0.15 },
+        [2, 2.5, -1]),
+      // Accent boxes
+      mesh('Cube A', { type: 'box', width: 0.6, height: 0.6, depth: 0.6 },
+        { color: '#4488ff', emissive: '#2255cc', emissiveIntensity: 0.4, metalness: 1, roughness: 0 },
+        [-4, -1, -1], [0.5, 0.8, 0.3]),
+      mesh('Cube B', { type: 'box', width: 0.4, height: 0.4, depth: 0.4 },
+        { color: '#ff6644', emissive: '#cc3322', emissiveIntensity: 0.4, metalness: 1, roughness: 0 },
+        [4, 1, -2], [0.3, 1.1, 0.6]),
+      // Ground
+      mesh('Floor', { type: 'plane', width: 30, height: 30 },
+        { color: '#0a0a14', roughness: 0.95, metalness: 0.1 },
+        [0, -3, 0], [-Math.PI / 2, 0, 0]),
+      // Lights
+      light('Key', { type: 'point', intensity: 4, color: '#8866ff', distance: 30, decay: 2 }, [3, 5, 5]),
+      light('Fill', { type: 'point', intensity: 2, color: '#ff44aa', distance: 20, decay: 2 }, [-4, 2, 2]),
+    ],
+  },
+
+  {
+    id: 'website_portfolio',
+    name: 'Portfolio Showcase',
+    icon: '💎',
+    description: 'Orbital product display with scroll-through camera.',
+    appMode: 'website',
+    environment: {
+      hdriUrl: null,
+      hdriName: 'None',
+      backgroundColor: '#08080c',
+      ambientColor: '#203040',
+      ambientIntensity: 0.5,
+      directionalColor: '#ffffff',
+      directionalIntensity: 2,
+      directionalPosition: [5, 8, 3],
+      shadowsEnabled: true,
+    },
+    cameraPath: [
+      { label: 'Top-down', position: [0, 8, 4], target: [0, 0, 0], fov: 50, easing: 'ease' },
+      { label: 'Side', position: [7, 3, 0], target: [0, 1, 0], fov: 45, easing: 'ease' },
+      { label: 'Front', position: [0, 2, 7], target: [0, 1, 0], fov: 55, easing: 'ease-out' },
+    ],
+    objects: [
+      // Central product sphere
+      mesh('Hero Gem', { type: 'sphere', radius: 1.2, segments: 64 },
+        { type: 'physical', color: '#88ccff', roughness: 0, metalness: 0, transmission: 0.9, ior: 1.6, transparent: true },
+        [0, 1.2, 0]),
+      // Pedestal
+      mesh('Pedestal Top', { type: 'cylinder', radiusTop: 1.4, radiusBottom: 1.4, height: 0.15, segments: 32 },
+        { color: '#222233', roughness: 0.3, metalness: 0.9 },
+        [0, 0, 0]),
+      mesh('Pedestal Base', { type: 'cylinder', radiusTop: 1.8, radiusBottom: 2, height: 0.8, segments: 32 },
+        { color: '#1a1a2a', roughness: 0.4, metalness: 0.7 },
+        [0, -0.475, 0]),
+      // Orbital ring
+      mesh('Ring A', { type: 'torus', radius: 2.5, tube: 0.04, segments: 64 },
+        { color: '#4499ff', emissive: '#2266cc', emissiveIntensity: 0.5, metalness: 1, roughness: 0 },
+        [0, 1.2, 0], [Math.PI / 2, 0, 0]),
+      mesh('Ring B', { type: 'torus', radius: 3.2, tube: 0.03, segments: 64 },
+        { color: '#ff99aa', emissive: '#cc5566', emissiveIntensity: 0.3, metalness: 1, roughness: 0 },
+        [0, 1.2, 0], [Math.PI / 3, Math.PI / 5, 0]),
+      // Orbital particles
+      ...([
+        [2.5, 1.2, 0], [-2.5, 1.2, 0], [0, 1.2, 2.5], [0, 1.2, -2.5],
+        [1.77, 1.2, 1.77], [-1.77, 1.2, -1.77],
+      ] as [number, number, number][]).map((pos, i) =>
+        mesh(`Dot ${i}`, { type: 'sphere', radius: 0.08, segments: 8 },
+          { color: '#aaccff', emissive: '#6699ff', emissiveIntensity: 0.8 },
+          pos)
+      ),
+      // Floor
+      mesh('Studio Floor', { type: 'plane', width: 20, height: 20 },
+        { color: '#0d0d18', roughness: 0.8, metalness: 0.2 },
+        [0, -0.9, 0], [-Math.PI / 2, 0, 0]),
+      // Lights
+      light('Key', { type: 'spot', intensity: 10, color: '#ffffff', distance: 25, angle: 0.4, penumbra: 0.3, castShadow: true }, [4, 8, 4]),
+      light('Rim', { type: 'point', intensity: 3, color: '#4499ff', distance: 15, decay: 2 }, [-5, 3, -3]),
+      light('Fill', { type: 'point', intensity: 1.5, color: '#ffddaa', distance: 12, decay: 2 }, [2, 1, 5]),
     ],
   },
 ]

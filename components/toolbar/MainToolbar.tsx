@@ -68,6 +68,11 @@ export function MainToolbar() {
     for (const id of [...store.rootIds]) store.removeObject(id)
     for (const cfg of tpl.objects) store.addObject(cfg)
     store.setEnvironment(tpl.environment)
+    if (tpl.cameraPath) {
+      for (const kp of store.cameraPath) store.removeCameraKeypoint(kp.id)
+      for (const kp of tpl.cameraPath) store.addCameraKeypoint(kp)
+    }
+    if (tpl.appMode) store.setAppMode(tpl.appMode)
     store.showNotification(`Loaded: ${tpl.name}`)
     setShowTemplates(false)
   }
