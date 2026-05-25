@@ -1356,6 +1356,7 @@ export function loadPersistedScene() {
         behaviors: Array.isArray(o.behaviors) ? o.behaviors : undefined,
         interaction: o.interaction ?? undefined,
         htmlConfig: o.htmlConfig ?? undefined,
+        scrollAnim: o.scrollAnim ?? undefined,
       }
     }
     useScene.setState((s) => {

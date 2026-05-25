@@ -553,6 +553,14 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   return scrollWrap(meshContent)
 }
 
+// ─── GLTF Error Boundary ─────────────────────────────────────────────────────
+
+class GLTFErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  render() { return this.state.failed ? null : this.props.children }
+}
+
 // ─── GLTF Object ─────────────────────────────────────────────────────────────
 
 function GLTFObject({ obj }: { obj: SceneObject }) {
@@ -1298,9 +1306,11 @@ function SceneObjectNode({ id }: { id: string }) {
   }
   if (obj.geometry.type === 'gltf' && obj.geometry.url) {
     return (
-      <Suspense fallback={null}>
-        <GLTFObject obj={obj} />
-      </Suspense>
+      <GLTFErrorBoundary>
+        <Suspense fallback={null}>
+          <GLTFObject obj={obj} />
+        </Suspense>
+      </GLTFErrorBoundary>
     )
   }
   return <MeshObject obj={obj} />
