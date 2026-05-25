@@ -13,7 +13,6 @@ import {
   Text3D,
   Outlines,
   Sky,
-  Line,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -1549,45 +1548,28 @@ function CameraPathVisual() {
   const appMode = useScene((s) => s.appMode)
   const cameraPath = useScene((s) => s.cameraPath)
 
-  if (appMode !== 'website' || cameraPath.length < 2) {
-    if (appMode !== 'website' || cameraPath.length < 1) return null
-    // Single point: just show sphere
-    return (
-      <group>
-        {cameraPath.map((kp, i) => (
-          <group key={kp.id} position={kp.position}>
-            <mesh>
-              <sphereGeometry args={[0.2, 12, 12]} />
-              <meshBasicMaterial color="#5B6CFF" />
-            </mesh>
-            <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
-              <div style={{ color: '#5B6CFF', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', background: 'rgba(0,0,0,0.6)', padding: '2px 5px', borderRadius: 4 }}>
-                {i + 1}. {kp.label}
-              </div>
-            </Html>
-          </group>
-        ))}
-      </group>
-    )
-  }
+  const lineGeometry = useMemo(() => {
+    if (cameraPath.length < 2) return null
+    const positions = new Float32Array(cameraPath.flatMap((kp) => kp.position))
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    return geo
+  }, [cameraPath])
 
-  const points = cameraPath.map((kp) => new THREE.Vector3(...kp.position))
+  if (appMode !== 'website' || cameraPath.length < 1) return null
 
   return (
     <group>
-      <Line points={points} color="#5B6CFF" lineWidth={1.5} dashed dashSize={0.4} gapSize={0.2} />
-      {cameraPath.map((kp, i) => (
-        <group key={kp.id} position={kp.position}>
-          <mesh>
-            <sphereGeometry args={[0.2, 12, 12]} />
-            <meshBasicMaterial color="#5B6CFF" />
-          </mesh>
-          <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
-            <div style={{ color: '#ffffff', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', background: 'rgba(91,108,255,0.85)', padding: '2px 6px', borderRadius: 4, marginTop: -24 }}>
-              {i + 1}. {kp.label}
-            </div>
-          </Html>
-        </group>
+      {lineGeometry && (
+        <lineSegments geometry={lineGeometry}>
+          <lineBasicMaterial color="#5B6CFF" linewidth={1} />
+        </lineSegments>
+      )}
+      {cameraPath.map((kp) => (
+        <mesh key={kp.id} position={kp.position}>
+          <sphereGeometry args={[0.22, 10, 10]} />
+          <meshBasicMaterial color="#5B6CFF" />
+        </mesh>
       ))}
     </group>
   )
