@@ -33,16 +33,6 @@ import { cameraFrameFn } from '@/lib/cameraFrame'
 import { fbmNoise } from '@/lib/noise'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 
-// ─── GLTF Error Boundary ─────────────────────────────────────────────────────
-
-class GLTFErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false }
-  static getDerivedStateFromError() { return { failed: true } }
-  render() {
-    if (this.state.failed) return null
-    return this.props.children
-  }
-}
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
