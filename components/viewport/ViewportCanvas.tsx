@@ -555,9 +555,13 @@ function MeshObject({ obj }: { obj: SceneObject }) {
 
 // ─── GLTF Error Boundary ─────────────────────────────────────────────────────
 
-class GLTFErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+class GLTFErrorBoundary extends Component<{ objectId: string; children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch() {
+    useScene.getState().updateObject(this.props.objectId, { geometry: { type: 'box', width: 1, height: 1, depth: 1 } })
+    useScene.getState().showNotification('Model URL expired — replaced with placeholder', 'error')
+  }
   render() { return this.state.failed ? null : this.props.children }
 }
 
@@ -1306,7 +1310,7 @@ function SceneObjectNode({ id }: { id: string }) {
   }
   if (obj.geometry.type === 'gltf' && obj.geometry.url) {
     return (
-      <GLTFErrorBoundary>
+      <GLTFErrorBoundary objectId={obj.id}>
         <Suspense fallback={null}>
           <GLTFObject obj={obj} />
         </Suspense>
