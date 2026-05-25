@@ -33,16 +33,6 @@ import { cameraFrameFn } from '@/lib/cameraFrame'
 import { fbmNoise } from '@/lib/noise'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 
-// ─── GLTF Error Boundary ─────────────────────────────────────────────────────
-
-class GLTFErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false }
-  static getDerivedStateFromError() { return { failed: true } }
-  render() {
-    if (this.state.failed) return null
-    return this.props.children
-  }
-}
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
@@ -551,6 +541,18 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   }
 
   return scrollWrap(meshContent)
+}
+
+// ─── GLTF Error Boundary ─────────────────────────────────────────────────────
+
+class GLTFErrorBoundary extends Component<{ objectId: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch() {
+    useScene.getState().updateObject(this.props.objectId, { geometry: { type: 'box', width: 1, height: 1, depth: 1 } })
+    useScene.getState().showNotification('Model URL expired — replaced with placeholder', 'error')
+  }
+  render() { return this.state.failed ? null : this.props.children }
 }
 
 // ─── GLTF Object ─────────────────────────────────────────────────────────────
@@ -1298,9 +1300,11 @@ function SceneObjectNode({ id }: { id: string }) {
   }
   if (obj.geometry.type === 'gltf' && obj.geometry.url) {
     return (
-      <Suspense fallback={null}>
-        <GLTFObject obj={obj} />
-      </Suspense>
+      <GLTFErrorBoundary objectId={obj.id}>
+        <Suspense fallback={null}>
+          <GLTFObject obj={obj} />
+        </Suspense>
+      </GLTFErrorBoundary>
     )
   }
   return <MeshObject obj={obj} />
