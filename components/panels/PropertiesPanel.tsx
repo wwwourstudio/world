@@ -6,7 +6,7 @@ import {
   Type, Sparkles, Play, Box, Group, Flame, Maximize2, Mountain, Droplets, Paintbrush,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig, SceneObject, SculptMode } from '@/lib/scene/SceneStore'
+import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig, SceneObject, SculptMode, ScrollAnimConfig } from '@/lib/scene/SceneStore'
 
 function getNaturalSize(geo: GeometryConfig): number {
   switch (geo.type) {
@@ -305,6 +305,8 @@ export function PropertiesPanel() {
   const selectedIds = useScene((s) => s.selectedIds)
   const objects = useScene((s) => s.objects)
   const updateObject = useScene((s) => s.updateObject)
+  const setScrollAnim = useScene((s) => s.setScrollAnim)
+  const appMode = useScene((s) => s.appMode)
 
   const id = selectedIds[0]
   const obj = id ? objects[id] : null
@@ -768,6 +770,55 @@ export function PropertiesPanel() {
           </div>
         </Section>
       )}
+
+      {/* Scroll Animation — website mode only */}
+      {appMode === 'website' && (obj.type === 'mesh' || obj.type === 'group' || obj.geometry?.type === 'gltf') && (() => {
+        const sa: ScrollAnimConfig = obj.scrollAnim ?? { effect: 'none', enter: 0.3, exit: 0, distance: 2 }
+        const isSlide = sa.effect === 'slideUp' || sa.effect === 'slideDown' || sa.effect === 'slideLeft' || sa.effect === 'slideRight'
+        const set = (patch: Partial<ScrollAnimConfig>) => setScrollAnim(id, { ...sa, ...patch })
+        return (
+          <Section label="Scroll Animation" icon={<Play size={11} />} defaultOpen={true}>
+            <div className="flex flex-col gap-2">
+              <Row label="Effect">
+                <select value={sa.effect}
+                  onChange={(e) => set({ effect: e.target.value as ScrollAnimConfig['effect'] })}
+                  className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                  <option value="none">None</option>
+                  <option value="fadeIn">Fade In</option>
+                  <option value="slideUp">Slide Up</option>
+                  <option value="slideDown">Slide Down</option>
+                  <option value="slideLeft">Slide Left</option>
+                  <option value="slideRight">Slide Right</option>
+                  <option value="scaleIn">Scale In</option>
+                  <option value="scaleOut">Scale Out</option>
+                </select>
+              </Row>
+              {sa.effect !== 'none' && (
+                <>
+                  <Row label={`Enter ${Math.round(sa.enter * 100)}%`}>
+                    <input type="range" min={0} max={1} step={0.01} value={sa.enter}
+                      onChange={(e) => set({ enter: parseFloat(e.target.value) })}
+                      className="flex-1 accent-indigo-500" />
+                  </Row>
+                  <Row label={sa.exit === 0 ? 'Exit Never' : `Exit ${Math.round(sa.exit * 100)}%`}>
+                    <input type="range" min={0} max={1} step={0.01} value={sa.exit}
+                      onChange={(e) => set({ exit: parseFloat(e.target.value) })}
+                      className="flex-1 accent-indigo-500" />
+                  </Row>
+                  {isSlide && (
+                    <Row label={`Distance ${sa.distance.toFixed(1)}`}>
+                      <input type="range" min={0.5} max={10} step={0.1} value={sa.distance}
+                        onChange={(e) => set({ distance: parseFloat(e.target.value) })}
+                        className="flex-1 accent-indigo-500" />
+                    </Row>
+                  )}
+                </>
+              )}
+            </div>
+          </Section>
+        )
+      })()}
     </div>
   )
 }

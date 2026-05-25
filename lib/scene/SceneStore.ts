@@ -188,6 +188,13 @@ export interface ObjectInteraction {
   cameraKeypointId?: string
 }
 
+export interface ScrollAnimConfig {
+  effect: 'none' | 'fadeIn' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight' | 'scaleIn' | 'scaleOut'
+  enter: number
+  exit: number
+  distance: number
+}
+
 export interface AnimationConfig {
   preset: AnimationPreset
   speed: number
@@ -236,6 +243,7 @@ export interface SceneObject {
   receiveShadow: boolean
   particle?: ParticleConfig
   interaction?: ObjectInteraction
+  scrollAnim?: ScrollAnimConfig
   terrain?: TerrainConfig
   water?: WaterConfig
   behaviors?: BehaviorConfig[]
@@ -450,6 +458,7 @@ interface SceneActions {
   updateCameraKeypoint: (id: string, patch: Partial<CameraKeypoint>) => void
   removeCameraKeypoint: (id: string) => void
   reorderCameraKeypoints: (ids: string[]) => void
+  setScrollAnim: (id: string, cfg: ScrollAnimConfig) => void
 }
 
 export type DeepPartial<T> = { [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P] }
@@ -1280,6 +1289,10 @@ export const useScene = create<SceneState>()(
           s.cameraPath.forEach((k) => { map[k.id] = k })
           s.cameraPath = ids.map((id) => map[id]).filter(Boolean)
         })
+      },
+
+      setScrollAnim(id, cfg) {
+        set((s) => { if (s.objects[id]) s.objects[id].scrollAnim = cfg })
       },
     }))
   )

@@ -1,17 +1,18 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { X, Download, Code, FileJson, Monitor, Camera, Frame, Video, Share2, Package } from 'lucide-react'
+import { X, Download, Code, FileJson, Monitor, Camera, Frame, Video, Share2, Package, Globe } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
-import { generateEmbedCode, generateThreeJSCode, exportSceneGLB } from '@/lib/three/ExportSystem'
+import { generateEmbedCode, generateThreeJSCode, exportSceneGLB, generateWebsiteHTML } from '@/lib/three/ExportSystem'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { videoRecorder } from '@/lib/three/VideoRecorder'
 
-type ExportTab = 'embed' | 'threejs' | 'json' | 'screenshot' | 'iframe' | 'video' | 'glb' | 'share'
+type ExportTab = 'embed' | 'threejs' | 'json' | 'screenshot' | 'iframe' | 'video' | 'glb' | 'share' | 'website'
 
 export function ExportModal({ onClose }: { onClose: () => void }) {
   const objects = useScene((s) => s.objects)
   const environment = useScene((s) => s.environment)
+  const cameraPath = useScene((s) => s.cameraPath)
   const isRecording = useScene((s) => s.isRecording)
   const setRecording = useScene((s) => s.setRecording)
   const showNotification = useScene((s) => s.showNotification)
@@ -35,6 +36,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     video: '',
     glb: '',
     share: '',
+    website: '',
   }
 
   const iframeSnippet = `<iframe\n  srcdoc="${embedHtml.replace(/"/g, '&quot;').replace(/\n/g, '')}"\n  width="${iframeWidth}" height="${iframeHeight}"\n  style="border:none;border-radius:12px"\n  allowfullscreen\n></iframe>`
@@ -112,6 +114,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     { id: 'screenshot', label: 'Screenshot', icon: Camera },
     { id: 'video', label: 'Video', icon: Video },
     { id: 'glb', label: 'GLB', icon: Package },
+    { id: 'website', label: 'Website', icon: Globe },
     { id: 'share', label: 'Share', icon: Share2 },
     { id: 'iframe', label: 'iFrame', icon: Frame },
   ]
@@ -223,6 +226,36 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
                   {glbExporting ? 'Exporting…' : 'Export GLB'}
                 </button>
               </div>
+            </div>
+          ) : tab === 'website' ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: '#1E2028' }}>
+                <Globe size={22} style={{ color: '#5B6CFF' }} />
+              </div>
+              <p className="text-[12px] text-center" style={{ color: '#7A7E92' }}>
+                Exports a self-contained HTML page with your 3D scene and scroll-driven camera path. Open in any browser — no server needed.
+              </p>
+              <p className="text-[11px] text-center px-4" style={{ color: '#4a4e62' }}>
+                External GLTF models and HDRI textures are not included in the standalone export.
+              </p>
+              <button
+                onClick={() => {
+                  const html = generateWebsiteHTML(objects, cameraPath)
+                  const blob = new Blob([html], { type: 'text/html' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'world-website.html'
+                  a.click()
+                  URL.revokeObjectURL(url)
+                  showNotification('Website HTML downloaded')
+                }}
+                className="px-4 py-2 rounded-lg text-[12px] font-medium flex items-center gap-1.5"
+                style={{ background: '#5B6CFF', color: '#fff' }}
+              >
+                <Download size={12} strokeWidth={2} />
+                Download HTML
+              </button>
             </div>
           ) : tab === 'share' ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
@@ -340,7 +373,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer */}
-        {tab !== 'screenshot' && tab !== 'iframe' && tab !== 'video' && tab !== 'glb' && tab !== 'share' && (
+        {tab !== 'screenshot' && tab !== 'iframe' && tab !== 'video' && tab !== 'glb' && tab !== 'share' && tab !== 'website' && (
           <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderTop: '1px solid #1E2028' }}>
             <span className="text-[11px]" style={{ color: '#7A7E92' }}>
               {Object.keys(objects).length} objects · {(new TextEncoder().encode(content[tab]).length / 1024).toFixed(1)} KB

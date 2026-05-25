@@ -26,7 +26,7 @@ import * as THREE from 'three'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig } from '@/lib/scene/SceneStore'
+import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig, ScrollAnimConfig } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { captureCamera } from '@/lib/captureCamera'
 import { cameraFrameFn } from '@/lib/cameraFrame'
@@ -357,6 +357,39 @@ function useBehaviors(
   })
 }
 
+// ─── Scroll Animation ─────────────────────────────────────────────────────────
+
+function computeScrollT(progress: number, enter: number, exit: number): number {
+  let t = enter > 0 ? Math.min(progress / enter, 1) : 1
+  if (exit > 0 && progress > exit) {
+    t = Math.max(0, 1 - (progress - exit) / Math.max(0.001, 1 - exit))
+  }
+  return t
+}
+
+function useScrollAnim(scrollAnim: ScrollAnimConfig | undefined) {
+  const scrollProgress = useScene((s) => s.scrollProgress)
+  const appMode = useScene((s) => s.appMode)
+
+  if (!scrollAnim || scrollAnim.effect === 'none' || appMode !== 'website') {
+    return { opacity: 1, dx: 0, dy: 0, dz: 0, scaleFactor: 1 }
+  }
+
+  const t = computeScrollT(scrollProgress, scrollAnim.enter, scrollAnim.exit)
+  const d = scrollAnim.distance
+
+  switch (scrollAnim.effect) {
+    case 'fadeIn':   return { opacity: t, dx: 0, dy: 0, dz: 0, scaleFactor: 1 }
+    case 'scaleIn':  return { opacity: 1, dx: 0, dy: 0, dz: 0, scaleFactor: Math.max(0.001, t) }
+    case 'scaleOut': return { opacity: 1, dx: 0, dy: 0, dz: 0, scaleFactor: Math.max(0.001, 1 - t) }
+    case 'slideUp':  return { opacity: 1, dx: 0, dy: d * (1 - t), dz: 0, scaleFactor: 1 }
+    case 'slideDown':return { opacity: 1, dx: 0, dy: -d * (1 - t), dz: 0, scaleFactor: 1 }
+    case 'slideLeft':return { opacity: 1, dx: -d * (1 - t), dy: 0, dz: 0, scaleFactor: 1 }
+    case 'slideRight':return { opacity: 1, dx: d * (1 - t), dy: 0, dz: 0, scaleFactor: 1 }
+    default:         return { opacity: 1, dx: 0, dy: 0, dz: 0, scaleFactor: 1 }
+  }
+}
+
 // ─── Mesh Object ─────────────────────────────────────────────────────────────
 
 function MeshObject({ obj }: { obj: SceneObject }) {
@@ -366,8 +399,18 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
   const hovered = useRef(false)
+  const { opacity, dx, dy, dz, scaleFactor } = useScrollAnim(obj.scrollAnim)
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
   useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
+
+  useEffect(() => {
+    if (!obj.scrollAnim || obj.scrollAnim.effect === 'none') return
+    const mat = ref.current?.material as THREE.MeshStandardMaterial | undefined
+    if (!mat) return
+    mat.transparent = true
+    mat.opacity = opacity * (obj.material.opacity ?? 1)
+    mat.needsUpdate = true
+  }, [opacity, obj.scrollAnim, obj.material.opacity])
 
   // Load PBR texture maps imperatively when maps or repeat change
   const mapsKey = JSON.stringify(obj.material.maps)
@@ -486,8 +529,14 @@ function MeshObject({ obj }: { obj: SceneObject }) {
     </mesh>
   )
 
+  const scrollWrap = (inner: ReactNode) => (
+    <group position={[dx, dy, dz]} scale={[scaleFactor, scaleFactor, scaleFactor]}>
+      {inner}
+    </group>
+  )
+
   if (hasPhysics) {
-    return (
+    return scrollWrap(
       <RigidBody
         type={bodyType === 'dynamic' ? 'dynamic' : bodyType === 'kinematic' ? 'kinematicPosition' : 'fixed'}
         mass={obj.physics?.mass ?? 1}
@@ -501,7 +550,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
     )
   }
 
-  return meshContent
+  return scrollWrap(meshContent)
 }
 
 // ─── GLTF Object ─────────────────────────────────────────────────────────────
@@ -515,6 +564,21 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
   const { scene: gltfScene } = useGLTF(url)
+  const { opacity, dx, dy, dz, scaleFactor } = useScrollAnim(obj.scrollAnim)
+
+  useEffect(() => {
+    if (!obj.scrollAnim || obj.scrollAnim.effect === 'none') return
+    if (!ref.current) return
+    ref.current.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) return
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      if (!mat) return
+      mat.transparent = true
+      mat.opacity = opacity
+      mat.needsUpdate = true
+    })
+  }, [opacity, obj.scrollAnim])
 
   const { cloned, bbSize, bbCenter } = useMemo(() => {
     const c = gltfScene.clone(true)
@@ -537,26 +601,28 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
   }, [gltfScene])
 
   return (
-    <group
-      ref={ref}
-      position={obj.transform.position}
-      rotation={obj.transform.rotation}
-      scale={obj.transform.scale}
-      visible={obj.visible}
-      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
-      onContextMenu={(e) => {
-        e.stopPropagation()
-        selectObject(obj.id, false)
-        useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
-      }}
-    >
-      <primitive object={cloned} />
-      {isSelected && !isPlaying && (
-        <mesh position={bbCenter.toArray() as [number, number, number]}>
-          <boxGeometry args={[bbSize.x * 1.02, bbSize.y * 1.02, bbSize.z * 1.02]} />
-          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.5} />
-        </mesh>
-      )}
+    <group position={[dx, dy, dz]} scale={[scaleFactor, scaleFactor, scaleFactor]}>
+      <group
+        ref={ref}
+        position={obj.transform.position}
+        rotation={obj.transform.rotation}
+        scale={obj.transform.scale}
+        visible={obj.visible}
+        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+        onContextMenu={(e) => {
+          e.stopPropagation()
+          selectObject(obj.id, false)
+          useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+        }}
+      >
+        <primitive object={cloned} />
+        {isSelected && !isPlaying && (
+          <mesh position={bbCenter.toArray() as [number, number, number]}>
+            <boxGeometry args={[bbSize.x * 1.02, bbSize.y * 1.02, bbSize.z * 1.02]} />
+            <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.5} />
+          </mesh>
+        )}
+      </group>
     </group>
   )
 }
