@@ -13,6 +13,8 @@ import {
   Text3D,
   Outlines,
   Sky,
+  OrthographicCamera as DreiOrthoCamera,
+  Line,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -30,6 +32,7 @@ import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, Animatio
 import { captureCanvas } from '@/lib/canvasCapture'
 import { captureCamera } from '@/lib/captureCamera'
 import { cameraFrameFn } from '@/lib/cameraFrame'
+import { cameraJumpFn } from '@/lib/cameraJump'
 import { fbmNoise } from '@/lib/noise'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 
@@ -326,6 +329,29 @@ function useBehaviors(
           }
           break
         }
+        case 'proximityTrigger': {
+          const state = useScene.getState()
+          const radius = b.radius ?? 3
+          const action = b.action ?? ''
+          let targPos: THREE.Vector3
+          if (b.targetId) {
+            const tObj = state.objects[b.targetId]
+            if (!tObj) break
+            targPos = new THREE.Vector3(...tObj.transform.position)
+          } else {
+            targPos = camera.position.clone()
+          }
+          const selfPos = new THREE.Vector3(...(state.objects[objectId]?.transform.position ?? [0,0,0]))
+          const inside = selfPos.distanceTo(targPos) < radius
+          if (inside && !(b.fired && b.once)) {
+            if (b.once) state.updateBehavior(objectId, b.id, { fired: true })
+            if (action === 'switch-scene' && b.targetSceneId) state.switchScene(b.targetSceneId)
+            else if (action === 'open-link' && b.linkUrl) window.open(b.linkUrl, '_blank')
+            else if (action === 'play-anim') state.setPlaying(true)
+            else if (action === 'toggle-visible') state.updateObject(objectId, { visible: !state.objects[objectId]?.visible })
+          }
+          break
+        }
         case 'patrol': {
           const wps = b.waypoints
           if (!wps || wps.length < 2) break
@@ -466,6 +492,13 @@ function MeshObject({ obj }: { obj: SceneObject }) {
           const playing = useScene.getState().isPlaying
           useScene.getState().setPlaying(!playing)
         }
+        if (ix?.clickAction === 'camera-link' && ix.cameraKeypointId) {
+          const kp = useScene.getState().cameraPath.find(k => k.id === ix.cameraKeypointId)
+          if (kp) cameraJumpFn.fn?.(kp)
+        }
+        if (ix?.clickAction === 'switch-scene' && ix.targetSceneId) {
+          useScene.getState().switchScene(ix.targetSceneId)
+        }
       }}
       onContextMenu={(e) => {
         e.stopPropagation()
@@ -503,7 +536,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       <SceneGeometry geo={obj.geometry} />
       <primitive object={material} attach="material" />
       {isSelected && !isPlaying && (
-        <Outlines thickness={1.5} color="#5B6CFF" screenspace transparent opacity={0.85} />
+        <Outlines thickness={0.4} color="#5B6CFF" screenspace transparent opacity={0.7} />
       )}
       {ix?.tooltipText && hovered.current && (
         <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
@@ -1020,24 +1053,80 @@ function WaterObject({ obj }: { obj: SceneObject }) {
 
 // ─── Camera Controller ────────────────────────────────────────────────────────
 
+const ORTHO_POSITIONS: Record<string, [number, number, number]> = {
+  top:    [0, 100, 0.001],
+  front:  [0, 0, 100],
+  right:  [100, 0, 0],
+  left:   [-100, 0, 0],
+  bottom: [0, -100, 0.001],
+  iso:    [60, 60, 60],
+}
+
 function CameraController() {
   const viewMode = useScene((s) => s.viewMode)
   const cameraFov = useScene((s) => s.cameraFov)
-  const { camera } = useThree()
+  const orthoZoom = useScene((s) => s.orthoZoom)
+  const { camera, size } = useThree()
 
   useEffect(() => {
-    const cam = camera as THREE.PerspectiveCamera
     if (viewMode === 'persp') {
+      const cam = camera as THREE.PerspectiveCamera
       cam.fov = cameraFov
-    } else {
-      cam.fov = 5
-      if (viewMode === 'top') camera.position.set(0, 50, 0.01)
-      else if (viewMode === 'front') camera.position.set(0, 0, 50)
-      else camera.position.set(50, 0, 0)
-      camera.lookAt(0, 0, 0)
+      cam.updateProjectionMatrix()
     }
-    cam.updateProjectionMatrix()
   }, [viewMode, cameraFov, camera])
+
+  if (viewMode === 'persp') return null
+
+  const aspect = size.width / size.height
+  const h = orthoZoom
+  const w = h * aspect
+  const pos = ORTHO_POSITIONS[viewMode] ?? [0, 100, 0.001]
+
+  return (
+    <DreiOrthoCamera
+      makeDefault
+      left={-w} right={w} top={h} bottom={-h}
+      near={0.01} far={2000}
+      position={pos}
+      onUpdate={(cam) => { cam.lookAt(0, 0, 0) }}
+    />
+  )
+}
+
+// ─── Camera Link Animator ──────────────────────────────────────────────────────
+
+function CameraLinkAnimator() {
+  const targetRef = useRef<{ position: [number,number,number]; target: [number,number,number]; fov: number } | null>(null)
+  const { camera, controls } = useThree()
+
+  useEffect(() => {
+    cameraJumpFn.fn = (kp) => {
+      targetRef.current = { position: kp.position, target: kp.target, fov: kp.fov }
+    }
+    return () => { cameraJumpFn.fn = null }
+  }, [])
+
+  useFrame(() => {
+    if (!targetRef.current) return
+    const { position, target, fov } = targetRef.current
+    const pos = new THREE.Vector3(...position)
+    const tgt = new THREE.Vector3(...target)
+
+    camera.position.lerp(pos, 0.08)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctrl = controls as any
+    if (ctrl?.target) ctrl.target.lerp(tgt, 0.08)
+
+    const cam = camera as THREE.PerspectiveCamera
+    if (cam.fov !== undefined) {
+      cam.fov = THREE.MathUtils.lerp(cam.fov, fov, 0.06)
+      cam.updateProjectionMatrix()
+    }
+
+    // Stop animating once close enough
+    if (camera.position.distanceTo(pos) < 0.05) targetRef.current = null
+  })
 
   return null
 }
@@ -1257,6 +1346,7 @@ function ScrollCamera() {
   const { camera, controls } = useThree()
   const targetPos = useRef(new THREE.Vector3())
   const targetLook = useRef(new THREE.Vector3())
+  const lastCrossedScene = useRef<string | null>(null)
 
   useFrame(() => {
     if (appMode !== 'website' || cameraPath.length < 2) return
@@ -1271,6 +1361,20 @@ function ScrollCamera() {
     if (cam.fov !== undefined) {
       cam.fov = THREE.MathUtils.lerp(cam.fov, fov, 0.05)
       cam.updateProjectionMatrix()
+    }
+
+    // Scene switching at keypoints
+    const segCount = cameraPath.length - 1
+    const raw = scrollProgress * segCount
+    const nearIdx = Math.round(raw)
+    const kp = cameraPath[nearIdx]
+    if (kp?.sceneId && Math.abs(raw - nearIdx) < 0.05) {
+      if (kp.sceneId !== lastCrossedScene.current) {
+        lastCrossedScene.current = kp.sceneId
+        useScene.getState().switchScene(kp.sceneId)
+      }
+    } else if (Math.abs(raw - nearIdx) > 0.2) {
+      lastCrossedScene.current = null
     }
   })
 
@@ -1745,11 +1849,47 @@ function InnerScene() {
   return <>{sceneObjects}</>
 }
 
+// ─── Camera Path Visualization ───────────────────────────────────────────────
+
+function CameraPathViz() {
+  const cameraPath = useScene((s) => s.cameraPath)
+  const isPreviewMode = useScene((s) => s.isPreviewMode)
+  const appMode = useScene((s) => s.appMode)
+  if (isPreviewMode || appMode !== 'website' || cameraPath.length === 0) return null
+  return (
+    <group>
+      {cameraPath.map((kp, i) => (
+        <group key={kp.id} position={kp.position as [number, number, number]}>
+          <mesh raycast={() => null}>
+            <sphereGeometry args={[0.18, 8, 8]} />
+            <meshBasicMaterial color="#5B6CFF" transparent opacity={0.85} />
+          </mesh>
+          <Html center style={{ pointerEvents: 'none' }} distanceFactor={8}>
+            <div style={{ color: '#fff', fontSize: 10, fontWeight: 700, background: 'rgba(91,108,255,0.85)', padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', boxShadow: '0 1px 6px #0006' }}>
+              {i + 1} {kp.label}
+            </div>
+          </Html>
+        </group>
+      ))}
+      {cameraPath.length >= 2 && (
+        <Line
+          points={cameraPath.map((kp) => kp.position as [number, number, number])}
+          color="#5B6CFF"
+          lineWidth={1.5}
+          opacity={0.35}
+          transparent
+        />
+      )}
+    </group>
+  )
+}
+
 // ─── Canvas Wrapper ───────────────────────────────────────────────────────────
 
 export function ViewportCanvas() {
   const cameraMode = useScene((s) => s.cameraMode)
   const appMode = useScene((s) => s.appMode)
+  const websiteScrollEnabled = useScene((s) => s.websiteScrollEnabled)
   const deselectAll = useScene((s) => s.deselectAll)
   const toneMappingExposure = useScene((s) => s.postFX.toneMappingExposure)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -1759,6 +1899,13 @@ export function ViewportCanvas() {
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       const state = useScene.getState()
+      // Ortho zoom when in an ortho view
+      if (state.viewMode !== 'persp') {
+        e.preventDefault()
+        const factor = e.deltaY > 0 ? 1.08 : 0.92
+        state.setOrthoZoom(state.orthoZoom * factor)
+        return
+      }
       if (!state.websiteScrollEnabled) return
       e.preventDefault()
       const delta = e.deltaY / 3000
@@ -1789,11 +1936,14 @@ export function ViewportCanvas() {
           <FrameController />
           <FlyCamera />
           <ScrollCamera />
+          <CameraController />
+          <CameraLinkAnimator />
+          <CameraPathViz />
           <OrbitControls
             makeDefault
             enableDamping
             dampingFactor={0.05}
-            enabled={cameraMode === 'orbit' && appMode !== 'website'}
+            enabled={cameraMode === 'orbit' && !(appMode === 'website' && websiteScrollEnabled)}
           />
         </Suspense>
       </Canvas>

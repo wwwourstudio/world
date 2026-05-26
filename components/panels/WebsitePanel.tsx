@@ -1,11 +1,32 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Camera, ChevronDown, ChevronRight, Eye, RefreshCw } from 'lucide-react'
-import { useScene } from '@/lib/scene/SceneStore'
+import {
+  Trash2, Camera, ChevronDown, ChevronRight,
+  Eye, RefreshCw, Type, AlignLeft, MousePointer, Image, Video, Navigation,
+  RotateCcw, Download, MapPin,
+} from 'lucide-react'
+import { useScene, type SceneSnapshot } from '@/lib/scene/SceneStore'
 import { captureCamera } from '@/lib/captureCamera'
+import { moveCameraToKeypoint } from '@/lib/cameraJump'
 
-function Section({ label, children, defaultOpen = true }: { label: string; children: React.ReactNode; defaultOpen?: boolean }) {
+const HTML_ELEMENTS = [
+  { tag: 'heading',   label: 'Heading',   icon: Type,         content: 'Your Heading' },
+  { tag: 'paragraph', label: 'Text',       icon: AlignLeft,    content: 'Your paragraph text here.' },
+  { tag: 'button',    label: 'Button',     icon: MousePointer, content: 'Click Me' },
+  { tag: 'image',     label: 'Image',      icon: Image,        content: '' },
+  { tag: 'video',     label: 'Video',      icon: Video,        content: '' },
+  { tag: 'form',      label: 'Nav',        icon: Navigation,   content: 'Nav' },
+] as const
+
+function Section({
+  label, children, defaultOpen = true, badge,
+}: {
+  label: string
+  children: React.ReactNode
+  defaultOpen?: boolean
+  badge?: string | number
+}) {
   const [open, setOpen] = useState(defaultOpen)
   return (
     <div style={{ borderBottom: '1px solid #1E2028' }}>
@@ -13,13 +34,20 @@ function Section({ label, children, defaultOpen = true }: { label: string; child
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 h-7 px-3 transition-colors"
         style={{ background: '#0d0f14' }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#12141a' }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#0d0f14' }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#12141a' }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#0d0f14' }}
       >
         <span className="flex-1 text-left text-[10px] uppercase tracking-wider font-semibold" style={{ color: '#5B6CFF' }}>
           {label}
         </span>
-        {open ? <ChevronDown size={10} style={{ color: '#3a3e50' }} /> : <ChevronRight size={10} style={{ color: '#3a3e50' }} />}
+        {badge !== undefined && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: '#5B6CFF22', color: '#5B6CFF' }}>
+            {badge}
+          </span>
+        )}
+        {open
+          ? <ChevronDown size={10} style={{ color: '#3a3e50' }} />
+          : <ChevronRight size={10} style={{ color: '#3a3e50' }} />}
       </button>
       {open && <div className="px-3 py-2.5 flex flex-col gap-2">{children}</div>}
     </div>
@@ -27,6 +55,8 @@ function Section({ label, children, defaultOpen = true }: { label: string; child
 }
 
 export function WebsitePanel() {
+  const addObject = useScene((s) => s.addObject)
+  const scenes = useScene((s) => s.scenes)
   const cameraPath = useScene((s) => s.cameraPath)
   const addCameraKeypoint = useScene((s) => s.addCameraKeypoint)
   const updateCameraKeypoint = useScene((s) => s.updateCameraKeypoint)
@@ -54,30 +84,106 @@ export function WebsitePanel() {
     showNotification('Camera keypoint added')
   }
 
+  function handleUpdateKeypoint(id: string) {
+    if (!captureCamera.fn) {
+      showNotification('Camera not ready', 'error')
+      return
+    }
+    const { position, target, fov } = captureCamera.fn()
+    updateCameraKeypoint(id, { position, target, fov })
+    showNotification('Keypoint updated')
+  }
+
   function handleClearPath() {
     for (const kp of cameraPath) removeCameraKeypoint(kp.id)
     showNotification('Camera path cleared')
   }
 
+  function addHtmlElement(tag: string, content: string) {
+    addObject({
+      type: 'html',
+      name: tag.charAt(0).toUpperCase() + tag.slice(1),
+      htmlConfig: { htmlType: tag as 'heading' | 'paragraph' | 'button' | 'image' | 'video' | 'form', content },
+    })
+  }
+
+  const orbitFree = !websiteScrollEnabled
+
   return (
     <div className="flex flex-col overflow-y-auto custom-scrollbar flex-1">
       {/* Header */}
       <div className="px-3 py-2.5 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0b0c10' }}>
-        <div className="text-[11px] font-semibold" style={{ color: '#E8E9F0' }}>Website Mode</div>
+        <div className="text-[11px] font-semibold" style={{ color: '#E8E9F0' }}>Website Builder</div>
         <div className="text-[10px] mt-0.5" style={{ color: '#7A7E92' }}>
-          Build scroll-driven 3D websites with animated camera paths
+          Scroll-driven 3D websites with animated cameras
         </div>
       </div>
 
+      {/* Orbit Status Banner */}
+      <div
+        className="mx-3 mt-2.5 mb-1 flex items-center gap-2 px-2.5 py-2 rounded-lg"
+        style={{
+          background: orbitFree ? '#0d1a0d' : '#1a1020',
+          border: `1px solid ${orbitFree ? '#1a3a1a' : '#2a1840'}`,
+        }}
+      >
+        <div
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ background: orbitFree ? '#4ade80' : '#a78bfa' }}
+        />
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold" style={{ color: orbitFree ? '#4ade80' : '#a78bfa' }}>
+            {orbitFree ? 'Orbit free — edit mode' : 'Scroll controls camera'}
+          </span>
+          <span className="text-[9px]" style={{ color: '#5a5e72' }}>
+            {orbitFree
+              ? 'Drag viewport to orbit → capture keypoints'
+              : 'Disable scroll below to orbit the camera'}
+          </span>
+        </div>
+      </div>
+
+      {/* Elements */}
+      <Section label="Elements">
+        <div className="grid grid-cols-3 gap-1">
+          {HTML_ELEMENTS.map(({ tag, label, icon: Icon, content }) => (
+            <button
+              key={tag}
+              onClick={() => addHtmlElement(tag, content)}
+              className="flex flex-col items-center gap-1 py-2 rounded-lg text-[10px] font-medium transition-all"
+              style={{ background: '#1E2028', border: '1px solid #2a2d40', color: '#7A7E92' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#5B6CFF'; (e.currentTarget as HTMLElement).style.color = '#E8E9F0' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#2a2d40'; (e.currentTarget as HTMLElement).style.color = '#7A7E92' }}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[9px]" style={{ color: '#3a3e50' }}>Click to add · select object to position with gizmo</p>
+      </Section>
+
       {/* Camera Path */}
-      <Section label="Camera Path">
+      <Section label="Camera Path" badge={cameraPath.length || undefined}>
+        {!orbitFree && (
+          <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md" style={{ background: '#1a1020', border: '1px solid #2a1840' }}>
+            <span className="text-[9px]" style={{ color: '#a78bfa' }}>
+              Turn off scroll in "Scroll Preview" to orbit and capture new positions
+            </span>
+          </div>
+        )}
+
         <div className="flex gap-1.5">
           <button
             onClick={handleCaptureKeypoint}
             className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md text-[11px] font-medium transition-colors"
-            style={{ background: '#5B6CFF22', color: '#5B6CFF', border: '1px solid #5B6CFF44' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#5B6CFF33' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = '#5B6CFF22' }}
+            style={{
+              background: orbitFree ? '#5B6CFF22' : '#1E2028',
+              color: orbitFree ? '#5B6CFF' : '#4a4e60',
+              border: `1px solid ${orbitFree ? '#5B6CFF44' : '#2a2d40'}`,
+            }}
+            onMouseEnter={(e) => { if (orbitFree) e.currentTarget.style.background = '#5B6CFF33' }}
+            onMouseLeave={(e) => { if (orbitFree) e.currentTarget.style.background = orbitFree ? '#5B6CFF22' : '#1E2028' }}
           >
             <Camera size={12} strokeWidth={2} />
             Capture Camera Here
@@ -87,7 +193,7 @@ export function WebsitePanel() {
               onClick={handleClearPath}
               className="flex items-center justify-center w-7 h-7 rounded-md transition-colors"
               style={{ color: '#7A7E92', border: '1px solid #1E2028' }}
-              title="Clear path"
+              title="Clear all keypoints"
               onMouseEnter={(e) => { e.currentTarget.style.color = '#ff6b6b'; e.currentTarget.style.borderColor = '#ff6b6b44' }}
               onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92'; e.currentTarget.style.borderColor = '#1E2028' }}
             >
@@ -98,50 +204,96 @@ export function WebsitePanel() {
 
         {cameraPath.length === 0 ? (
           <div className="text-[11px] text-center py-3" style={{ color: '#4a4e60' }}>
-            No keypoints yet. Orbit to a camera position and click "Capture Camera Here".
+            No keypoints yet. Orbit to a position and click "Capture Camera Here".
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
             {cameraPath.map((kp, i) => (
               <div
                 key={kp.id}
-                className="flex items-center gap-1.5 px-2 py-1.5 rounded-md"
+                className="flex flex-col gap-1.5 px-2 py-2 rounded-md"
                 style={{ background: '#0d0f14', border: '1px solid #1E2028' }}
               >
-                <span
-                  className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold shrink-0"
-                  style={{ background: '#5B6CFF22', color: '#5B6CFF' }}
-                >
-                  {i + 1}
-                </span>
-                <input
-                  value={kp.label}
-                  onChange={(e) => updateCameraKeypoint(kp.id, { label: e.target.value })}
-                  className="flex-1 h-5 px-1.5 rounded text-[11px] outline-none border bg-transparent min-w-0"
-                  style={{ color: '#E8E9F0', borderColor: '#1E2028' }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = '#5B6CFF' }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = '#1E2028' }}
-                />
-                <select
-                  value={kp.easing}
-                  onChange={(e) => updateCameraKeypoint(kp.id, { easing: e.target.value as 'linear' | 'ease' | 'ease-in' | 'ease-out' })}
-                  className="h-5 px-1 rounded text-[10px] outline-none border"
-                  style={{ background: '#0B0C0F', color: '#7A7E92', borderColor: '#1E2028' }}
-                >
-                  <option value="linear">Linear</option>
-                  <option value="ease">Ease</option>
-                  <option value="ease-in">Ease In</option>
-                  <option value="ease-out">Ease Out</option>
-                </select>
-                <button
-                  onClick={() => removeCameraKeypoint(kp.id)}
-                  className="w-5 h-5 flex items-center justify-center rounded transition-colors shrink-0"
-                  style={{ color: '#4a4e60' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = '#ff6b6b' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = '#4a4e60' }}
-                >
-                  <Trash2 size={10} strokeWidth={2} />
-                </button>
+                {/* Row 1: number + label + easing + delete */}
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold shrink-0"
+                    style={{ background: '#5B6CFF22', color: '#5B6CFF' }}
+                  >
+                    {i + 1}
+                  </span>
+                  <input
+                    value={kp.label}
+                    onChange={(e) => updateCameraKeypoint(kp.id, { label: e.target.value })}
+                    className="flex-1 h-5 px-1.5 rounded text-[11px] outline-none border bg-transparent min-w-0"
+                    style={{ color: '#E8E9F0', borderColor: '#1E2028' }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = '#5B6CFF' }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = '#1E2028' }}
+                  />
+                  <select
+                    value={kp.easing}
+                    onChange={(e) => updateCameraKeypoint(kp.id, { easing: e.target.value as 'linear' | 'ease' | 'ease-in' | 'ease-out' })}
+                    className="h-5 px-1 rounded text-[10px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#7A7E92', borderColor: '#1E2028' }}
+                  >
+                    <option value="linear">Linear</option>
+                    <option value="ease">Ease</option>
+                    <option value="ease-in">Ease In</option>
+                    <option value="ease-out">Ease Out</option>
+                  </select>
+                  <button
+                    onClick={() => removeCameraKeypoint(kp.id)}
+                    className="w-5 h-5 flex items-center justify-center rounded transition-colors shrink-0"
+                    style={{ color: '#4a4e60' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#ff6b6b' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#4a4e60' }}
+                    title="Remove keypoint"
+                  >
+                    <Trash2 size={10} strokeWidth={2} />
+                  </button>
+                </div>
+
+                {/* Row 2: scene switch + action buttons */}
+                <div className="flex items-center gap-1.5 pl-6">
+                  {scenes.length > 1 && (
+                    <select
+                      value={kp.sceneId ?? ''}
+                      onChange={(e) => updateCameraKeypoint(kp.id, { sceneId: e.target.value || undefined })}
+                      className="flex-1 h-5 px-1 rounded text-[10px] outline-none border"
+                      style={{ background: '#0B0C0F', color: '#7A7E92', borderColor: '#1E2028' }}
+                      title="Switch scene at this keypoint"
+                    >
+                      <option value="">No scene switch</option>
+                      {scenes.map((sc: SceneSnapshot) => (
+                        <option key={sc.id} value={sc.id}>{sc.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  <div className="flex gap-1 ml-auto">
+                    <button
+                      onClick={() => moveCameraToKeypoint(kp)}
+                      className="flex items-center gap-1 px-2 h-5 rounded text-[9px] font-medium transition-colors"
+                      style={{ background: '#5B6CFF15', color: '#5B6CFF', border: '1px solid #5B6CFF33' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#5B6CFF33' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = '#5B6CFF15' }}
+                      title="Fly camera to this keypoint"
+                    >
+                      <MapPin size={9} />
+                      Jump
+                    </button>
+                    <button
+                      onClick={() => handleUpdateKeypoint(kp.id)}
+                      className="flex items-center gap-1 px-2 h-5 rounded text-[9px] font-medium transition-colors"
+                      style={{ background: '#1E2028', color: '#7A7E92', border: '1px solid #2a2d40' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#E8E9F0'; e.currentTarget.style.borderColor = '#5a5e72' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92'; e.currentTarget.style.borderColor = '#2a2d40' }}
+                      title="Re-capture current camera to this keypoint"
+                    >
+                      <RotateCcw size={9} />
+                      Update
+                    </button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -149,13 +301,13 @@ export function WebsitePanel() {
 
         {cameraPath.length >= 2 && (
           <div className="text-[10px]" style={{ color: '#4a4e60' }}>
-            {cameraPath.length} keypoints · Enable scroll below to preview
+            {cameraPath.length} keypoints — enable scroll below to preview the path
           </div>
         )}
       </Section>
 
-      {/* Scroll Controls */}
-      <Section label="Scroll">
+      {/* Scroll Preview */}
+      <Section label="Scroll Preview">
         <div className="flex items-center gap-2">
           <span className="text-[11px]" style={{ color: '#7A7E92' }}>Enable scroll</span>
           <div className="flex-1" />
@@ -202,47 +354,37 @@ export function WebsitePanel() {
 
         {cameraPath.length < 2 && (
           <div className="text-[10px]" style={{ color: '#4a4e60' }}>
-            Add at least 2 camera keypoints to enable scroll animation.
+            Add at least 2 camera keypoints to animate the scroll.
           </div>
         )}
       </Section>
 
-      {/* Preview */}
-      <Section label="Preview">
-        <div className="text-[11px] mb-2" style={{ color: '#7A7E92' }}>
-          Preview your website as visitors will see it — full screen with scroll navigation.
+      {/* Preview & Export */}
+      <Section label="Preview & Export">
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => setPreviewMode(true)}
+            className="w-full flex items-center justify-center gap-1.5 h-8 rounded-md text-[12px] font-medium transition-colors"
+            style={{ background: '#ffffff', color: '#000000' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#e0e0e0' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#ffffff' }}
+          >
+            <Eye size={13} strokeWidth={2} />
+            Enter Preview
+          </button>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-export-modal', { detail: 'website' }))}
+            className="w-full flex items-center justify-center gap-1.5 h-8 rounded-md text-[12px] font-medium transition-colors"
+            style={{ background: '#1E2028', color: '#C8C9D0', border: '1px solid #2a2d40' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d40' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#1E2028' }}
+          >
+            <Download size={13} strokeWidth={2} />
+            Export HTML
+          </button>
         </div>
-        <button
-          onClick={() => setPreviewMode(true)}
-          className="w-full flex items-center justify-center gap-1.5 h-8 rounded-md text-[12px] font-medium transition-colors"
-          style={{ background: '#ffffff', color: '#000000' }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = '#e0e0e0' }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = '#ffffff' }}
-        >
-          <Eye size={13} strokeWidth={2} />
-          Enter Preview
-        </button>
-      </Section>
-
-      {/* Tips */}
-      <Section label="How to use" defaultOpen={false}>
-        <div className="flex flex-col gap-2 text-[11px]" style={{ color: '#7A7E92' }}>
-          <div className="flex gap-2">
-            <span style={{ color: '#5B6CFF' }}>1.</span>
-            <span>Add HTML elements via the HTML button in the toolbar — position them in 3D space.</span>
-          </div>
-          <div className="flex gap-2">
-            <span style={{ color: '#5B6CFF' }}>2.</span>
-            <span>Orbit your camera to a starting position and click "Capture Camera Here".</span>
-          </div>
-          <div className="flex gap-2">
-            <span style={{ color: '#5B6CFF' }}>3.</span>
-            <span>Move camera to different viewpoints and add more keypoints to build the path.</span>
-          </div>
-          <div className="flex gap-2">
-            <span style={{ color: '#5B6CFF' }}>4.</span>
-            <span>Enable scroll and drag the scrubber to preview the journey. Click "Enter Preview" for full-screen.</span>
-          </div>
+        <div className="text-[10px]" style={{ color: '#4a4e60' }}>
+          Preview: full-screen scroll experience. Export: standalone HTML file.
         </div>
       </Section>
     </div>
