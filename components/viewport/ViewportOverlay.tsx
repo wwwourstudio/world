@@ -431,19 +431,27 @@ export function ViewportOverlay() {
                 <PlusCircle size={12} /> Add Element <ChevronDown size={10} />
               </button>
               {showAddMenu && (
-                <div className="absolute top-full left-0 mt-1 rounded-xl border shadow-2xl overflow-hidden z-50 min-w-[140px]"
+                <div className="absolute top-full left-0 mt-1 rounded-xl border shadow-2xl overflow-hidden z-50 min-w-[160px]"
                   style={{ background: '#111318', borderColor: '#2a2d40' }}>
                   {[
-                    { label: 'Heading', tag: 'heading' },
-                    { label: 'Paragraph', tag: 'paragraph' },
-                    { label: 'Button', tag: 'button' },
-                    { label: 'Image', tag: 'image' },
-                    { label: 'Video', tag: 'video' },
-                  ].map(({ label, tag }) => (
+                    { label: 'Heading', tag: 'heading', content: 'Your Heading' },
+                    { label: 'Paragraph', tag: 'paragraph', content: 'Your text here.' },
+                    { label: 'Quote', tag: 'quote', content: 'An inspiring quote.' },
+                    { label: 'Badge', tag: 'badge', content: 'NEW' },
+                    { label: 'Button', tag: 'button', content: 'Click Me' },
+                    { label: 'Card', tag: 'card', content: 'Card Title' },
+                    { label: 'Stat', tag: 'stat', content: '99%' },
+                    { label: 'Divider', tag: 'divider', content: '' },
+                    { label: 'Countdown', tag: 'countdown', content: '' },
+                    { label: 'Icon + Text', tag: 'icontext', content: '✦' },
+                    { label: 'Image', tag: 'image', content: '' },
+                    { label: 'Video', tag: 'video', content: '' },
+                  ].map(({ label, tag, content }) => (
                     <button
                       key={tag}
                       onClick={() => {
-                        addObject({ type: 'html', name: label, htmlConfig: { htmlType: tag as 'heading' | 'paragraph' | 'button' | 'image' | 'video', content: label } })
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        addObject({ type: 'html', name: label, htmlConfig: { htmlType: tag as any, content } })
                         setShowAddMenu(false)
                       }}
                       className="w-full px-3 py-2 text-left text-[11px] transition-colors"

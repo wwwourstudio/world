@@ -172,6 +172,7 @@ export interface CameraKeypoint {
 
 export interface HtmlObjectConfig {
   htmlType: 'heading' | 'paragraph' | 'image' | 'video' | 'button' | 'form' | 'instagram'
+          | 'divider' | 'badge' | 'card' | 'quote' | 'stat' | 'countdown' | 'spacer' | 'icontext'
   content?: string
   videoUrl?: string
   instagramToken?: string
@@ -185,6 +186,13 @@ export interface HtmlObjectConfig {
   height?: number
   textAlign?: 'left' | 'center' | 'right'
   opacity?: number
+  // new fields
+  subtitle?: string
+  linkUrl?: string
+  fontFamily?: string
+  dividerStyle?: 'solid' | 'gradient' | 'dashed'
+  accentColor?: string
+  countdownTarget?: string
 }
 
 export interface ObjectInteraction {
