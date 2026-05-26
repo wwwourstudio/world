@@ -617,14 +617,54 @@ export function PropertiesPanel() {
       {obj.type === 'html' && obj.htmlConfig && (
         <Section label="HTML Content" icon={<Type size={11} />} defaultOpen={true}>
           <div className="flex flex-col gap-2">
-            {(obj.htmlConfig.htmlType === 'heading' || obj.htmlConfig.htmlType === 'paragraph' || obj.htmlConfig.htmlType === 'button') && (
+            {/* Content field — for most types */}
+            {['heading','paragraph','button','badge','stat','icontext'].includes(obj.htmlConfig.htmlType) && (
               <div className="flex flex-col gap-1">
-                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Content</span>
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>
+                  {obj.htmlConfig.htmlType === 'stat' ? 'Number / Value' : obj.htmlConfig.htmlType === 'icontext' ? 'Icon / Emoji' : 'Content'}
+                </span>
                 <textarea
                   value={obj.htmlConfig.content ?? ''}
                   onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, content: e.target.value } })}
+                  rows={obj.htmlConfig.htmlType === 'paragraph' ? 3 : 2}
+                  className="px-2 py-1.5 rounded text-[11px] outline-none border resize-none"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            {['card','quote','stat','icontext'].includes(obj.htmlConfig.htmlType) && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>
+                  {obj.htmlConfig.htmlType === 'quote' ? 'Attribution' : obj.htmlConfig.htmlType === 'stat' ? 'Label' : obj.htmlConfig.htmlType === 'icontext' ? 'Text' : 'Subtitle'}
+                </span>
+                <textarea
+                  value={obj.htmlConfig.subtitle ?? ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, subtitle: e.target.value } })}
                   rows={2}
                   className="px-2 py-1.5 rounded text-[11px] outline-none border resize-none"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            {obj.htmlConfig.htmlType === 'quote' && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Quote Text</span>
+                <textarea
+                  value={obj.htmlConfig.content ?? ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, content: e.target.value } })}
+                  rows={3}
+                  className="px-2 py-1.5 rounded text-[11px] outline-none border resize-none"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            {obj.htmlConfig.htmlType === 'card' && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Title</span>
+                <input
+                  value={obj.htmlConfig.content ?? ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, content: e.target.value } })}
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
                   style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
                 />
               </div>
@@ -653,34 +693,91 @@ export function PropertiesPanel() {
                 />
               </div>
             )}
-            <SliderRow label="Font Size" value={obj.htmlConfig.fontSize ?? 32} min={8} max={200} step={1}
-              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, fontSize: v } })} />
-            <Row label="Font Weight">
-              <select
-                value={obj.htmlConfig.fontWeight ?? '400'}
-                onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, fontWeight: e.target.value } })}
-                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
-                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
-              >
-                <option value="300">Light 300</option>
-                <option value="400">Regular 400</option>
-                <option value="600">Semi-Bold 600</option>
-                <option value="700">Bold 700</option>
-                <option value="900">Black 900</option>
-              </select>
-            </Row>
-            <Row label="Text Align">
-              <select
-                value={obj.htmlConfig.textAlign ?? 'left'}
-                onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, textAlign: e.target.value as 'left' | 'center' | 'right' } })}
-                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
-                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
-              >
-                <option value="left">Left</option>
-                <option value="center">Center</option>
-                <option value="right">Right</option>
-              </select>
-            </Row>
+            {obj.htmlConfig.htmlType === 'countdown' && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Target Date & Time</span>
+                <input
+                  type="datetime-local"
+                  value={obj.htmlConfig.countdownTarget ? obj.htmlConfig.countdownTarget.slice(0, 16) : ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, countdownTarget: new Date(e.target.value).toISOString() } })}
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            {obj.htmlConfig.htmlType === 'divider' && (
+              <Row label="Style">
+                <select
+                  value={obj.htmlConfig.dividerStyle ?? 'solid'}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, dividerStyle: e.target.value as 'solid' | 'gradient' | 'dashed' } })}
+                  className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                >
+                  <option value="solid">Solid</option>
+                  <option value="gradient">Gradient</option>
+                  <option value="dashed">Dashed</option>
+                </select>
+              </Row>
+            )}
+            {/* Link URL — for button, card, badge */}
+            {['button','card','badge'].includes(obj.htmlConfig.htmlType) && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Link URL (clickable)</span>
+                <input
+                  value={obj.htmlConfig.linkUrl ?? ''}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, linkUrl: e.target.value } })}
+                  placeholder="https://..."
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                />
+              </div>
+            )}
+            {/* Typography */}
+            {!['divider','spacer','image','video','countdown'].includes(obj.htmlConfig.htmlType) && (
+              <>
+                <SliderRow label="Font Size" value={obj.htmlConfig.fontSize ?? 32} min={8} max={200} step={1}
+                  onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, fontSize: v } })} />
+                <Row label="Font Weight">
+                  <select
+                    value={obj.htmlConfig.fontWeight ?? '400'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, fontWeight: e.target.value } })}
+                    className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                  >
+                    <option value="300">Light 300</option>
+                    <option value="400">Regular 400</option>
+                    <option value="500">Medium 500</option>
+                    <option value="600">Semi-Bold 600</option>
+                    <option value="700">Bold 700</option>
+                    <option value="800">Extra-Bold 800</option>
+                    <option value="900">Black 900</option>
+                  </select>
+                </Row>
+                <Row label="Text Align">
+                  <select
+                    value={obj.htmlConfig.textAlign ?? 'left'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, textAlign: e.target.value as 'left' | 'center' | 'right' } })}
+                    className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </Row>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px]" style={{ color: '#7A7E92' }}>Font Family</span>
+                  <input
+                    value={obj.htmlConfig.fontFamily ?? ''}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, fontFamily: e.target.value } })}
+                    placeholder="inherit, serif, 'Inter', ..."
+                    className="h-6 px-2 rounded text-[11px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                  />
+                </div>
+              </>
+            )}
+            {/* Colors */}
             <Row label="Text Color">
               <div className="flex items-center gap-1.5">
                 <input
@@ -714,11 +811,34 @@ export function PropertiesPanel() {
                 />
               </div>
             </Row>
+            {['badge','divider','card','quote','stat'].includes(obj.htmlConfig.htmlType) && (
+              <Row label="Accent Color">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="color"
+                    value={obj.htmlConfig.accentColor ?? '#5B6CFF'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, accentColor: e.target.value } })}
+                    className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
+                  />
+                  <input
+                    value={obj.htmlConfig.accentColor ?? '#5B6CFF'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, accentColor: e.target.value } })}
+                    className="flex-1 h-6 px-1.5 rounded text-[11px] font-mono outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                  />
+                </div>
+              </Row>
+            )}
+            {/* Box */}
             <SliderRow label="Width (px)" value={obj.htmlConfig.width ?? 400} min={100} max={1200} step={10}
               onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, width: v } })} />
-            <SliderRow label="Padding (px)" value={obj.htmlConfig.padding ?? 0} min={0} max={60} step={1}
+            {obj.htmlConfig.htmlType === 'spacer' && (
+              <SliderRow label="Height (px)" value={obj.htmlConfig.height ?? 80} min={10} max={400} step={10}
+                onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, height: v } })} />
+            )}
+            <SliderRow label="Padding (px)" value={obj.htmlConfig.padding ?? 0} min={0} max={80} step={1}
               onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, padding: v } })} />
-            <SliderRow label="Border Radius" value={obj.htmlConfig.borderRadius ?? 0} min={0} max={40} step={1}
+            <SliderRow label="Border Radius" value={obj.htmlConfig.borderRadius ?? 0} min={0} max={60} step={1}
               onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, borderRadius: v } })} />
             <SliderRow label="Opacity" value={obj.htmlConfig.opacity ?? 1} min={0} max={1} step={0.01}
               onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, opacity: v } })} />
@@ -802,7 +922,7 @@ export function PropertiesPanel() {
       )}
 
       {/* Scroll Animation — website mode only */}
-      {appMode === 'website' && (obj.type === 'mesh' || obj.type === 'group' || obj.geometry?.type === 'gltf') && (() => {
+      {appMode === 'website' && (obj.type === 'mesh' || obj.type === 'group' || obj.geometry?.type === 'gltf' || obj.type === 'html') && (() => {
         const sa: ScrollAnimConfig = obj.scrollAnim ?? { effect: 'none', enter: 0.3, exit: 0, distance: 2 }
         const isSlide = sa.effect === 'slideUp' || sa.effect === 'slideDown' || sa.effect === 'slideLeft' || sa.effect === 'slideRight'
         const set = (patch: Partial<ScrollAnimConfig>) => setScrollAnim(id, { ...sa, ...patch })

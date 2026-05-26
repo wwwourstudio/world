@@ -259,12 +259,50 @@ export function generateThreeJSCode(scene: { objects: Record<string, SceneObject
   return lines.join('\n')
 }
 
+function buildHtmlElementDOM(o: SceneObject): string {
+  const cfg = o.htmlConfig!
+  const fs = cfg.fontSize
+  const fw = cfg.fontWeight ?? '400'
+  const ac = cfg.accentColor ?? '#5B6CFF'
+
+  switch (cfg.htmlType) {
+    case 'heading':
+      return `<h1 style="font-size:${fs ?? 64}px;font-weight:${fw};margin:0;line-height:1.1;letter-spacing:-0.02em">${cfg.content ?? 'Heading'}</h1>`
+    case 'paragraph':
+      return `<p style="font-size:${fs ?? 16}px;font-weight:${fw};margin:0;line-height:1.6">${cfg.content ?? 'Paragraph'}</p>`
+    case 'button':
+      return `<button onclick="${cfg.linkUrl ? `window.open('${cfg.linkUrl}','_blank')` : ''}" style="font-size:${fs ?? 16}px;font-weight:${fw};background:${cfg.color ?? '#fff'};color:${cfg.background ?? '#000'};padding:14px 36px;border:none;border-radius:${cfg.borderRadius ?? 8}px;cursor:pointer">${cfg.content ?? 'Click Me'}</button>`
+    case 'badge':
+      return `<span style="display:inline-block;padding:4px 14px;border-radius:999px;background:${ac};font-size:${fs ?? 12}px;font-weight:${fw};letter-spacing:0.06em;text-transform:uppercase">${cfg.content ?? 'Badge'}</span>`
+    case 'card':
+      return `<div style="background:${cfg.background ?? 'rgba(255,255,255,0.06)'};border:1px solid ${ac}33;border-radius:${cfg.borderRadius ?? 16}px;padding:${cfg.padding ?? 28}px"><div style="font-size:${fs ?? 22}px;font-weight:${fw};margin-bottom:10px">${cfg.content ?? 'Card Title'}</div>${cfg.subtitle ? `<div style="font-size:${(fs ?? 22) * 0.65}px;opacity:0.7">${cfg.subtitle}</div>` : ''}</div>`
+    case 'quote':
+      return `<blockquote style="margin:0;padding-left:${cfg.padding ?? 24}px;border-left:4px solid ${ac}"><div style="font-size:${fs ?? 24}px;font-style:italic;margin-bottom:12px">&ldquo;${cfg.content ?? 'Quote'}&rdquo;</div>${cfg.subtitle ? `<cite style="font-size:${(fs ?? 24) * 0.6}px;opacity:0.6;font-style:normal;text-transform:uppercase">— ${cfg.subtitle}</cite>` : ''}</blockquote>`
+    case 'stat':
+      return `<div style="text-align:center"><div style="font-size:${fs ?? 80}px;font-weight:800;line-height:1;color:${ac}">${cfg.content ?? '99%'}</div>${cfg.subtitle ? `<div style="font-size:${(fs ?? 80) * 0.22}px;opacity:0.6;margin-top:8px;letter-spacing:0.08em;text-transform:uppercase">${cfg.subtitle}</div>` : ''}</div>`
+    case 'divider':
+      return cfg.dividerStyle === 'gradient'
+        ? `<div style="width:100%;height:2px;background:linear-gradient(90deg,transparent,${ac},transparent)"></div>`
+        : `<div style="width:100%;${cfg.dividerStyle === 'dashed' ? `border-top:2px dashed ${ac}` : `height:2px;background:${ac}`}"></div>`
+    case 'spacer':
+      return `<div style="height:${cfg.height ?? 80}px"></div>`
+    case 'icontext':
+      return `<div style="display:flex;align-items:center;gap:16px"><span style="font-size:${fs ?? 40}px">${cfg.content ?? '✦'}</span><span style="font-size:${(fs ?? 40) * 0.4}px;font-weight:${fw}">${cfg.subtitle ?? 'Feature'}</span></div>`
+    default:
+      return `<div>${cfg.content ?? ''}</div>`
+  }
+}
+
 export function generateWebsiteHTML(
   objects: Record<string, SceneObject>,
   cameraPath: CameraKeypoint[],
 ): string {
   const primitiveObjs = Object.values(objects).filter(
     (o) => o.visible && (o.type === 'mesh' || o.type === 'group') && o.geometry.type !== 'gltf',
+  )
+
+  const htmlObjs = Object.values(objects).filter(
+    (o) => o.visible && o.type === 'html' && o.htmlConfig,
   )
 
   const sceneData = primitiveObjs.map((o) => ({
@@ -285,12 +323,32 @@ export function generateWebsiteHTML(
     scrollAnim: o.scrollAnim ?? null,
   }))
 
+  const htmlOverlayData = htmlObjs.map((o, idx) => ({
+    id: `hel_${idx}`,
+    inner: buildHtmlElementDOM(o),
+    baseOpacity: o.htmlConfig!.opacity ?? 1,
+    color: o.htmlConfig!.color ?? '#ffffff',
+    width: o.htmlConfig!.width ?? 400,
+    padding: o.htmlConfig!.padding ?? 0,
+    scrollAnim: o.scrollAnim ?? null,
+    top: 15 + idx * 22,
+    left: 6,
+  }))
+
   const pathData = cameraPath.map((kp) => ({
     position: kp.position,
     target: kp.target,
     fov: kp.fov,
     easing: kp.easing,
   }))
+
+  const overlayCSS = htmlOverlayData.map((el) =>
+    `#${el.id}{position:fixed;left:${el.left}%;top:${el.top}%;width:${el.width}px;color:${el.color};pointer-events:${el.scrollAnim?.effect === 'none' || !el.scrollAnim ? 'auto' : 'auto'};padding:${el.padding}px;}`
+  ).join('\n    ')
+
+  const overlayHTML = htmlOverlayData.map((el) =>
+    `<div id="${el.id}" style="will-change:opacity,transform">${el.inner}</div>`
+  ).join('\n  ')
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -305,17 +363,24 @@ export function generateWebsiteHTML(
     canvas{display:block;width:100%!important;height:100%!important}
     #scroll-driver{height:500vh;position:relative;z-index:1;pointer-events:none}
     #scroll-pct{position:fixed;bottom:20px;right:20px;color:rgba(255,255,255,0.4);font:11px/1 monospace;z-index:10}
+    #html-overlays{position:fixed;inset:0;z-index:5;pointer-events:none}
+    #html-overlays>*{pointer-events:auto}
+    ${overlayCSS}
   </style>
 </head>
 <body>
   <div id="canvas-wrap"><canvas id="c"></canvas></div>
   <div id="scroll-driver"></div>
   <div id="scroll-pct">0%</div>
+  <div id="html-overlays">
+  ${overlayHTML}
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.min.js"></script>
   <script>
 (function(){
   const SCENE_DATA=${JSON.stringify(sceneData)};
   const CAM_PATH=${JSON.stringify(pathData)};
+  const HTML_OVERLAYS=${JSON.stringify(htmlOverlayData.map(el => ({ id: el.id, baseOpacity: el.baseOpacity, scrollAnim: el.scrollAnim })))};
 
   // --- Three.js setup ---
   const canvas=document.getElementById('c');
@@ -359,6 +424,9 @@ export function generateWebsiteHTML(
     scene.add(mesh);
     meshes.push({mesh,data:o});
   });
+
+  // --- HTML overlay elements ---
+  const htmlEls=HTML_OVERLAYS.map(function(h){return{el:document.getElementById(h.id),data:h};});
 
   // --- Catmull-Rom camera path ---
   function ease(t,type){
@@ -431,7 +499,7 @@ export function generateWebsiteHTML(
         camera.updateProjectionMatrix();
       }
     }
-    // Per-object scroll animations
+    // Per-mesh scroll animations
     meshes.forEach(function(item){
       const sa=item.data.scrollAnim;
       if(!sa||sa.effect==='none') return;
@@ -446,6 +514,22 @@ export function generateWebsiteHTML(
       else if(sa.effect==='slideDown'){mesh.position.set(basePos[0],basePos[1]-d*(1-t),basePos[2]);}
       else if(sa.effect==='slideLeft'){mesh.position.set(basePos[0]-d*(1-t),basePos[1],basePos[2]);}
       else if(sa.effect==='slideRight'){mesh.position.set(basePos[0]+d*(1-t),basePos[1],basePos[2]);}
+    });
+    // HTML overlay scroll animations
+    htmlEls.forEach(function(item){
+      if(!item.el) return;
+      const sa=item.data.scrollAnim;
+      const base=item.data.baseOpacity||1;
+      if(!sa||sa.effect==='none'){item.el.style.opacity=base;return;}
+      const t=computeScrollT(scrollProgress,sa.enter,sa.exit);
+      const d=sa.scrollAnim&&sa.scrollAnim.distance?sa.scrollAnim.distance:40;
+      if(sa.effect==='fadeIn'){item.el.style.opacity=t*base;}
+      else if(sa.effect==='scaleIn'){item.el.style.transform='scale('+Math.max(0.001,t)+')';item.el.style.opacity=base;}
+      else if(sa.effect==='scaleOut'){item.el.style.transform='scale('+Math.max(0.001,1-t)+')';item.el.style.opacity=base;}
+      else if(sa.effect==='slideUp'){item.el.style.transform='translateY('+(d*(1-t))+'px)';item.el.style.opacity=base;}
+      else if(sa.effect==='slideDown'){item.el.style.transform='translateY('+(-d*(1-t))+'px)';item.el.style.opacity=base;}
+      else if(sa.effect==='slideLeft'){item.el.style.transform='translateX('+(-d*(1-t))+'px)';item.el.style.opacity=base;}
+      else if(sa.effect==='slideRight'){item.el.style.transform='translateX('+(d*(1-t))+'px)';item.el.style.opacity=base;}
     });
     renderer.render(scene,camera);
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useRef, useEffect, useMemo, Component, type ReactNode } from 'react'
+import React, { Suspense, useRef, useEffect, useMemo, Component, type ReactNode } from 'react'
 import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
 import {
   OrbitControls,
@@ -1273,67 +1273,180 @@ function LightObject({ obj }: { obj: SceneObject }) {
 
 // ─── HTML Overlay Object ─────────────────────────────────────────────────────
 
+function HtmlCountdown({ target }: { target: string }) {
+  const [parts, setParts] = React.useState({ d: 0, h: 0, m: 0, s: 0 })
+  useEffect(() => {
+    function tick() {
+      const diff = Math.max(0, new Date(target).getTime() - Date.now())
+      const d = Math.floor(diff / 86400000)
+      const h = Math.floor((diff % 86400000) / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      const s = Math.floor((diff % 60000) / 1000)
+      setParts({ d, h, m, s })
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [target])
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+      {[['d', parts.d], ['h', parts.h], ['m', parts.m], ['s', parts.s]].map(([label, val]) => (
+        <div key={label as string} style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '2.5em', fontWeight: 700, lineHeight: 1 }}>{pad(val as number)}</div>
+          <div style={{ fontSize: '0.6em', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function HtmlObject({ obj }: { obj: SceneObject }) {
   const cfg = obj.htmlConfig!
   const selectObject = useScene((s) => s.selectObject)
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
+  const { opacity, dx, dy, dz, scaleFactor } = useScrollAnim(obj.scrollAnim)
+
+  const fontFamily = cfg.fontFamily || 'inherit'
+  const combinedOpacity = (cfg.opacity ?? 1) * opacity
 
   return (
-    <Html
-      position={obj.transform.position}
-      rotation={obj.transform.rotation}
-      transform
-      occlude={false}
-      style={{ pointerEvents: 'auto' }}
-    >
-      <div
-        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, false) }}
-        style={{
-          width: `${cfg.width ?? 400}px`,
-          color: cfg.color ?? '#ffffff',
-          background: cfg.background ?? 'transparent',
-          padding: cfg.padding ? `${cfg.padding}px` : undefined,
-          borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined,
-          opacity: cfg.opacity ?? 1,
-          textAlign: cfg.textAlign ?? 'left',
-          outline: isSelected ? '2px solid rgba(255,255,255,0.8)' : 'none',
-          outlineOffset: '4px',
-          cursor: 'pointer',
-          userSelect: 'none',
-        }}
+    <group position={[dx, dy, dz]} scale={[scaleFactor, scaleFactor, scaleFactor]}>
+      <Html
+        position={obj.transform.position}
+        rotation={obj.transform.rotation}
+        transform
+        occlude={false}
+        style={{ pointerEvents: 'auto' }}
       >
-        {cfg.htmlType === 'heading' && (
-          <h1 style={{ fontSize: `${cfg.fontSize ?? 64}px`, fontWeight: cfg.fontWeight ?? '700', margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
-            {cfg.content ?? 'Heading'}
-          </h1>
-        )}
-        {cfg.htmlType === 'paragraph' && (
-          <p style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '400', margin: 0, lineHeight: 1.6 }}>
-            {cfg.content ?? 'Paragraph text'}
-          </p>
-        )}
-        {cfg.htmlType === 'image' && cfg.content && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={cfg.content} alt="" style={{ width: '100%', borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined }} />
-        )}
-        {cfg.htmlType === 'video' && cfg.videoUrl && (
-          <video src={cfg.videoUrl} autoPlay muted loop playsInline style={{ width: '100%' }} />
-        )}
-        {cfg.htmlType === 'button' && (
-          <button style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '600', background: cfg.color ?? '#ffffff', color: cfg.background ?? '#000000', padding: '14px 36px', border: 'none', borderRadius: `${cfg.borderRadius ?? 8}px`, cursor: 'pointer', letterSpacing: '0.04em' }}>
-            {cfg.content ?? 'Click Me'}
-          </button>
-        )}
-        {cfg.htmlType === 'form' && (
-          <form style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} onSubmit={(e) => e.preventDefault()}>
-            <input placeholder="Your name" style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px' }} />
-            <input placeholder="Email" type="email" style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px' }} />
-            <textarea placeholder="Message" rows={3} style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px', resize: 'none' }} />
-            <button type="submit" style={{ padding: '12px', background: '#fff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Send</button>
-          </form>
-        )}
-      </div>
-    </Html>
+        <div
+          onClick={(e) => { e.stopPropagation(); selectObject(obj.id, false) }}
+          style={{
+            width: `${cfg.width ?? 400}px`,
+            color: cfg.color ?? '#ffffff',
+            background: cfg.background ?? 'transparent',
+            padding: cfg.padding ? `${cfg.padding}px` : undefined,
+            borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined,
+            opacity: combinedOpacity,
+            textAlign: cfg.textAlign ?? 'left',
+            fontFamily,
+            outline: isSelected ? '2px solid rgba(255,255,255,0.8)' : 'none',
+            outlineOffset: '4px',
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          {cfg.htmlType === 'heading' && (
+            <h1 style={{ fontSize: `${cfg.fontSize ?? 64}px`, fontWeight: cfg.fontWeight ?? '700', margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em', fontFamily }}>
+              {cfg.content ?? 'Heading'}
+            </h1>
+          )}
+          {cfg.htmlType === 'paragraph' && (
+            <p style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '400', margin: 0, lineHeight: 1.6, fontFamily }}>
+              {cfg.content ?? 'Paragraph text'}
+            </p>
+          )}
+          {cfg.htmlType === 'image' && cfg.content && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={cfg.content} alt="" style={{ width: '100%', borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined }} />
+          )}
+          {cfg.htmlType === 'video' && cfg.videoUrl && (
+            <video src={cfg.videoUrl} autoPlay muted loop playsInline style={{ width: '100%' }} />
+          )}
+          {cfg.htmlType === 'button' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); if (cfg.linkUrl) window.open(cfg.linkUrl, '_blank') }}
+              style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '600', background: cfg.color ?? '#ffffff', color: cfg.background ?? '#000000', padding: '14px 36px', border: 'none', borderRadius: `${cfg.borderRadius ?? 8}px`, cursor: cfg.linkUrl ? 'pointer' : 'default', letterSpacing: '0.04em', fontFamily }}
+            >
+              {cfg.content ?? 'Click Me'}
+            </button>
+          )}
+          {cfg.htmlType === 'form' && (
+            <form style={{ display: 'flex', flexDirection: 'column', gap: '12px' }} onSubmit={(e) => e.preventDefault()}>
+              <input placeholder="Your name" style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px' }} />
+              <input placeholder="Email" type="email" style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px' }} />
+              <textarea placeholder="Message" rows={3} style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#fff', fontSize: '14px', resize: 'none' }} />
+              <button type="submit" style={{ padding: '12px', background: '#fff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Send</button>
+            </form>
+          )}
+          {/* ── New element types ── */}
+          {cfg.htmlType === 'divider' && (
+            <div style={{
+              width: '100%',
+              height: cfg.dividerStyle === 'dashed' ? 0 : '2px',
+              borderTop: cfg.dividerStyle === 'dashed' ? `2px dashed ${cfg.accentColor ?? cfg.color ?? '#ffffff44'}` : 'none',
+              background: cfg.dividerStyle === 'gradient'
+                ? `linear-gradient(90deg, transparent, ${cfg.accentColor ?? '#5B6CFF'}, transparent)`
+                : cfg.dividerStyle === 'dashed' ? undefined : (cfg.accentColor ?? cfg.color ?? 'rgba(255,255,255,0.25)'),
+            }} />
+          )}
+          {cfg.htmlType === 'badge' && (
+            <span style={{
+              display: 'inline-block',
+              padding: '4px 14px',
+              borderRadius: '999px',
+              background: cfg.accentColor ?? '#5B6CFF',
+              color: cfg.color ?? '#ffffff',
+              fontSize: `${cfg.fontSize ?? 12}px`,
+              fontWeight: cfg.fontWeight ?? '600',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              fontFamily,
+            }}>
+              {cfg.content ?? 'Badge'}
+            </span>
+          )}
+          {cfg.htmlType === 'card' && (
+            <div
+              onClick={(e) => { e.stopPropagation(); if (cfg.linkUrl) window.open(cfg.linkUrl, '_blank') }}
+              style={{
+                background: cfg.background ?? 'rgba(255,255,255,0.06)',
+                border: `1px solid ${cfg.accentColor ?? 'rgba(255,255,255,0.12)'}`,
+                borderRadius: `${cfg.borderRadius ?? 16}px`,
+                padding: `${cfg.padding ?? 28}px`,
+                cursor: cfg.linkUrl ? 'pointer' : 'default',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              <div style={{ fontSize: `${cfg.fontSize ?? 22}px`, fontWeight: cfg.fontWeight ?? '700', marginBottom: '10px', fontFamily }}>{cfg.content ?? 'Card Title'}</div>
+              {cfg.subtitle && <div style={{ fontSize: `${(cfg.fontSize ?? 22) * 0.65}px`, opacity: 0.7, lineHeight: 1.5, fontFamily }}>{cfg.subtitle}</div>}
+            </div>
+          )}
+          {cfg.htmlType === 'quote' && (
+            <blockquote style={{ margin: 0, padding: `0 0 0 ${cfg.padding ?? 24}px`, borderLeft: `4px solid ${cfg.accentColor ?? '#5B6CFF'}` }}>
+              <div style={{ fontSize: `${cfg.fontSize ?? 24}px`, fontWeight: cfg.fontWeight ?? '400', lineHeight: 1.5, fontStyle: 'italic', marginBottom: '12px', fontFamily }}>
+                &ldquo;{cfg.content ?? 'Your quote here'}&rdquo;
+              </div>
+              {cfg.subtitle && (
+                <cite style={{ fontSize: `${(cfg.fontSize ?? 24) * 0.6}px`, opacity: 0.6, fontStyle: 'normal', letterSpacing: '0.05em', textTransform: 'uppercase', fontFamily }}>
+                  — {cfg.subtitle}
+                </cite>
+              )}
+            </blockquote>
+          )}
+          {cfg.htmlType === 'stat' && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: `${cfg.fontSize ?? 80}px`, fontWeight: cfg.fontWeight ?? '800', lineHeight: 1, letterSpacing: '-0.04em', color: cfg.accentColor ?? cfg.color ?? '#ffffff', fontFamily }}>
+                {cfg.content ?? '99%'}
+              </div>
+              {cfg.subtitle && <div style={{ fontSize: `${(cfg.fontSize ?? 80) * 0.22}px`, opacity: 0.6, marginTop: '8px', letterSpacing: '0.08em', textTransform: 'uppercase', fontFamily }}>{cfg.subtitle}</div>}
+            </div>
+          )}
+          {cfg.htmlType === 'countdown' && (
+            <HtmlCountdown target={cfg.countdownTarget ?? new Date(Date.now() + 86400000 * 7).toISOString()} />
+          )}
+          {cfg.htmlType === 'spacer' && (
+            <div style={{ height: `${cfg.height ?? 80}px`, width: '100%' }} />
+          )}
+          {cfg.htmlType === 'icontext' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ fontSize: `${cfg.fontSize ?? 40}px`, lineHeight: 1, flexShrink: 0 }}>{cfg.content ?? '✦'}</span>
+              <span style={{ fontSize: `${(cfg.fontSize ?? 40) * 0.4}px`, fontWeight: cfg.fontWeight ?? '500', lineHeight: 1.4, fontFamily }}>{cfg.subtitle ?? 'Feature description'}</span>
+            </div>
+          )}
+        </div>
+      </Html>
+    </group>
   )
 }
 
