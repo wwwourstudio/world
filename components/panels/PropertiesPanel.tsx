@@ -307,6 +307,8 @@ export function PropertiesPanel() {
   const updateObject = useScene((s) => s.updateObject)
   const setScrollAnim = useScene((s) => s.setScrollAnim)
   const appMode = useScene((s) => s.appMode)
+  const cameraPath = useScene((s) => s.cameraPath)
+  const scenes = useScene((s) => s.scenes)
 
   const id = selectedIds[0]
   const obj = id ? objects[id] : null
@@ -749,13 +751,15 @@ export function PropertiesPanel() {
             )}
             <Row label="On Click">
               <select value={obj.interaction?.clickAction ?? 'none'}
-                onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'none' }), clickAction: e.target.value as 'none' | 'toggle-anim' | 'link' | 'toggle-visible' } })}
+                onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'none' }), clickAction: e.target.value as 'none' | 'toggle-anim' | 'link' | 'toggle-visible' | 'camera-link' | 'switch-scene' } })}
                 className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
                 style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
                 <option value="none">None</option>
                 <option value="toggle-anim">Toggle Animation</option>
                 <option value="toggle-visible">Toggle Visibility</option>
                 <option value="link">Open Link</option>
+                <option value="camera-link">Go to Camera Point</option>
+                <option value="switch-scene">Switch Scene</option>
               </select>
             </Row>
             {obj.interaction?.clickAction === 'link' && (
@@ -766,6 +770,32 @@ export function PropertiesPanel() {
                   className="h-6 px-2 rounded text-[11px] outline-none border"
                   style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
               </div>
+            )}
+            {obj.interaction?.clickAction === 'camera-link' && (
+              <Row label="Keypoint">
+                <select value={obj.interaction?.cameraKeypointId ?? ''}
+                  onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'camera-link' }), cameraKeypointId: e.target.value } })}
+                  className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                  <option value="">— select —</option>
+                  {cameraPath.map((kp, i) => (
+                    <option key={kp.id} value={kp.id}>{kp.label || `Camera ${i + 1}`}</option>
+                  ))}
+                </select>
+              </Row>
+            )}
+            {obj.interaction?.clickAction === 'switch-scene' && (
+              <Row label="Scene">
+                <select value={obj.interaction?.targetSceneId ?? ''}
+                  onChange={(e) => updateObject(id, { interaction: { ...(obj.interaction ?? { hoverEffect: 'none', clickAction: 'switch-scene' }), targetSceneId: e.target.value } })}
+                  className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                  <option value="">— select —</option>
+                  {scenes.map((sc) => (
+                    <option key={sc.id} value={sc.id}>{sc.name}</option>
+                  ))}
+                </select>
+              </Row>
             )}
           </div>
         </Section>

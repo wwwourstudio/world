@@ -1,12 +1,22 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
-import { useScene } from '@/lib/scene/SceneStore'
+import { useEffect, useCallback, useState } from 'react'
+import { useScene, type ViewMode } from '@/lib/scene/SceneStore'
 import { ContextMenu } from '@/components/toolbar/ContextMenu'
 import {
   MousePointer2, Move, RotateCcw, Maximize2, Mountain, Pencil,
   Copy, Trash2, Focus, Layers, Box, Circle, Cylinder,
+  Eye, Download, PlusCircle, ChevronDown,
 } from 'lucide-react'
+
+const VIEW_BUTTONS: { id: ViewMode; label: string }[] = [
+  { id: 'persp',  label: 'P' },
+  { id: 'top',    label: 'T' },
+  { id: 'front',  label: 'F' },
+  { id: 'right',  label: 'R' },
+  { id: 'left',   label: 'L' },
+  { id: 'iso',    label: 'ISO' },
+]
 
 const TOOLS = [
   { id: 'select' as const,    label: 'Select',    key: 'Q', Icon: MousePointer2 },
@@ -31,6 +41,8 @@ export function ViewportOverlay() {
   const setViewMode = useScene((s) => s.setViewMode)
   const cameraFov = useScene((s) => s.cameraFov)
   const setCameraFov = useScene((s) => s.setCameraFov)
+  const orthoZoom = useScene((s) => s.orthoZoom)
+  const setOrthoZoom = useScene((s) => s.setOrthoZoom)
   const isRecording = useScene((s) => s.isRecording)
   const contextMenu = useScene((s) => s.contextMenu)
   const setContextMenu = useScene((s) => s.setContextMenu)
@@ -45,6 +57,9 @@ export function ViewportOverlay() {
   const scrollProgress = useScene((s) => s.scrollProgress)
   const setScrollProgress = useScene((s) => s.setScrollProgress)
   const websiteScrollEnabled = useScene((s) => s.websiteScrollEnabled)
+  const [showAddMenu, setShowAddMenu] = useState(false)
+
+  const isPersp = viewMode === 'persp'
 
   const objCount = Object.keys(objects).length
   const selectedObj = selectedIds.length === 1 ? objects[selectedIds[0]] : null
@@ -100,35 +115,48 @@ export function ViewportOverlay() {
   return (
     <>
       {/* View mode switcher */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-1">
-        {(['persp', 'top', 'front', 'right'] as const).map((mode) => (
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-1 flex-wrap">
+        {VIEW_BUTTONS.map(({ id, label }) => (
           <button
-            key={mode}
-            onClick={() => setViewMode(mode)}
+            key={id}
+            onClick={() => setViewMode(id)}
             className="px-2 h-6 rounded text-[10px] font-mono uppercase transition-colors"
             style={{
-              background: viewMode === mode ? '#5B6CFF' : 'rgba(11,12,15,0.8)',
-              color: viewMode === mode ? '#fff' : '#7A7E92',
+              background: viewMode === id ? '#5B6CFF' : 'rgba(11,12,15,0.8)',
+              color: viewMode === id ? '#fff' : '#7A7E92',
               border: '1px solid #1E2028',
               backdropFilter: 'blur(4px)',
             }}
           >
-            {mode}
+            {label}
           </button>
         ))}
-        {viewMode === 'persp' && (
+        <div className="w-px h-4 mx-0.5" style={{ background: '#1E2028' }} />
+        {isPersp ? (
           <>
-            <div className="w-px h-4 mx-1" style={{ background: '#1E2028' }} />
             <span className="text-[10px] font-mono" style={{ color: '#7A7E92' }}>FOV</span>
             <input
               type="range"
               min={20} max={120} step={1}
               value={cameraFov}
               onChange={(e) => setCameraFov(parseInt(e.target.value))}
-              className="w-16 h-1"
+              className="w-14 h-1"
               style={{ accentColor: '#5B6CFF' }}
             />
             <span className="text-[10px] font-mono w-6" style={{ color: '#7A7E92' }}>{cameraFov}°</span>
+          </>
+        ) : (
+          <>
+            <span className="text-[10px] font-mono" style={{ color: '#7A7E92' }}>Zoom</span>
+            <input
+              type="range"
+              min={1} max={100} step={0.5}
+              value={orthoZoom}
+              onChange={(e) => setOrthoZoom(parseFloat(e.target.value))}
+              className="w-14 h-1"
+              style={{ accentColor: '#5B6CFF' }}
+            />
+            <span className="text-[10px] font-mono w-8" style={{ color: '#7A7E92' }}>{orthoZoom.toFixed(0)}</span>
           </>
         )}
       </div>
@@ -365,6 +393,79 @@ export function ViewportOverlay() {
           items={buildContextItems()}
           onClose={closeContextMenu}
         />
+      )}
+
+      {/* Website mode: floating toolbar */}
+      {appMode === 'website' && !isPreviewMode && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 pointer-events-auto">
+          <div className="flex items-center gap-0 rounded-xl overflow-hidden border shadow-xl"
+            style={{ background: 'rgba(11,12,15,0.92)', borderColor: '#2a2d40', backdropFilter: 'blur(8px)' }}>
+            <span className="px-3 text-[10px] font-semibold uppercase tracking-widest border-r" style={{ color: '#5B6CFF', borderColor: '#2a2d40' }}>
+              Website
+            </span>
+            {/* Add Element dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowAddMenu((v) => !v)}
+                className="flex items-center gap-1 px-2.5 h-8 text-[11px] border-r transition-colors"
+                style={{ color: '#C8C9D0', borderColor: '#2a2d40' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#1E2028' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <PlusCircle size={12} /> Add Element <ChevronDown size={10} />
+              </button>
+              {showAddMenu && (
+                <div className="absolute top-full left-0 mt-1 rounded-xl border shadow-2xl overflow-hidden z-50 min-w-[140px]"
+                  style={{ background: '#111318', borderColor: '#2a2d40' }}>
+                  {[
+                    { label: 'Heading', tag: 'heading' },
+                    { label: 'Paragraph', tag: 'paragraph' },
+                    { label: 'Button', tag: 'button' },
+                    { label: 'Image', tag: 'image' },
+                    { label: 'Video', tag: 'video' },
+                  ].map(({ label, tag }) => (
+                    <button
+                      key={tag}
+                      onClick={() => {
+                        addObject({ type: 'html', name: label, htmlConfig: { htmlType: tag as 'heading' | 'paragraph' | 'button' | 'image' | 'video', content: label } })
+                        setShowAddMenu(false)
+                      }}
+                      className="w-full px-3 py-2 text-left text-[11px] transition-colors"
+                      style={{ color: '#C8C9D0' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#1E2028' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Preview */}
+            <button
+              onClick={() => setPreviewMode(true)}
+              className="flex items-center gap-1 px-2.5 h-8 text-[11px] border-r transition-colors"
+              style={{ color: '#C8C9D0', borderColor: '#2a2d40' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#1E2028' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Eye size={12} /> Preview
+            </button>
+            {/* Export HTML */}
+            <button
+              onClick={() => {
+                // Open export modal to website tab — dispatch a custom event
+                window.dispatchEvent(new CustomEvent('open-export-modal', { detail: 'website' }))
+              }}
+              className="flex items-center gap-1 px-2.5 h-8 text-[11px] transition-colors"
+              style={{ color: '#C8C9D0' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#1E2028' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Download size={12} /> Export HTML
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Website mode: scroll progress bar on right edge */}

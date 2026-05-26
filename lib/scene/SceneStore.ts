@@ -13,7 +13,9 @@ export type AnimationPreset = 'none' | 'float' | 'spin' | 'pulse' | 'orbit' | 's
 export type PhysicsBodyType = 'dynamic' | 'static' | 'kinematic'
 export type PhysicsShape = 'auto' | 'box' | 'sphere' | 'capsule' | 'hull'
 export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale' | 'sculpt' | 'edit'
-export type SculptMode = 'raise' | 'lower' | 'smooth' | 'flatten'
+export type SculptMode = 'raise' | 'lower' | 'smooth' | 'flatten' | 'stamp' | 'inflate'
+export type SculptFalloff = 'smooth' | 'linear' | 'sharp'
+export type ViewMode = 'persp' | 'top' | 'front' | 'right' | 'left' | 'bottom' | 'iso'
 export type BehaviorType =
   | 'rotate' | 'patrol' | 'follow' | 'lookAt' | 'oscillate'
   | 'scalePulse' | 'onClick' | 'proximityTrigger' | 'emissivePulse'
@@ -43,6 +45,10 @@ export interface BehaviorConfig {
   range?: number
   interval?: number
   randomOffset?: boolean
+  // proximityTrigger fields
+  once?: boolean
+  targetSceneId?: string
+  fired?: boolean
 }
 
 export interface TerrainConfig {
@@ -120,6 +126,7 @@ export interface GeometryConfig {
   lineHeight?: number
   bevelThickness?: number
   bevelSize?: number
+  customVertices?: number[]   // flat [x,y,z,...] overrides procedural geometry
 }
 
 export interface LightConfig {
@@ -182,10 +189,12 @@ export interface HtmlObjectConfig {
 
 export interface ObjectInteraction {
   hoverEffect: 'none' | 'highlight' | 'scale'
-  clickAction: 'none' | 'toggle-anim' | 'link' | 'toggle-visible' | 'camera-link'
+  clickAction: 'none' | 'toggle-anim' | 'link' | 'toggle-visible' | 'camera-link' | 'switch-scene'
   tooltipText?: string
   linkUrl?: string
   cameraKeypointId?: string
+  targetSceneId?: string
+  targetSceneCamera?: string
 }
 
 export interface ScrollAnimConfig {
@@ -295,7 +304,7 @@ export interface PanelState {
   leftOpen: boolean
   rightOpen: boolean
   bottomOpen: boolean
-  leftTab: 'outliner' | 'material' | 'lighting' | 'website'
+  leftTab: 'outliner' | 'material' | 'lighting' | 'website' | 'camera'
   rightTab: 'chat' | 'assets'
   bottomTab: 'animation' | 'physics'
 }
@@ -416,8 +425,14 @@ interface SceneActions {
   setFPS: (fps: number) => void
   setShowStats: (v: boolean) => void
   setCameraMode: (mode: 'orbit' | 'fly') => void
-  setViewMode: (mode: 'persp' | 'top' | 'front' | 'right') => void
+  setViewMode: (mode: ViewMode) => void
   setCameraFov: (fov: number) => void
+  setOrthoZoom: (z: number) => void
+
+  selectVertices: (indices: number[], add?: boolean) => void
+  deselectVertex: (idx: number) => void
+  clearVertexSelection: () => void
+  setCustomVertices: (id: string, verts: number[]) => void
 
   showNotification: (msg: string, type?: 'success' | 'error' | 'info') => void
   setBakePreview: (url: string | null) => void
@@ -426,6 +441,7 @@ interface SceneActions {
   setSculptMode: (m: SculptMode) => void
   setSculptRadius: (v: number) => void
   setSculptStrength: (v: number) => void
+  setSculptFalloff: (f: SculptFalloff) => void
   setContextMenu: (menu: { x: number; y: number; objectId: string | null } | null) => void
   updateTerrain: (objectId: string, patch: Partial<TerrainConfig>) => void
   sculptTerrain: (objectId: string, cx: number, cz: number) => void
@@ -488,8 +504,10 @@ interface SceneState extends SceneActions {
   showStats: boolean
   fps: number
   cameraMode: 'orbit' | 'fly'
-  viewMode: 'persp' | 'top' | 'front' | 'right'
+  viewMode: ViewMode
   cameraFov: number
+  orthoZoom: number
+  selectedVertexIndices: number[]
 
   notification: { message: string; type: 'success' | 'error' | 'info'; id: string } | null
   bakePreviewUrl: string | null
@@ -499,6 +517,7 @@ interface SceneState extends SceneActions {
   sculptMode: SculptMode
   sculptRadius: number
   sculptStrength: number
+  sculptFalloff: SculptFalloff
   contextMenu: { x: number; y: number; objectId: string | null } | null
 
   past: string[]
@@ -632,6 +651,8 @@ export const useScene = create<SceneState>()(
       cameraMode: 'orbit',
       viewMode: 'persp',
       cameraFov: 60,
+      orthoZoom: 10,
+      selectedVertexIndices: [],
 
       notification: null,
       bakePreviewUrl: null,
@@ -641,6 +662,7 @@ export const useScene = create<SceneState>()(
       sculptMode: 'raise',
       sculptRadius: 5,
       sculptStrength: 1.5,
+      sculptFalloff: 'smooth',
       contextMenu: null,
 
       past: [],
@@ -935,6 +957,36 @@ export const useScene = create<SceneState>()(
         set((s) => { s.cameraFov = fov })
       },
 
+      setOrthoZoom(z) {
+        set((s) => { s.orthoZoom = Math.max(1, Math.min(200, z)) })
+      },
+
+      selectVertices(indices, add = false) {
+        set((s) => {
+          if (add) {
+            const set2 = new Set(s.selectedVertexIndices)
+            indices.forEach((i) => { if (set2.has(i)) set2.delete(i); else set2.add(i) })
+            s.selectedVertexIndices = Array.from(set2)
+          } else {
+            s.selectedVertexIndices = [...indices]
+          }
+        })
+      },
+
+      deselectVertex(idx) {
+        set((s) => { s.selectedVertexIndices = s.selectedVertexIndices.filter((i) => i !== idx) })
+      },
+
+      clearVertexSelection() {
+        set((s) => { s.selectedVertexIndices = [] })
+      },
+
+      setCustomVertices(id, verts) {
+        set((s) => {
+          if (s.objects[id]) s.objects[id].geometry.customVertices = verts
+        })
+      },
+
       // ── Notifications ─────────────────────────────────────────────────────
 
       showNotification(msg, type = 'success') {
@@ -950,6 +1002,7 @@ export const useScene = create<SceneState>()(
       setSculptMode(m) { set((s) => { s.sculptMode = m }) },
       setSculptRadius(v) { set((s) => { s.sculptRadius = v }) },
       setSculptStrength(v) { set((s) => { s.sculptStrength = v }) },
+      setSculptFalloff(f) { set((s) => { s.sculptFalloff = f }) },
 
       attachBehavior(objectId, config) {
         const id = makeId()
@@ -1013,6 +1066,14 @@ export const useScene = create<SceneState>()(
           const r = s.sculptRadius
           const str = s.sculptStrength
           const mode = s.sculptMode
+          const falloffMode = s.sculptFalloff
+
+          function getFalloff(dist: number): number {
+            const t = 1 - dist / r
+            if (falloffMode === 'sharp') return t > 0 ? 1 : 0
+            if (falloffMode === 'linear') return t
+            return t * t  // smooth (default)
+          }
 
           for (let iy = 0; iy < res; iy++) {
             for (let ix = 0; ix < res; ix++) {
@@ -1023,12 +1084,14 @@ export const useScene = create<SceneState>()(
               const dist = Math.sqrt(dx * dx + dz * dz)
               if (dist > r) continue
 
-              const falloff = 1 - dist / r
+              const falloff = getFalloff(dist)
               const idx = iy * res + ix
-              const delta = str * falloff * falloff
+              const delta = str * falloff
 
               if (mode === 'raise') heights[idx] += delta
               else if (mode === 'lower') heights[idx] -= delta
+              else if (mode === 'stamp') heights[idx] = Math.max(heights[idx], str * falloff)
+              else if (mode === 'inflate') heights[idx] += delta * 0.5
               else if (mode === 'smooth') {
                 let avg = 0, cnt = 0
                 for (let dy = -1; dy <= 1; dy++) {

@@ -1,9 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Camera, ChevronDown, ChevronRight, Eye, RefreshCw } from 'lucide-react'
-import { useScene } from '@/lib/scene/SceneStore'
+import { Plus, Trash2, Camera, ChevronDown, ChevronRight, Eye, RefreshCw, Type, AlignLeft, MousePointer, Image, Video, Navigation } from 'lucide-react'
+import { useScene, type SceneSnapshot } from '@/lib/scene/SceneStore'
 import { captureCamera } from '@/lib/captureCamera'
+
+const HTML_ELEMENTS = [
+  { tag: 'heading',   label: 'Heading',   icon: Type, content: 'Your Heading' },
+  { tag: 'paragraph', label: 'Text',       icon: AlignLeft, content: 'Your paragraph text here.' },
+  { tag: 'button',    label: 'Button',    icon: MousePointer, content: 'Click Me' },
+  { tag: 'image',     label: 'Image',     icon: Image, content: '' },
+  { tag: 'video',     label: 'Video',     icon: Video, content: '' },
+  { tag: 'form',      label: 'Nav',       icon: Navigation, content: 'Nav' },
+] as const
 
 function Section({ label, children, defaultOpen = true }: { label: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -27,6 +36,8 @@ function Section({ label, children, defaultOpen = true }: { label: string; child
 }
 
 export function WebsitePanel() {
+  const addObject = useScene((s) => s.addObject)
+  const scenes = useScene((s) => s.scenes)
   const cameraPath = useScene((s) => s.cameraPath)
   const addCameraKeypoint = useScene((s) => s.addCameraKeypoint)
   const updateCameraKeypoint = useScene((s) => s.updateCameraKeypoint)
@@ -59,6 +70,14 @@ export function WebsitePanel() {
     showNotification('Camera path cleared')
   }
 
+  function addHtmlElement(tag: string, content: string) {
+    addObject({
+      type: 'html',
+      name: tag.charAt(0).toUpperCase() + tag.slice(1),
+      htmlConfig: { htmlType: tag as 'heading' | 'paragraph' | 'button' | 'image' | 'video' | 'form', content },
+    })
+  }
+
   return (
     <div className="flex flex-col overflow-y-auto custom-scrollbar flex-1">
       {/* Header */}
@@ -70,6 +89,25 @@ export function WebsitePanel() {
       </div>
 
       {/* Camera Path */}
+      <Section label="Add Elements">
+        <div className="grid grid-cols-3 gap-1">
+          {HTML_ELEMENTS.map(({ tag, label, icon: Icon, content }) => (
+            <button
+              key={tag}
+              onClick={() => addHtmlElement(tag, content)}
+              className="flex flex-col items-center gap-1 py-2 rounded-lg text-[10px] font-medium transition-all"
+              style={{ background: '#1E2028', border: '1px solid #2a2d40', color: '#7A7E92' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#5B6CFF'; (e.currentTarget as HTMLElement).style.color = '#E8E9F0' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#2a2d40'; (e.currentTarget as HTMLElement).style.color = '#7A7E92' }}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[9px] mt-1" style={{ color: '#3a3e50' }}>Click to add · drag in viewport to position</p>
+      </Section>
+
       <Section label="Camera Path">
         <div className="flex gap-1.5">
           <button
@@ -133,6 +171,20 @@ export function WebsitePanel() {
                   <option value="ease-in">Ease In</option>
                   <option value="ease-out">Ease Out</option>
                 </select>
+                {scenes.length > 1 && (
+                  <select
+                    value={kp.sceneId ?? ''}
+                    onChange={(e) => updateCameraKeypoint(kp.id, { sceneId: e.target.value || undefined })}
+                    className="h-5 px-1 rounded text-[10px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#7A7E92', borderColor: '#1E2028' }}
+                    title="Switch scene at this keypoint"
+                  >
+                    <option value="">No scene switch</option>
+                    {scenes.map((sc: SceneSnapshot) => (
+                      <option key={sc.id} value={sc.id}>{sc.name}</option>
+                    ))}
+                  </select>
+                )}
                 <button
                   onClick={() => removeCameraKeypoint(kp.id)}
                   className="w-5 h-5 flex items-center justify-center rounded transition-colors shrink-0"

@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useEffect, useRef, Component, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, Component, type ReactNode } from 'react'
 import { useScene, loadPersistedScene } from '@/lib/scene/SceneStore'
 import { MainToolbar } from '@/components/toolbar/MainToolbar'
 import { OutlinerPanel } from '@/components/panels/OutlinerPanel'
@@ -15,9 +15,10 @@ import { SceneSwitcher } from '@/components/panels/SceneSwitcher'
 import { LightingPanel } from '@/components/panels/LightingPanel'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
-import { CheckCircle2, AlertCircle, Info, Layers, Palette, Sun, Globe2 } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, Layers, Palette, Sun, Globe2, Video } from 'lucide-react'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 import { WebsitePanel } from '@/components/panels/WebsitePanel'
+import { CameraPanel } from '@/components/panels/CameraPanel'
 
 class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state = { error: null }
@@ -57,6 +58,43 @@ function BakeOverlay() {
         className="w-full h-full object-cover"
         style={{ opacity: bakeBlend }}
       />
+    </div>
+  )
+}
+
+function SceneSubPanel() {
+  const [subTab, setSubTab] = React.useState<'objects' | 'properties'>('objects')
+  const selectedIds = useScene((s) => s.selectedIds)
+
+  // Auto-switch to properties when something is selected
+  React.useEffect(() => {
+    if (selectedIds.length > 0) setSubTab('properties')
+  }, [selectedIds])
+
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex h-8 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0a0c10' }}>
+        {(['objects', 'properties'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setSubTab(t)}
+            className="flex-1 text-[10px] font-medium capitalize transition-colors"
+            style={{
+              color: subTab === t ? '#E8E9F0' : '#5A5E72',
+              borderBottom: subTab === t ? '2px solid #5B6CFF' : '2px solid transparent',
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {subTab === 'objects' ? (
+          <OutlinerPanel />
+        ) : (
+          <PropertiesPanel />
+        )}
+      </div>
     </div>
   )
 }
@@ -119,7 +157,10 @@ export default function WorldBuilderPage() {
 
   useEffect(() => {
     if (appMode === 'website') {
-      useScene.getState().setPanelTab('left', 'website')
+      const current = useScene.getState().panels.leftTab
+      if (current !== 'camera' && current !== 'material' && current !== 'lighting') {
+        useScene.getState().setPanelTab('left', 'website')
+      }
     } else {
       const current = useScene.getState().panels.leftTab
       if (current === 'website') useScene.getState().setPanelTab('left', 'outliner')
@@ -193,13 +234,14 @@ export default function WorldBuilderPage() {
             <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14' }}>
               {([
                 { id: 'outliner', label: 'Scene', icon: <Layers size={12} strokeWidth={1.75} /> },
-                { id: 'material', label: 'Material', icon: <Palette size={12} strokeWidth={1.75} /> },
-                { id: 'lighting', label: 'Lighting', icon: <Sun size={12} strokeWidth={1.75} /> },
-                ...(appMode === 'website' ? [{ id: 'website', label: 'Website', icon: <Globe2 size={12} strokeWidth={1.75} /> }] : []),
-              ] as const).map((t) => (
+                { id: 'camera', label: 'Camera', icon: <Video size={12} strokeWidth={1.75} /> },
+                { id: 'material', label: 'Mat', icon: <Palette size={12} strokeWidth={1.75} /> },
+                { id: 'lighting', label: 'Light', icon: <Sun size={12} strokeWidth={1.75} /> },
+                ...(appMode === 'website' ? [{ id: 'website', label: 'Web', icon: <Globe2 size={12} strokeWidth={1.75} /> }] : []),
+              ] as Array<{ id: string; label: string; icon: React.ReactNode }>).map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => useScene.getState().setPanelTab('left', t.id as never)}
+                  onClick={() => useScene.getState().setPanelTab('left', t.id as 'outliner' | 'camera' | 'material' | 'lighting' | 'website')}
                   className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium capitalize transition-colors"
                   style={{
                     color: panels.leftTab === t.id ? '#E8E9F0' : '#7A7E92',
@@ -214,15 +256,9 @@ export default function WorldBuilderPage() {
             </div>
             <div className="flex-1 overflow-hidden flex flex-col">
               {panels.leftTab === 'outliner' ? (
-                <>
-                  <div style={{ flex: '0 0 auto', maxHeight: '50%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <OutlinerPanel />
-                  </div>
-                  <div className="w-full h-px" style={{ background: '#1E2028' }} />
-                  <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <PropertiesPanel />
-                  </div>
-                </>
+                <SceneSubPanel />
+              ) : panels.leftTab === 'camera' ? (
+                <CameraPanel />
               ) : panels.leftTab === 'material' ? (
                 <MaterialEditor />
               ) : panels.leftTab === 'website' ? (
