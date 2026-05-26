@@ -397,7 +397,23 @@ export function ViewportOverlay() {
 
       {/* Website mode: floating toolbar */}
       {appMode === 'website' && !isPreviewMode && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 pointer-events-auto">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 pointer-events-auto">
+          {/* Orbit status chip */}
+          <div
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-xl border shadow-xl text-[10px] font-medium"
+            style={{
+              background: !websiteScrollEnabled ? 'rgba(13,26,13,0.92)' : 'rgba(26,16,32,0.92)',
+              borderColor: !websiteScrollEnabled ? '#1a3a1a' : '#2a1840',
+              color: !websiteScrollEnabled ? '#4ade80' : '#a78bfa',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: !websiteScrollEnabled ? '#4ade80' : '#a78bfa' }}
+            />
+            {!websiteScrollEnabled ? 'Orbit free' : 'Scroll active'}
+          </div>
           <div className="flex items-center gap-0 rounded-xl overflow-hidden border shadow-xl"
             style={{ background: 'rgba(11,12,15,0.92)', borderColor: '#2a2d40', backdropFilter: 'blur(8px)' }}>
             <span className="px-3 text-[10px] font-semibold uppercase tracking-widest border-r" style={{ color: '#5B6CFF', borderColor: '#2a2d40' }}>

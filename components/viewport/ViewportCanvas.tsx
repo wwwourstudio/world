@@ -14,6 +14,7 @@ import {
   Outlines,
   Sky,
   OrthographicCamera as DreiOrthoCamera,
+  Line,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -1848,11 +1849,47 @@ function InnerScene() {
   return <>{sceneObjects}</>
 }
 
+// ─── Camera Path Visualization ───────────────────────────────────────────────
+
+function CameraPathViz() {
+  const cameraPath = useScene((s) => s.cameraPath)
+  const isPreviewMode = useScene((s) => s.isPreviewMode)
+  const appMode = useScene((s) => s.appMode)
+  if (isPreviewMode || appMode !== 'website' || cameraPath.length === 0) return null
+  return (
+    <group>
+      {cameraPath.map((kp, i) => (
+        <group key={kp.id} position={kp.position as [number, number, number]}>
+          <mesh raycast={() => null}>
+            <sphereGeometry args={[0.18, 8, 8]} />
+            <meshBasicMaterial color="#5B6CFF" transparent opacity={0.85} />
+          </mesh>
+          <Html center style={{ pointerEvents: 'none' }} distanceFactor={8}>
+            <div style={{ color: '#fff', fontSize: 10, fontWeight: 700, background: 'rgba(91,108,255,0.85)', padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', boxShadow: '0 1px 6px #0006' }}>
+              {i + 1} {kp.label}
+            </div>
+          </Html>
+        </group>
+      ))}
+      {cameraPath.length >= 2 && (
+        <Line
+          points={cameraPath.map((kp) => kp.position as [number, number, number])}
+          color="#5B6CFF"
+          lineWidth={1.5}
+          opacity={0.35}
+          transparent
+        />
+      )}
+    </group>
+  )
+}
+
 // ─── Canvas Wrapper ───────────────────────────────────────────────────────────
 
 export function ViewportCanvas() {
   const cameraMode = useScene((s) => s.cameraMode)
   const appMode = useScene((s) => s.appMode)
+  const websiteScrollEnabled = useScene((s) => s.websiteScrollEnabled)
   const deselectAll = useScene((s) => s.deselectAll)
   const toneMappingExposure = useScene((s) => s.postFX.toneMappingExposure)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -1901,11 +1938,12 @@ export function ViewportCanvas() {
           <ScrollCamera />
           <CameraController />
           <CameraLinkAnimator />
+          <CameraPathViz />
           <OrbitControls
             makeDefault
             enableDamping
             dampingFactor={0.05}
-            enabled={cameraMode === 'orbit' && appMode !== 'website'}
+            enabled={cameraMode === 'orbit' && !(appMode === 'website' && websiteScrollEnabled)}
           />
         </Suspense>
       </Canvas>
