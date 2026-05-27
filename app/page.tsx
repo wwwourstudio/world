@@ -276,6 +276,17 @@ export default function WorldBuilderPage() {
             <ViewportCanvas />
           </CanvasErrorBoundary>
           <ViewportOverlay />
+          {/* U2: Fly mode hint overlay */}
+          {cameraMode === 'fly' && (
+            <div style={{
+              position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.7)', color: '#E8E9F0', fontSize: 11,
+              padding: '3px 10px', borderRadius: 20, pointerEvents: 'none', zIndex: 10,
+              whiteSpace: 'nowrap',
+            }}>
+              Fly Mode · WASD move · E/Q up/down · Click + drag to look
+            </div>
+          )}
         </div>
 
         {/* Right panel — hidden in preview mode */}

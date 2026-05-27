@@ -26,10 +26,18 @@ export async function GET(request: Request) {
   url.searchParams.set('sort_by', sortBy)
   if (Number(offset) > 0) url.searchParams.set('offset', offset)
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Token ${apiKey}` },
-    cache: 'no-store',
-  })
+  let res: Response
+  try {
+    res = await fetch(url.toString(), {
+      headers: { Authorization: `Token ${apiKey}` },
+      cache: 'no-store',
+    })
+  } catch (e) {
+    return Response.json(
+      { error: `Sketchfab network error: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 502 }
+    )
+  }
 
   if (!res.ok) {
     return Response.json({ error: `Sketchfab error: ${res.status}` }, { status: res.status })

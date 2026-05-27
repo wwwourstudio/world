@@ -33,9 +33,11 @@ export function resolveObjectQuery(
   const partial = all.filter((o) => o.name.toLowerCase().includes(q))
   if (partial.length > 0) return partial.map((o) => o.id)
 
-  // Type keyword match (check query words against name keywords)
+  // Type keyword match — split query into words to avoid substring false positives
+  // e.g. "slightly" should not match "light", "rocks" should still match "rock"
+  const qWords = q.split(/\W+/).filter(Boolean)
   for (const [, keywords] of Object.entries(TYPE_KEYWORDS)) {
-    if (keywords.some((k) => q.includes(k))) {
+    if (keywords.some((k) => qWords.includes(k))) {
       const matches = all.filter((o) =>
         keywords.some((k) => o.name.toLowerCase().includes(k))
       )

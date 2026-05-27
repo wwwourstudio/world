@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { X, Upload, FileJson, FileText } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 
@@ -9,6 +9,12 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const showNotification = useScene((s) => s.showNotification)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
   const addObject = useScene((s) => s.addObject)
   const setEnvironment = useScene((s) => s.setEnvironment)
 

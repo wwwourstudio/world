@@ -1448,6 +1448,9 @@ export const useScene = create<SceneState>()(
 
 const SCENE_STORAGE_KEY = 'wbp-scene-v2'
 
+// P2: Track whether we've already warned about localStorage failure this session
+let _localStorageWarnedRef = false
+
 // Persist to localStorage
 if (typeof window !== 'undefined') {
   useScene.subscribe(
@@ -1467,7 +1470,15 @@ if (typeof window !== 'undefined') {
             },
           }
           localStorage.setItem(SCENE_STORAGE_KEY, JSON.stringify(toSave))
-        } catch {}
+        } catch (e) {
+          // QuotaExceededError or similar — notify user once per session so the
+          // error isn't silently swallowed.
+          if (!_localStorageWarnedRef) {
+            _localStorageWarnedRef = true
+            console.warn('[WorldBuilder] Scene autosave failed:', e instanceof Error ? e.message : e)
+            useScene.getState().showNotification('Scene autosave failed — storage may be full', 'error')
+          }
+        }
       }, 500)
     }
   )
