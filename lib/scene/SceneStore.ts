@@ -172,13 +172,16 @@ export interface CameraKeypoint {
 
 export interface HtmlObjectConfig {
   htmlType: 'heading' | 'paragraph' | 'image' | 'video' | 'button' | 'form' | 'instagram'
-          | 'divider' | 'badge' | 'card' | 'quote' | 'stat' | 'countdown' | 'spacer' | 'icontext'
+    | 'divider' | 'badge' | 'card' | 'quote' | 'stat' | 'countdown' | 'spacer' | 'icontext'
   content?: string
+  subtitle?: string
   videoUrl?: string
   instagramToken?: string
   fontSize?: number
   fontWeight?: string
+  fontFamily?: string
   color?: string
+  accentColor?: string
   background?: string
   padding?: number
   borderRadius?: number
@@ -186,12 +189,8 @@ export interface HtmlObjectConfig {
   height?: number
   textAlign?: 'left' | 'center' | 'right'
   opacity?: number
-  // new fields
-  subtitle?: string
   linkUrl?: string
-  fontFamily?: string
   dividerStyle?: 'solid' | 'gradient' | 'dashed'
-  accentColor?: string
   countdownTarget?: string
 }
 
@@ -474,6 +473,8 @@ interface SceneActions {
   removeScene: (id: string) => void
   renameScene: (id: string, name: string) => void
 
+  setCameraNear: (v: number) => void
+  setCameraFar: (v: number) => void
   setAppMode: (mode: AppMode) => void
   setScrollProgress: (v: number) => void
   setWebsiteScrollEnabled: (v: boolean) => void
@@ -515,6 +516,8 @@ interface SceneState extends SceneActions {
   viewMode: ViewMode
   cameraFov: number
   orthoZoom: number
+  cameraNear: number
+  cameraFar: number
   selectedVertexIndices: number[]
 
   notification: { message: string; type: 'success' | 'error' | 'info'; id: string } | null
@@ -660,6 +663,8 @@ export const useScene = create<SceneState>()(
       viewMode: 'persp',
       cameraFov: 60,
       orthoZoom: 10,
+      cameraNear: 0.1,
+      cameraFar: 1000,
       selectedVertexIndices: [],
 
       notification: null,
@@ -1364,6 +1369,14 @@ export const useScene = create<SceneState>()(
 
       setScrollAnim(id, cfg) {
         set((s) => { if (s.objects[id]) s.objects[id].scrollAnim = cfg })
+      },
+
+      setCameraNear(v) {
+        set((s) => { s.cameraNear = Math.max(0.001, v) })
+      },
+
+      setCameraFar(v) {
+        set((s) => { s.cameraFar = Math.max(1, v) })
       },
     }))
   )

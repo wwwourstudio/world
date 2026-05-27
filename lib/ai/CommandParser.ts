@@ -193,8 +193,29 @@ export interface ScatterObjectsCmd {
 
 export interface SetViewModeCmd {
   action: 'set_view_mode'
-  mode?: 'persp' | 'top' | 'front' | 'right'
+  mode?: 'persp' | 'top' | 'front' | 'right' | 'left' | 'iso'
   fov?: number
+}
+
+export interface SetCameraClipCmd {
+  action: 'set_camera_clip'
+  near?: number
+  far?: number
+}
+
+export interface UpdateObjectCmd {
+  action: 'update_object'
+  target: string
+  position?: [number, number, number]
+  rotation?: [number, number, number]
+  scale?: [number, number, number]
+  color?: string
+  roughness?: number
+  metalness?: number
+  opacity?: number
+  emissive?: string
+  emissiveIntensity?: number
+  visible?: boolean
 }
 
 export type SceneCommand =
@@ -202,7 +223,7 @@ export type SceneCommand =
   | SetCameraCmd | AddAnimationCmd | EnablePhysicsCmd | SetEnvironmentCmd
   | DeleteObjectCmd | DuplicateObjectCmd | GroupObjectsCmd | LoadTemplateCmd | SetPostFXCmd
   | AddTextCmd | AddParticleCmd | ScatterObjectsCmd | SetViewModeCmd
-  | AddKeyframeAnimationCmd | AddSceneCmd
+  | AddKeyframeAnimationCmd | AddSceneCmd | SetCameraClipCmd | UpdateObjectCmd
 
 export interface BehaviorAttachment {
   objectId: string
@@ -743,6 +764,40 @@ export function executeCommand(cmd: SceneCommand): void {
       const c = cmd as SetViewModeCmd
       if (c.mode) store.setViewMode(c.mode)
       if (c.fov !== undefined) store.setCameraFov(c.fov)
+      break
+    }
+
+    case 'set_camera_clip': {
+      const c = cmd as SetCameraClipCmd
+      if (c.near !== undefined) store.setCameraNear(c.near)
+      if (c.far !== undefined) store.setCameraFar(c.far)
+      break
+    }
+
+    case 'update_object': {
+      const c = cmd as UpdateObjectCmd
+      const obj = findObjectByName(store.objects, c.target)
+      if (!obj) break
+      const patch: Record<string, unknown> = {}
+      if (c.position || c.rotation || c.scale) {
+        patch.transform = {
+          position: c.position ?? obj.transform.position,
+          rotation: c.rotation ?? obj.transform.rotation,
+          scale: c.scale ?? obj.transform.scale,
+        }
+      }
+      if (c.color || c.roughness !== undefined || c.metalness !== undefined || c.opacity !== undefined || c.emissive || c.emissiveIntensity !== undefined) {
+        patch.material = {
+          ...(c.color ? { color: c.color } : {}),
+          ...(c.roughness !== undefined ? { roughness: c.roughness } : {}),
+          ...(c.metalness !== undefined ? { metalness: c.metalness } : {}),
+          ...(c.opacity !== undefined ? { opacity: c.opacity, transparent: c.opacity < 1 } : {}),
+          ...(c.emissive ? { emissive: c.emissive } : {}),
+          ...(c.emissiveIntensity !== undefined ? { emissiveIntensity: c.emissiveIntensity } : {}),
+        }
+      }
+      if (c.visible !== undefined) patch.visible = c.visible
+      store.updateObject(obj.id, patch as Parameters<typeof store.updateObject>[1])
       break
     }
   }

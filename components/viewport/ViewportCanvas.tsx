@@ -31,8 +31,8 @@ import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig, ScrollAnimConfig } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { captureCamera } from '@/lib/captureCamera'
+import { jumpToCamera, cameraJumpFn } from '@/lib/cameraJump'
 import { cameraFrameFn } from '@/lib/cameraFrame'
-import { cameraJumpFn } from '@/lib/cameraJump'
 import { fbmNoise } from '@/lib/noise'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 
@@ -1066,15 +1066,25 @@ function CameraController() {
   const viewMode = useScene((s) => s.viewMode)
   const cameraFov = useScene((s) => s.cameraFov)
   const orthoZoom = useScene((s) => s.orthoZoom)
+  const cameraNear = useScene((s) => s.cameraNear)
+  const cameraFar = useScene((s) => s.cameraFar)
   const { camera, size } = useThree()
 
   useEffect(() => {
     if (viewMode === 'persp') {
       const cam = camera as THREE.PerspectiveCamera
       cam.fov = cameraFov
+      cam.near = cameraNear
+      cam.far = cameraFar
       cam.updateProjectionMatrix()
+    } else {
+      // Force exact ortho camera position; DreiOrthoCamera handles the makeDefault swap
+      const pos = ORTHO_POSITIONS[viewMode] ?? [0, 100, 0.001]
+      camera.position.set(pos[0], pos[1], pos[2])
+      camera.lookAt(0, 0, 0)
+      camera.updateProjectionMatrix()
     }
-  }, [viewMode, cameraFov, camera])
+  }, [viewMode, cameraFov, cameraNear, cameraFar, camera])
 
   if (viewMode === 'persp') return null
 
@@ -1305,20 +1315,27 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
   const cfg = obj.htmlConfig!
   const selectObject = useScene((s) => s.selectObject)
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
-  const { opacity, dx, dy, dz, scaleFactor } = useScrollAnim(obj.scrollAnim)
-
+  const { opacity: scrollOpacity, dx, dy, scaleFactor } = useScrollAnim(obj.scrollAnim)
+  const combinedOpacity = (cfg.opacity ?? 1) * scrollOpacity
   const fontFamily = cfg.fontFamily || 'inherit'
-  const combinedOpacity = (cfg.opacity ?? 1) * opacity
+
+  // Translate scroll offsets to CSS pixels (50px per Three.js unit at default camera distance)
+  const scrollStyle: React.CSSProperties = {
+    transform: `translate(${dx * 50}px, ${-dy * 50}px) scale(${scaleFactor})`,
+    transformOrigin: 'center center',
+    opacity: combinedOpacity,
+    transition: 'none',
+  }
 
   return (
-    <group position={[dx, dy, dz]} scale={[scaleFactor, scaleFactor, scaleFactor]}>
-      <Html
-        position={obj.transform.position}
-        rotation={obj.transform.rotation}
-        transform
-        occlude={false}
-        style={{ pointerEvents: 'auto' }}
-      >
+    <Html
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      transform
+      occlude={false}
+      style={{ pointerEvents: 'none' }}
+    >
+      <div style={scrollStyle}>
         <div
           onClick={(e) => { e.stopPropagation(); selectObject(obj.id, false) }}
           style={{
@@ -1327,13 +1344,13 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
             background: cfg.background ?? 'transparent',
             padding: cfg.padding ? `${cfg.padding}px` : undefined,
             borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined,
-            opacity: combinedOpacity,
             textAlign: cfg.textAlign ?? 'left',
             fontFamily,
             outline: isSelected ? '2px solid rgba(255,255,255,0.8)' : 'none',
             outlineOffset: '4px',
             cursor: 'pointer',
             userSelect: 'none',
+            pointerEvents: 'auto',
           }}
         >
           {cfg.htmlType === 'heading' && (
@@ -1369,7 +1386,6 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
               <button type="submit" style={{ padding: '12px', background: '#fff', color: '#000', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Send</button>
             </form>
           )}
-          {/* ── New element types ── */}
           {cfg.htmlType === 'divider' && (
             <div style={{
               width: '100%',
@@ -1381,18 +1397,7 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
             }} />
           )}
           {cfg.htmlType === 'badge' && (
-            <span style={{
-              display: 'inline-block',
-              padding: '4px 14px',
-              borderRadius: '999px',
-              background: cfg.accentColor ?? '#5B6CFF',
-              color: cfg.color ?? '#ffffff',
-              fontSize: `${cfg.fontSize ?? 12}px`,
-              fontWeight: cfg.fontWeight ?? '600',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              fontFamily,
-            }}>
+            <span style={{ display: 'inline-block', padding: '4px 14px', borderRadius: '999px', background: cfg.accentColor ?? '#5B6CFF', color: cfg.color ?? '#ffffff', fontSize: `${cfg.fontSize ?? 12}px`, fontWeight: cfg.fontWeight ?? '600', letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily }}>
               {cfg.content ?? 'Badge'}
             </span>
           )}
@@ -1445,8 +1450,8 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
             </div>
           )}
         </div>
-      </Html>
-    </group>
+      </div>
+    </Html>
   )
 }
 
@@ -1500,7 +1505,13 @@ function SceneObjectNode({ id }: { id: string }) {
   const obj = useScene((s) => s.objects[id])
   if (!obj || !obj.visible) return null
 
-  if (obj.type === 'html' && obj.htmlConfig) return <HtmlObject obj={obj} />
+  if (obj.type === 'html') {
+    // Ensure htmlConfig always exists — fall back to a default heading so it renders as HTML, not a cube
+    const htmlObj: SceneObject = obj.htmlConfig
+      ? obj
+      : { ...obj, htmlConfig: { htmlType: 'heading', content: obj.name || 'HTML' } }
+    return <HtmlObject obj={htmlObj} />
+  }
   if (obj.type === 'light' && obj.light) return <LightObject obj={obj} />
   if (obj.type === 'terrain' && obj.terrain) return <TerrainObject obj={obj} />
   if (obj.type === 'water' && obj.water) return <WaterObject obj={obj} />
@@ -1826,7 +1837,17 @@ function CameraCapture() {
         fov: cam.fov ?? 60,
       }
     }
-    return () => { captureCamera.fn = null }
+
+    jumpToCamera.fn = (pos, target, fov) => {
+      camera.position.set(pos[0], pos[1], pos[2])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctrl = controls as any
+      if (ctrl?.target) ctrl.target.set(target[0], target[1], target[2])
+      const cam = camera as THREE.PerspectiveCamera
+      if (cam.fov !== undefined) { cam.fov = fov; cam.updateProjectionMatrix() }
+    }
+
+    return () => { captureCamera.fn = null; jumpToCamera.fn = null }
   }, [camera, controls])
 
   return null
@@ -2001,8 +2022,11 @@ function CameraPathViz() {
 
 export function ViewportCanvas() {
   const cameraMode = useScene((s) => s.cameraMode)
+  const viewMode = useScene((s) => s.viewMode)
   const appMode = useScene((s) => s.appMode)
   const websiteScrollEnabled = useScene((s) => s.websiteScrollEnabled)
+  const cameraNear = useScene((s) => s.cameraNear)
+  const cameraFar = useScene((s) => s.cameraFar)
   const deselectAll = useScene((s) => s.deselectAll)
   const toneMappingExposure = useScene((s) => s.postFX.toneMappingExposure)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -2020,6 +2044,7 @@ export function ViewportCanvas() {
         return
       }
       if (!state.websiteScrollEnabled) return
+      if (state.viewMode !== 'persp') return
       e.preventDefault()
       const delta = e.deltaY / 3000
       state.setScrollProgress(state.scrollProgress + delta)
@@ -2027,6 +2052,11 @@ export function ViewportCanvas() {
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
+
+  // OrbitControls only active in perspective + orbit mode + not in website-scroll mode
+  const orbitEnabled = cameraMode === 'orbit'
+    && viewMode === 'persp'
+    && !(appMode === 'website' && websiteScrollEnabled)
 
   return (
     <div ref={wrapperRef} className="w-full h-full" style={{ background: '#000000' }} onContextMenu={(e) => e.preventDefault()}>
@@ -2039,7 +2069,7 @@ export function ViewportCanvas() {
           powerPreference: 'high-performance',
           preserveDrawingBuffer: true,
         }}
-        camera={{ position: [10, 8, 10], fov: 60, near: 0.1, far: 1000 }}
+        camera={{ position: [10, 8, 10], fov: 60, near: cameraNear, far: cameraFar }}
         onPointerMissed={() => deselectAll()}
       >
         <Suspense fallback={null}>
@@ -2056,7 +2086,7 @@ export function ViewportCanvas() {
             makeDefault
             enableDamping
             dampingFactor={0.05}
-            enabled={cameraMode === 'orbit' && !(appMode === 'website' && websiteScrollEnabled)}
+            enabled={orbitEnabled}
           />
         </Suspense>
       </Canvas>

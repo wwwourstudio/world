@@ -117,7 +117,10 @@ AVAILABLE COMMANDS (use inside the commands block):
     { "action": "group_objects", "names": ["name1","name2"], "name": "Group Name" },
     { "action": "load_template", "id": "ancient_forest|scifi_base|medieval_village|cyberpunk_city|space_station|golden_sunset|deep_space" },
     { "action": "set_postfx", "bloom": true, "bloomIntensity": 0.5, "vignette": true, "noise": true, "chromaticAberration": false },
-    { "action": "add_scene", "name": "Scene Name" }
+    { "action": "add_scene", "name": "Scene Name" },
+    { "action": "set_camera_clip", "near": 0.1, "far": 1000 },
+    { "action": "update_object", "target": "exact object name", "position": [x,y,z], "rotation": [rx,ry,rz], "scale": [sx,sy,sz], "color": "#hex", "roughness": 0.5, "metalness": 0, "opacity": 1, "emissive": "#000", "emissiveIntensity": 0, "visible": true },
+    { "action": "set_view_mode", "mode": "persp|top|front|right|left|iso", "fov": 60 }
   ]
 }
 \`\`\`
@@ -127,6 +130,8 @@ MATERIAL PRESETS: gold, chrome, rubber, wood, concrete, glass, neon, hologram, c
 LIGHT TYPES: ambient, directional, point, spot, hemisphere
 ANIMATION PRESETS: float (bob), spin (rotate), pulse (scale), orbit (circle), shake (jitter), wave (sinusoidal), bounce (gravity)
 HDRI NAMES (Poly Haven): golden_bay, forest_slope, satara_night, kiara_interior, starlit_golf
+CAMERA CULLING: use set_camera_clip to change near/far clip planes (default near:0.1 far:1000)
+UPDATE EXISTING: use update_object to modify position, scale, rotation, color, roughness, metalness, opacity, visibility of any existing object by name
 
 BEHAVIOR SYSTEM — use the "behaviors" op in the actions block to attach runtime behaviors:
 - rotate: continuous rotation. params: axis (x/y/z), speed (rad/s, default 1)
@@ -161,7 +166,7 @@ QUALITY RULES:
 - Vary materials and colors`
 }
 
-export function buildSceneContext(objects: Record<string, unknown>, environment: Record<string, unknown>): string {
+export function buildSceneContext(objects: Record<string, unknown>, environment: Record<string, unknown>, camera?: { fov?: number; near?: number; far?: number; viewMode?: string }): string {
   type ObjShape = {
     id: string
     name: string
@@ -238,5 +243,13 @@ export function buildSceneContext(objects: Record<string, unknown>, environment:
     `Background: ${env.backgroundColor ?? '#0B0C0F'}`,
   ]
 
-  return `${objList.length} object${objList.length !== 1 ? 's' : ''}:\n${objList.join('\n') || '  (empty scene)'}\n\nEnvironment:\n  ${envLines.join('\n  ')}`
+  const camLines = camera ? [
+    `FOV: ${camera.fov ?? 60}°`,
+    `Clip: near=${camera.near ?? 0.1} far=${camera.far ?? 1000}`,
+    `View: ${camera.viewMode ?? 'persp'}`,
+  ] : []
+
+  const camSection = camLines.length > 0 ? `\n\nCamera:\n  ${camLines.join('\n  ')}` : ''
+
+  return `${objList.length} object${objList.length !== 1 ? 's' : ''}:\n${objList.join('\n') || '  (empty scene)'}\n\nEnvironment:\n  ${envLines.join('\n  ')}${camSection}`
 }
