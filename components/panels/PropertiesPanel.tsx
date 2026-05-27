@@ -92,8 +92,22 @@ function SliderRow({ label, value, min = 0, max = 1, step = 0.01, onChange }: {
 
 const ANIM_PRESETS: AnimationPreset[] = ['none', 'float', 'spin', 'pulse', 'orbit', 'shake', 'wave', 'bounce']
 
-const DEFAULT_PARTICLE_CFG: ParticleConfig = {
+const DEFAULT_PARTICLE_CFG: Required<ParticleConfig> = {
   count: 200, spread: [6, 6, 6], instanceGeometry: 'sphere', instanceScale: 0.08, randomScale: 0.5, preset: 'scatter',
+  emitterShape: 'box', emitterRadius: 3, emitterConeAngle: 45,
+  lifetime: 0, lifetimeRandom: 0, emitOnStart: true, emissionRate: 60,
+  sizeStart: 0.08, sizeEnd: 0.02, sizeRandom: 0.5, sizeOverLifetime: 'constant',
+  velocityX: 0, velocityY: 0, velocityZ: 0,
+  velocityRandom: 0, radialVelocity: 0, normalVelocity: 0,
+  rotationMode: 'none',
+  angularVelocityX: 0, angularVelocityY: 0, angularVelocityZ: 0,
+  rotationRandom: 1,
+  gravityFactor: 0, drag: 0, bounce: 0, turbulence: 0, turbulenceScale: 1,
+  renderMode: 'mesh', trailLength: 8, opacityStart: 1, opacityEnd: 0, glowIntensity: 0,
+  viewportDisplayFraction: 1, showEmitter: false,
+  childEnabled: false, childCount: 2, childSpread: 0.3, childSizeScale: 0.5, childPreset: 'scatter',
+  forceFieldEnabled: false, forceFieldType: 'none', forceFieldStrength: 1,
+  forceFieldDirection: [1, 0, 0],
 }
 
 function ObjectHeader({ obj }: { obj: SceneObject }) {
@@ -301,6 +315,252 @@ function TerrainSection({
   )
 }
 
+function ParticleSection({
+  id, pc: rawPc, updateObject,
+}: {
+  id: string
+  pc: ParticleConfig
+  updateObject: (id: string, patch: import('@/lib/scene/SceneStore').DeepPartial<SceneObject>) => void
+}) {
+  const pc = { ...DEFAULT_PARTICLE_CFG, ...rawPc } as Required<ParticleConfig>
+
+  function upP(patch: Partial<ParticleConfig>) {
+    updateObject(id, { particle: { ...pc, ...patch } })
+  }
+
+  const sel = 'flex-1 h-6 px-1.5 rounded text-[11px] outline-none border'
+  const selSt = { background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }
+  const chk = (checked: boolean, onChange: (v: boolean) => void) => (
+    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
+      className="w-4 h-4 rounded accent-[#5B6CFF]" />
+  )
+
+  return (
+    <>
+      {/* ── EMISSION ──────────────────────────────────────── */}
+      <Section label="Emission" icon={<Sparkles size={11} />} defaultOpen={true}>
+        <div className="flex flex-col gap-2">
+          <Row label="Preset">
+            <select value={pc.preset} onChange={(e) => upP({ preset: e.target.value as ParticleConfig['preset'] })} className={sel} style={selSt}>
+              {['scatter','rain','snow','leaves','sparks','fire','smoke','magic','custom'].map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </Row>
+          <Row label="Emitter">
+            <select value={pc.emitterShape} onChange={(e) => upP({ emitterShape: e.target.value as ParticleConfig['emitterShape'] })} className={sel} style={selSt}>
+              {['point','sphere','box','cone','hemisphere','ring'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </Row>
+          <SliderRow label="Count" value={pc.count} min={10} max={2000} step={10}
+            onChange={(v) => upP({ count: Math.round(v) })} />
+          <SliderRow label="Lifetime s" value={pc.lifetime} min={0} max={10} step={0.1}
+            onChange={(v) => upP({ lifetime: v })} />
+          <SliderRow label="Life Rand" value={pc.lifetimeRandom} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ lifetimeRandom: v })} />
+          {!pc.emitOnStart && (
+            <SliderRow label="Rate /s" value={pc.emissionRate} min={1} max={500} step={1}
+              onChange={(v) => upP({ emissionRate: Math.round(v) })} />
+          )}
+          <Row label="Emit On Start">{chk(pc.emitOnStart, (v) => upP({ emitOnStart: v }))}</Row>
+        </div>
+      </Section>
+
+      {/* ── SIZE ──────────────────────────────────────────── */}
+      <Section label="Size" icon={<Maximize2 size={11} />} defaultOpen={false}>
+        <div className="flex flex-col gap-2">
+          <SliderRow label="Scale" value={pc.instanceScale} min={0.01} max={2} step={0.01}
+            onChange={(v) => upP({ instanceScale: v })} />
+          <SliderRow label="Rand Scale" value={pc.randomScale} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ randomScale: v })} />
+          <SliderRow label="Size Start" value={pc.sizeStart} min={0.01} max={2} step={0.01}
+            onChange={(v) => upP({ sizeStart: v })} />
+          <SliderRow label="Size End" value={pc.sizeEnd} min={0} max={2} step={0.01}
+            onChange={(v) => upP({ sizeEnd: v })} />
+          <SliderRow label="Size Rand" value={pc.sizeRandom} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ sizeRandom: v })} />
+          <Row label="Over Life">
+            <select value={pc.sizeOverLifetime} onChange={(e) => upP({ sizeOverLifetime: e.target.value as ParticleConfig['sizeOverLifetime'] })} className={sel} style={selSt}>
+              {['constant','linear','grow','shrink','pulse'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </Row>
+          <Row label="Spread">
+            <div className="grid grid-cols-3 gap-1 flex-1">
+              {(['X','Y','Z'] as const).map((axis, i) => (
+                <div key={axis} className="flex items-center gap-1">
+                  <span className="text-[10px] font-mono" style={{ color: i===0?'#ef4444':i===1?'#22c55e':'#3b82f6' }}>{axis}</span>
+                  <input type="number" value={pc.spread[i].toFixed(1)} step={0.5}
+                    onChange={(e) => {
+                      const spread = [...pc.spread] as [number, number, number]
+                      spread[i] = parseFloat(e.target.value) || 1
+                      upP({ spread })
+                    }}
+                    className="flex-1 h-6 px-1 rounded text-[10px] font-mono text-center outline-none border"
+                    style={{ background:'#0B0C0F', color:'#E8E9F0', borderColor:'#1E2028' }}
+                  />
+                </div>
+              ))}
+            </div>
+          </Row>
+        </div>
+      </Section>
+
+      {/* ── VELOCITY ──────────────────────────────────────── */}
+      <Section label="Velocity" defaultOpen={false}>
+        <div className="flex flex-col gap-2">
+          <Row label="Initial">
+            <div className="grid grid-cols-3 gap-1 flex-1">
+              <NumInput label="X" value={pc.velocityX} onChange={(v) => upP({ velocityX: v })} step={0.1} />
+              <NumInput label="Y" value={pc.velocityY} onChange={(v) => upP({ velocityY: v })} step={0.1} />
+              <NumInput label="Z" value={pc.velocityZ} onChange={(v) => upP({ velocityZ: v })} step={0.1} />
+            </div>
+          </Row>
+          <SliderRow label="Random" value={pc.velocityRandom} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ velocityRandom: v })} />
+          <SliderRow label="Radial" value={pc.radialVelocity} min={-5} max={5} step={0.1}
+            onChange={(v) => upP({ radialVelocity: v })} />
+          <SliderRow label="Normal" value={pc.normalVelocity} min={-5} max={5} step={0.1}
+            onChange={(v) => upP({ normalVelocity: v })} />
+        </div>
+      </Section>
+
+      {/* ── ROTATION ──────────────────────────────────────── */}
+      <Section label="Rotation" icon={<RotateCcw size={11} />} defaultOpen={false}>
+        <div className="flex flex-col gap-2">
+          <Row label="Mode">
+            <select value={pc.rotationMode} onChange={(e) => upP({ rotationMode: e.target.value as ParticleConfig['rotationMode'] })} className={sel} style={selSt}>
+              {['none','initial','dynamic'].map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </Row>
+          {pc.rotationMode === 'dynamic' && (
+            <Row label="Angular °/s">
+              <div className="grid grid-cols-3 gap-1 flex-1">
+                <NumInput label="X" value={pc.angularVelocityX} onChange={(v) => upP({ angularVelocityX: v })} step={10} />
+                <NumInput label="Y" value={pc.angularVelocityY} onChange={(v) => upP({ angularVelocityY: v })} step={10} />
+                <NumInput label="Z" value={pc.angularVelocityZ} onChange={(v) => upP({ angularVelocityZ: v })} step={10} />
+              </div>
+            </Row>
+          )}
+          <SliderRow label="Rot Random" value={pc.rotationRandom} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ rotationRandom: v })} />
+        </div>
+      </Section>
+
+      {/* ── PHYSICS ───────────────────────────────────────── */}
+      <Section label="Physics" icon={<Flame size={11} />} defaultOpen={false}>
+        <div className="flex flex-col gap-2">
+          <SliderRow label="Gravity" value={pc.gravityFactor} min={-3} max={3} step={0.1}
+            onChange={(v) => upP({ gravityFactor: v })} />
+          <SliderRow label="Drag" value={pc.drag} min={0} max={1} step={0.01}
+            onChange={(v) => upP({ drag: v })} />
+          <SliderRow label="Bounce" value={pc.bounce} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ bounce: v })} />
+          <SliderRow label="Turbulence" value={pc.turbulence} min={0} max={5} step={0.1}
+            onChange={(v) => upP({ turbulence: v })} />
+          <SliderRow label="Turb Scale" value={pc.turbulenceScale} min={0.1} max={5} step={0.1}
+            onChange={(v) => upP({ turbulenceScale: v })} />
+        </div>
+      </Section>
+
+      {/* ── RENDER ────────────────────────────────────────── */}
+      <Section label="Render" icon={<Eye size={11} />} defaultOpen={true}>
+        <div className="flex flex-col gap-2">
+          <Row label="Mode">
+            <select value={pc.renderMode} onChange={(e) => upP({ renderMode: e.target.value as ParticleConfig['renderMode'] })} className={sel} style={selSt}>
+              {['mesh','billboard','point'].map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </Row>
+          {pc.renderMode === 'mesh' && (
+            <Row label="Shape">
+              <select value={pc.instanceGeometry} onChange={(e) => upP({ instanceGeometry: e.target.value as ParticleConfig['instanceGeometry'] })} className={sel} style={selSt}>
+                {['sphere','box','cone','tetrahedron'].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </Row>
+          )}
+          <SliderRow label="Opacity In" value={pc.opacityStart} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ opacityStart: v })} />
+          <SliderRow label="Opacity Out" value={pc.opacityEnd} min={0} max={1} step={0.05}
+            onChange={(v) => upP({ opacityEnd: v })} />
+          <SliderRow label="Glow" value={pc.glowIntensity} min={0} max={2} step={0.05}
+            onChange={(v) => upP({ glowIntensity: v })} />
+        </div>
+      </Section>
+
+      {/* ── VIEWPORT DISPLAY ──────────────────────────────── */}
+      <Section label="Viewport" defaultOpen={false}>
+        <div className="flex flex-col gap-2">
+          <SliderRow label="Display %" value={Math.round(pc.viewportDisplayFraction * 100)} min={10} max={100} step={5}
+            onChange={(v) => upP({ viewportDisplayFraction: v / 100 })} />
+          <Row label="Show Emitter">{chk(pc.showEmitter, (v) => upP({ showEmitter: v }))}</Row>
+        </div>
+      </Section>
+
+      {/* ── CHILDREN ──────────────────────────────────────── */}
+      <Section label="Children" defaultOpen={false}>
+        <div className="flex flex-col gap-2">
+          <Row label="Enable">{chk(pc.childEnabled, (v) => upP({ childEnabled: v }))}</Row>
+          {pc.childEnabled && (
+            <>
+              <SliderRow label="Count" value={pc.childCount} min={1} max={10} step={1}
+                onChange={(v) => upP({ childCount: Math.round(v) })} />
+              <SliderRow label="Spread" value={pc.childSpread} min={0} max={2} step={0.05}
+                onChange={(v) => upP({ childSpread: v })} />
+              <SliderRow label="Size ×" value={pc.childSizeScale} min={0.1} max={2} step={0.05}
+                onChange={(v) => upP({ childSizeScale: v })} />
+              <Row label="Preset">
+                <select value={pc.childPreset} onChange={(e) => upP({ childPreset: e.target.value as ParticleConfig['preset'] })} className={sel} style={selSt}>
+                  {['scatter','rain','snow','leaves','sparks','fire','smoke','magic','custom'].map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </Row>
+            </>
+          )}
+        </div>
+      </Section>
+
+      {/* ── FORCE FIELD ───────────────────────────────────── */}
+      <Section label="Force Field" defaultOpen={false}>
+        <div className="flex flex-col gap-2">
+          <Row label="Enable">{chk(pc.forceFieldEnabled, (v) => upP({ forceFieldEnabled: v }))}</Row>
+          {pc.forceFieldEnabled && (
+            <>
+              <Row label="Type">
+                <select value={pc.forceFieldType} onChange={(e) => upP({ forceFieldType: e.target.value as ParticleConfig['forceFieldType'] })} className={sel} style={selSt}>
+                  {['none','wind','vortex','turbulence','gravity'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </Row>
+              <SliderRow label="Strength" value={pc.forceFieldStrength} min={0} max={5} step={0.1}
+                onChange={(v) => upP({ forceFieldStrength: v })} />
+              {pc.forceFieldType === 'wind' && (
+                <Row label="Direction">
+                  <div className="grid grid-cols-3 gap-1 flex-1">
+                    <NumInput label="X" value={pc.forceFieldDirection[0]} onChange={(v) => upP({ forceFieldDirection: [v, pc.forceFieldDirection[1], pc.forceFieldDirection[2]] })} step={0.1} />
+                    <NumInput label="Y" value={pc.forceFieldDirection[1]} onChange={(v) => upP({ forceFieldDirection: [pc.forceFieldDirection[0], v, pc.forceFieldDirection[2]] })} step={0.1} />
+                    <NumInput label="Z" value={pc.forceFieldDirection[2]} onChange={(v) => upP({ forceFieldDirection: [pc.forceFieldDirection[0], pc.forceFieldDirection[1], v] })} step={0.1} />
+                  </div>
+                </Row>
+              )}
+            </>
+          )}
+        </div>
+      </Section>
+    </>
+  )
+}
+
 export function PropertiesPanel() {
   const selectedIds = useScene((s) => s.selectedIds)
   const objects = useScene((s) => s.objects)
@@ -475,63 +735,9 @@ export function PropertiesPanel() {
         </Section>
       )}
 
-      {/* Particle Emitter */}
+      {/* Particle Emitter — 9 collapsible sub-sections */}
       {obj.type === 'particle' && (
-        <Section label="Particle Emitter" icon={<Sparkles size={11} />}>
-          <div className="flex flex-col gap-2">
-            <Row label="Preset">
-              <select
-                value={obj.particle?.preset ?? 'scatter'}
-                onChange={(e) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), preset: e.target.value as ParticleConfig['preset'] } })}
-                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
-                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
-              >
-                {['scatter', 'rain', 'snow', 'leaves', 'sparks', 'custom'].map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </Row>
-            <Row label="Shape">
-              <select
-                value={obj.particle?.instanceGeometry ?? 'sphere'}
-                onChange={(e) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), instanceGeometry: e.target.value as ParticleConfig['instanceGeometry'] } })}
-                className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
-                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
-              >
-                {['sphere', 'box', 'cone', 'tetrahedron'].map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </Row>
-            <SliderRow label="Count" value={obj.particle?.count ?? 200} min={10} max={2000} step={10}
-              onChange={(v) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), count: Math.round(v) } })} />
-            <SliderRow label="Scale" value={obj.particle?.instanceScale ?? 0.08} min={0.01} max={1} step={0.01}
-              onChange={(v) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), instanceScale: v } })} />
-            <SliderRow label="Random Scale" value={obj.particle?.randomScale ?? 0.5} min={0} max={1} step={0.05}
-              onChange={(v) => updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), randomScale: v } })} />
-            <Row label="Spread">
-              <div className="grid grid-cols-3 gap-1 flex-1">
-                {(['X', 'Y', 'Z'] as const).map((axis, i) => (
-                  <div key={axis} className="flex items-center gap-1">
-                    <span className="text-[10px] font-mono" style={{ color: i === 0 ? '#ef4444' : i === 1 ? '#22c55e' : '#3b82f6' }}>{axis}</span>
-                    <input
-                      type="number"
-                      value={(obj.particle?.spread ?? [6, 6, 6])[i].toFixed(1)}
-                      step={0.5}
-                      onChange={(e) => {
-                        const spread = [...(obj.particle?.spread ?? [6, 6, 6])] as [number, number, number]
-                        spread[i] = parseFloat(e.target.value) || 1
-                        updateObject(id, { particle: { ...(obj.particle ?? DEFAULT_PARTICLE_CFG), spread } })
-                      }}
-                      className="flex-1 h-6 px-1 rounded text-[10px] font-mono text-center outline-none border"
-                      style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </Row>
-          </div>
-        </Section>
+        <ParticleSection id={id} pc={obj.particle ?? DEFAULT_PARTICLE_CFG} updateObject={updateObject} />
       )}
 
       {/* Terrain */}

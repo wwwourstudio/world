@@ -173,7 +173,7 @@ export interface AddSceneCmd {
 
 export interface AddParticleCmd {
   action: 'add_particle'
-  preset?: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'custom'
+  preset?: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'fire' | 'smoke' | 'magic' | 'custom'
   count?: number
   spread?: [number, number, number]
   instanceGeometry?: 'sphere' | 'box' | 'cone' | 'tetrahedron'
@@ -181,6 +181,19 @@ export interface AddParticleCmd {
   position?: [number, number, number]
   color?: string
   name?: string
+  // Advanced physics & appearance
+  lifetime?: number
+  emitterShape?: 'point' | 'sphere' | 'box' | 'cone' | 'hemisphere' | 'ring'
+  gravityFactor?: number
+  drag?: number
+  turbulence?: number
+  velocityX?: number
+  velocityY?: number
+  velocityZ?: number
+  renderMode?: 'mesh' | 'billboard' | 'point'
+  opacityStart?: number
+  opacityEnd?: number
+  glowIntensity?: number
 }
 
 export interface ScatterObjectsCmd {
@@ -734,6 +747,18 @@ export function executeCommand(cmd: SceneCommand): void {
           instanceScale: c.instanceScale ?? 0.08,
           randomScale: 0.5,
           preset: c.preset ?? 'scatter',
+          ...(c.lifetime    !== undefined && { lifetime: c.lifetime }),
+          ...(c.emitterShape !== undefined && { emitterShape: c.emitterShape }),
+          ...(c.gravityFactor !== undefined && { gravityFactor: c.gravityFactor }),
+          ...(c.drag        !== undefined && { drag: c.drag }),
+          ...(c.turbulence  !== undefined && { turbulence: c.turbulence }),
+          ...(c.velocityX   !== undefined && { velocityX: c.velocityX }),
+          ...(c.velocityY   !== undefined && { velocityY: c.velocityY }),
+          ...(c.velocityZ   !== undefined && { velocityZ: c.velocityZ }),
+          ...(c.renderMode  !== undefined && { renderMode: c.renderMode }),
+          ...(c.opacityStart !== undefined && { opacityStart: c.opacityStart }),
+          ...(c.opacityEnd  !== undefined && { opacityEnd: c.opacityEnd }),
+          ...(c.glowIntensity !== undefined && { glowIntensity: c.glowIntensity }),
         },
         transform: { position: c.position ?? [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
       })

@@ -856,7 +856,7 @@ function ParticlePointCloud({ obj }: { obj: SceneObject }) {
       onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
     >
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={cfg.count} array={positions} itemSize={3} />
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} count={cfg.count} array={positions} itemSize={3} />
       </bufferGeometry>
       <pointsMaterial
         size={cfg.instanceScale * 2} color={matColor}
