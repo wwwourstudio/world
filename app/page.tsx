@@ -223,7 +223,7 @@ export default function WorldBuilderPage() {
   }, [selectedIds, objects, snapEnabled, showStats, transformSpace, isPlaying, cameraMode, addKeyframe, playhead, undo, redo, setActiveTool, setSnapEnabled, setShowStats, setTransformSpace, setPlaying, removeObject, duplicateObject, deselectAll, selectAll, togglePanel])
 
   return (
-    <div className="flex flex-col w-screen h-screen overflow-hidden" style={{ background: '#0B0C0F', color: '#E8E9F0' }}>
+    <div className="flex flex-col w-screen h-screen overflow-hidden" style={{ background: '#0B0C0F', color: '#E8E9F0' }} suppressHydrationWarning>
       {!isPreviewMode && <MainToolbar />}
 
       <div className="flex flex-1 overflow-hidden min-h-0">

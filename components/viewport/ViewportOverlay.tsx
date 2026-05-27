@@ -36,13 +36,19 @@ export function ViewportOverlay() {
   const activeTool = useScene((s) => s.activeTool)
   const setActiveTool = useScene((s) => s.setActiveTool)
   const transformSpace = useScene((s) => s.transformSpace)
+  const setTransformSpace = useScene((s) => s.setTransformSpace)
   const snapEnabled = useScene((s) => s.snapEnabled)
+  const setSnapEnabled = useScene((s) => s.setSnapEnabled)
   const viewMode = useScene((s) => s.viewMode)
   const setViewMode = useScene((s) => s.setViewMode)
   const cameraFov = useScene((s) => s.cameraFov)
   const setCameraFov = useScene((s) => s.setCameraFov)
   const orthoZoom = useScene((s) => s.orthoZoom)
   const setOrthoZoom = useScene((s) => s.setOrthoZoom)
+  const cameraNear = useScene((s) => s.cameraNear)
+  const setCameraNear = useScene((s) => s.setCameraNear)
+  const cameraFar = useScene((s) => s.cameraFar)
+  const setCameraFar = useScene((s) => s.setCameraFar)
   const isRecording = useScene((s) => s.isRecording)
   const contextMenu = useScene((s) => s.contextMenu)
   const setContextMenu = useScene((s) => s.setContextMenu)
@@ -321,30 +327,9 @@ export function ViewportOverlay() {
         </div>
       )}
 
-      {/* Tool / space indicator */}
-      <div className="absolute bottom-16 left-14 z-20 pointer-events-none flex flex-col gap-1">
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 backdrop-blur-md border border-zinc-800">
-          <span className="text-[10px] text-zinc-500 uppercase tracking-widest">{activeTool}</span>
-          {activeTool !== 'select' && (
-            <>
-              <span className="text-zinc-700">·</span>
-              <span className={`text-[10px] uppercase tracking-widest ${transformSpace === 'local' ? 'text-blue-400' : 'text-zinc-400'}`}>
-                {transformSpace}
-              </span>
-            </>
-          )}
-          {snapEnabled && (
-            <>
-              <span className="text-zinc-700">·</span>
-              <span className="text-[10px] text-amber-400 uppercase tracking-widest">Snap</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Selected object info */}
+      {/* Selected object info (bottom-right, above bottom bar) */}
       {selectedObj && (
-        <div className="absolute bottom-16 right-3 z-20 pointer-events-none">
+        <div className="absolute z-20 pointer-events-none" style={{ bottom: 36, right: 8 }}>
           <div className="px-2.5 py-2 rounded-md bg-black/70 backdrop-blur-md border border-zinc-800 text-[10px] font-mono">
             <div className="text-zinc-400 mb-1 truncate max-w-[160px]">{selectedObj.name}</div>
             {(['position', 'rotation', 'scale'] as const).map((prop) => (
@@ -361,26 +346,101 @@ export function ViewportOverlay() {
         </div>
       )}
 
-      {/* Axis labels */}
-      <div className="absolute bottom-20 right-3 z-20 pointer-events-none flex flex-col items-end gap-0.5 mr-[168px]">
-        <span className="text-[9px] font-mono text-red-500 opacity-60">X</span>
-        <span className="text-[9px] font-mono text-green-500 opacity-60">Y</span>
-        <span className="text-[9px] font-mono text-blue-500 opacity-60">Z</span>
-      </div>
-
-      {/* Keyboard hints (only when nothing selected) */}
-      {selectedIds.length === 0 && !isPlaying && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-          <div className="flex items-center gap-3 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-zinc-800/50">
-            {[
-              ['Q', 'Select'], ['W', 'Move'], ['E', 'Rotate'], ['R', 'Scale'], ['T', 'Sculpt'],
-              ['G', 'Snap'], ['F3', 'Stats'],
-            ].map(([k, l]) => (
-              <span key={k} className="flex items-center gap-1 text-[10px]">
-                <kbd className="px-1 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-400 font-mono text-[9px]">{k}</kbd>
-                <span className="text-zinc-600">{l}</span>
+      {/* ── Unified Bottom Status Bar ─────────────────────────────────────── */}
+      {!isPreviewMode && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-20 flex items-center px-3 gap-3"
+          style={{ height: 30, background: 'rgba(8,9,12,0.82)', backdropFilter: 'blur(6px)', borderTop: '1px solid #1a1c24' }}
+        >
+          {appMode === 'website' ? (
+            /* Website mode: show scroll state */
+            <>
+              <span className="text-[9px] uppercase tracking-widest font-semibold" style={{ color: websiteScrollEnabled ? '#5B6CFF' : '#4a4e60' }}>
+                {websiteScrollEnabled ? '● Scroll' : '○ Scroll off'}
               </span>
-            ))}
+              <div className="flex-1 flex items-center gap-2 max-w-[160px]">
+                <input
+                  type="range" min={0} max={1} step={0.001}
+                  value={scrollProgress}
+                  onChange={(e) => setScrollProgress(parseFloat(e.target.value))}
+                  className="flex-1 h-0.5"
+                  style={{ accentColor: '#5B6CFF' }}
+                />
+                <span className="text-[9px] font-mono w-7 text-right" style={{ color: '#7A7E92' }}>
+                  {Math.round(scrollProgress * 100)}%
+                </span>
+              </div>
+            </>
+          ) : (
+            /* World mode: tool strip */
+            <>
+              {TOOLS.slice(0, 5).map(({ id, label, key }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveTool(id)}
+                  className="flex items-center gap-1 text-[9px] uppercase tracking-widest transition-colors"
+                  style={{ color: activeTool === id ? '#5B6CFF' : '#4a4e60', fontWeight: activeTool === id ? 700 : 400 }}
+                >
+                  <kbd className="px-1 h-4 flex items-center rounded font-mono text-[8px]"
+                    style={{ background: activeTool === id ? '#5B6CFF22' : 'transparent', border: `1px solid ${activeTool === id ? '#5B6CFF55' : '#2a2d40'}`, color: 'inherit' }}>
+                    {key}
+                  </kbd>
+                  {label}
+                </button>
+              ))}
+            </>
+          )}
+
+          <div className="flex-1" />
+
+          {/* Right side: space + snap toggles + clip + FPS */}
+          {appMode !== 'website' && (
+            <>
+              <button
+                onClick={() => setTransformSpace(transformSpace === 'world' ? 'local' : 'world')}
+                className="text-[9px] uppercase tracking-widest transition-colors"
+                style={{ color: transformSpace === 'local' ? '#60a5fa' : '#4a4e60' }}
+              >
+                {transformSpace}
+              </button>
+              <button
+                onClick={() => setSnapEnabled(!snapEnabled)}
+                className="text-[9px] uppercase tracking-widest transition-colors"
+                style={{ color: snapEnabled ? '#f59e0b' : '#4a4e60' }}
+              >
+                Snap{snapEnabled ? ' ●' : ''}
+              </button>
+            </>
+          )}
+
+          {/* Camera clip controls */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] uppercase tracking-widest" style={{ color: '#3a3e50' }}>Near</span>
+            <input
+              type="number" value={cameraNear} step={0.001} min={0.001} max={100}
+              onChange={(e) => setCameraNear(parseFloat(e.target.value) || 0.1)}
+              className="h-4 rounded px-1 text-[9px] font-mono outline-none border w-12 text-center"
+              style={{ background: '#0d0f14', color: '#7A7E92', borderColor: '#1E2028' }}
+            />
+            <span className="text-[9px] uppercase tracking-widest" style={{ color: '#3a3e50' }}>Far</span>
+            <input
+              type="number" value={cameraFar} step={10} min={10} max={100000}
+              onChange={(e) => setCameraFar(parseFloat(e.target.value) || 1000)}
+              className="h-4 rounded px-1 text-[9px] font-mono outline-none border w-16 text-center"
+              style={{ background: '#0d0f14', color: '#7A7E92', borderColor: '#1E2028' }}
+            />
+          </div>
+
+          {showStats && (
+            <span className="text-[9px] font-mono" style={{ color: fps < 30 ? '#f87171' : fps < 50 ? '#fbbf24' : '#4ade80' }}>
+              {fps} fps
+            </span>
+          )}
+
+          <div className="flex items-center gap-0.5">
+            <span className="text-[9px] font-mono text-red-500 opacity-50">X</span>
+            <span className="text-[9px] font-mono text-green-500 opacity-50">Y</span>
+            <span className="text-[9px] font-mono text-blue-500 opacity-50">Z</span>
           </div>
         </div>
       )}

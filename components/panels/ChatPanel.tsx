@@ -121,6 +121,10 @@ export function ChatPanel() {
 
   const objects = useScene((s) => s.objects)
   const environment = useScene((s) => s.environment)
+  const cameraFov = useScene((s) => s.cameraFov)
+  const cameraNear = useScene((s) => s.cameraNear)
+  const cameraFar = useScene((s) => s.cameraFar)
+  const viewMode = useScene((s) => s.viewMode)
   const undo = useScene((s) => s.undo)
   const past = useScene((s) => s.past)
 
@@ -211,7 +215,11 @@ export function ChatPanel() {
       return
     }
 
-    const sceneContext = buildSceneContext(objects as Record<string, unknown>, environment as unknown as Record<string, unknown>)
+    const sceneContext = buildSceneContext(
+      objects as Record<string, unknown>,
+      environment as unknown as Record<string, unknown>,
+      { fov: cameraFov, near: cameraNear, far: cameraFar, viewMode }
+    )
     const enhancedPrompt = enhancePrompt(prompt, sceneContext)
     const systemPrompt = buildSystemPrompt(sceneContext)
 
