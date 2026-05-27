@@ -5,7 +5,7 @@ import {
   Trash2, Camera, ChevronDown, ChevronRight, Eye, RefreshCw,
   Type, AlignLeft, Quote, Tag, Image, Video,
   LayoutPanelLeft, BarChart2, Minus, Square, MousePointer,
-  Navigation, Timer, Sparkles, Download,
+  Navigation, Timer, Sparkles, Download, Crosshair,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { captureCamera } from '@/lib/captureCamera'
@@ -83,6 +83,8 @@ export function WebsitePanel() {
   const setWebsiteScrollEnabled = useScene((s) => s.setWebsiteScrollEnabled)
   const setPreviewMode = useScene((s) => s.setPreviewMode)
   const showNotification = useScene((s) => s.showNotification)
+  const selectedIds = useScene((s) => s.selectedIds)
+  const objects = useScene((s) => s.objects)
 
   function handleAddElement(tag: HtmlTag, content: string) {
     const el = ELEMENTS.find((e) => e.tag === tag)!
@@ -105,6 +107,21 @@ export function WebsitePanel() {
   function handleClearPath() {
     for (const kp of cameraPath) removeCameraKeypoint(kp.id)
     showNotification('Path cleared')
+  }
+
+  function handleAimAtSelected() {
+    if (selectedIds.length === 0) { showNotification('Select an object first', 'error'); return }
+    const obj = objects[selectedIds[0]]
+    if (!obj) return
+    const pos = obj.transform.position as [number, number, number]
+    // Update the most recently captured keypoint's target, or all keypoints if none selected
+    if (cameraPath.length > 0) {
+      const last = cameraPath[cameraPath.length - 1]
+      updateCameraKeypoint(last.id, { target: pos })
+      showNotification(`Aimed at ${obj.name}`)
+    } else {
+      showNotification('No keypoints yet. Capture a position first.', 'error')
+    }
   }
 
   return (
@@ -182,6 +199,20 @@ export function WebsitePanel() {
           )}
         </div>
 
+        {/* Aim at selected */}
+        {selectedIds.length > 0 && cameraPath.length > 0 && (
+          <button
+            onClick={handleAimAtSelected}
+            className="w-full flex items-center justify-center gap-1.5 h-7 rounded-md text-[11px] font-medium transition-colors"
+            style={{ background: '#2a2060', color: '#8866ff', border: '1px solid #5B6CFF33' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#3a3070' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2060' }}
+          >
+            <Crosshair size={12} strokeWidth={2} />
+            Aim Last Keypoint at Selected
+          </button>
+        )}
+
         {/* Orbit notice */}
         {websiteScrollEnabled && (
           <div className="text-[9px] px-2 py-1 rounded" style={{ background: '#5B6CFF11', color: '#5B6CFF', border: '1px solid #5B6CFF22' }}>
@@ -229,6 +260,22 @@ export function WebsitePanel() {
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                 >
                   ↗
+                </button>
+                <button
+                  onClick={() => {
+                    if (selectedIds.length === 0) { showNotification('Select an object first', 'error'); return }
+                    const obj = objects[selectedIds[0]]
+                    if (!obj) return
+                    updateCameraKeypoint(kp.id, { target: obj.transform.position as [number, number, number] })
+                    showNotification(`Aimed at ${obj.name}`)
+                  }}
+                  title="Aim at selected object"
+                  className="w-5 h-5 flex items-center justify-center rounded transition-colors text-[9px] shrink-0"
+                  style={{ color: '#8866ff', border: '1px solid #5B6CFF22' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#5B6CFF22' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  <Crosshair size={9} strokeWidth={2} />
                 </button>
                 <button
                   onClick={() => removeCameraKeypoint(kp.id)}

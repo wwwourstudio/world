@@ -705,15 +705,29 @@ export function PropertiesPanel() {
             <SliderRow label="Depth" value={obj.geometry.textDepth ?? (obj.geometry.fontSize ?? 0.5) * 0.25} min={0.01} max={1} step={0.01}
               onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, textDepth: v } })} />
             <Row label="Font">
-              <div className="flex gap-1">
-                {(['helvetiker', 'optimer', 'gentilis'] as const).map((f) => (
-                  <button key={f} onClick={() => updateObject(id, { geometry: { ...obj.geometry, font: f } })}
-                    className="px-2 h-5 rounded text-[9px] font-medium capitalize transition-all"
-                    style={{ background: (obj.geometry.font ?? 'helvetiker') === f ? '#5B6CFF' : '#1E2028', color: (obj.geometry.font ?? 'helvetiker') === f ? '#fff' : '#7A7E92', border: '1px solid #2a2d3a' }}>
-                    {f}
-                  </button>
-                ))}
-              </div>
+              <select
+                value={obj.geometry.font ?? 'helvetiker'}
+                onChange={(e) => updateObject(id, { geometry: { ...obj.geometry, font: e.target.value as never } })}
+                className="flex-1 h-6 px-1.5 rounded text-[10px] outline-none border"
+                style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+              >
+                <option value="helvetiker">Helvetiker</option>
+                <option value="helvetiker_bold">Helvetiker Bold</option>
+                <option value="optimer">Optimer Bold</option>
+                <option value="optimer_regular">Optimer Regular</option>
+                <option value="gentilis">Gentilis Bold</option>
+                <option value="gentilis_regular">Gentilis Regular</option>
+                <option value="droid_sans">Droid Sans</option>
+                <option value="droid_serif">Droid Serif</option>
+                <option value="droid_serif_bold">Droid Serif Bold</option>
+              </select>
+            </Row>
+            <SliderRow label="Curve Quality" value={obj.geometry.curveSegments ?? 6} min={2} max={12} step={1}
+              onChange={(v) => updateObject(id, { geometry: { ...obj.geometry, curveSegments: Math.round(v) } })} />
+            <Row label="Center">
+              <input type="checkbox" checked={obj.geometry.textCenter ?? false}
+                onChange={(e) => updateObject(id, { geometry: { ...obj.geometry, textCenter: e.target.checked } })} />
+              <span className="text-[10px] ml-1.5" style={{ color: '#7A7E92' }}>Center text at origin</span>
             </Row>
             <Row label="Bevel">
               <input type="checkbox" checked={obj.geometry.bevelEnabled !== false}

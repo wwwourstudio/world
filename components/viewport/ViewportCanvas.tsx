@@ -11,6 +11,7 @@ import {
   Html,
   Stars,
   Text3D,
+  Center,
   Outlines,
   Sky,
   OrthographicCamera as DreiOrthoCamera,
@@ -669,18 +670,32 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
 
 const FONTS: Record<string, string> = {
   helvetiker: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_regular.typeface.json',
+  helvetiker_bold: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_bold.typeface.json',
   optimer: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/optimer_bold.typeface.json',
+  optimer_regular: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/optimer_regular.typeface.json',
   gentilis: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/gentilis_bold.typeface.json',
+  gentilis_regular: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/gentilis_regular.typeface.json',
+  droid_sans: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/droid/droid_sans_regular.typeface.json',
+  droid_serif: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/droid/droid_serif_regular.typeface.json',
+  droid_serif_bold: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/droid/droid_serif_bold.typeface.json',
 }
 
 function TextObject({ obj }: { obj: SceneObject }) {
   const ref = useRef<THREE.Mesh>(null)
+  const groupRef = useRef<THREE.Group>(null)
   const { selectObject } = useScene()
   const mat = obj.material
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
-  useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
-  useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
+  const textCenteredForHooks = obj.geometry.textCenter ?? false
+  useAnimation(
+    (textCenteredForHooks ? groupRef : ref) as React.RefObject<THREE.Object3D | null>,
+    obj.animation, obj.id
+  )
+  useBehaviors(
+    (textCenteredForHooks ? groupRef : ref) as React.RefObject<THREE.Object3D | null>,
+    obj.behaviors, obj.id
+  )
 
   const fontUrl = FONTS[obj.geometry.font ?? 'helvetiker'] ?? FONTS.helvetiker
   const fontSize = obj.geometry.fontSize ?? 0.5
@@ -691,41 +706,52 @@ function TextObject({ obj }: { obj: SceneObject }) {
   const bevelThickness = obj.geometry.bevelThickness ?? 0.015
   const bevelSize = obj.geometry.bevelSize ?? 0.008
 
+  const curveSegments = obj.geometry.curveSegments ?? 6
+  const textCentered = textCenteredForHooks
+
+  const textMesh = (
+    <Text3D
+      ref={textCentered ? undefined : ref}
+      font={fontUrl}
+      position={textCentered ? undefined : obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      size={fontSize}
+      height={textDepth}
+      curveSegments={curveSegments}
+      letterSpacing={letterSpacing}
+      lineHeight={lineHeight}
+      bevelEnabled={bevelEnabled}
+      bevelThickness={bevelThickness}
+      bevelSize={bevelSize}
+      bevelSegments={3}
+      castShadow={obj.castShadow}
+      visible={obj.visible}
+      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+      onContextMenu={(e) => {
+        e.stopPropagation()
+        selectObject(obj.id, false)
+        useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+      }}
+    >
+      {obj.geometry.text ?? 'Text'}
+      <meshStandardMaterial
+        color={isSelected && !isPlaying ? '#7B8CFF' : mat.color}
+        roughness={mat.roughness}
+        metalness={mat.metalness}
+        emissive={isSelected && !isPlaying ? new THREE.Color('#5B6CFF') : new THREE.Color(mat.emissive)}
+        emissiveIntensity={isSelected && !isPlaying ? 0.3 : mat.emissiveIntensity}
+      />
+    </Text3D>
+  )
+
   return (
     <Suspense fallback={null}>
-      <Text3D
-        ref={ref}
-        font={fontUrl}
-        position={obj.transform.position}
-        rotation={obj.transform.rotation}
-        scale={obj.transform.scale}
-        size={fontSize}
-        height={textDepth}
-        curveSegments={6}
-        letterSpacing={letterSpacing}
-        lineHeight={lineHeight}
-        bevelEnabled={bevelEnabled}
-        bevelThickness={bevelThickness}
-        bevelSize={bevelSize}
-        bevelSegments={3}
-        castShadow={obj.castShadow}
-        visible={obj.visible}
-        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
-        onContextMenu={(e) => {
-          e.stopPropagation()
-          selectObject(obj.id, false)
-          useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
-        }}
-      >
-        {obj.geometry.text ?? 'Text'}
-        <meshStandardMaterial
-          color={isSelected && !isPlaying ? '#7B8CFF' : mat.color}
-          roughness={mat.roughness}
-          metalness={mat.metalness}
-          emissive={isSelected && !isPlaying ? new THREE.Color('#5B6CFF') : new THREE.Color(mat.emissive)}
-          emissiveIntensity={isSelected && !isPlaying ? 0.3 : mat.emissiveIntensity}
-        />
-      </Text3D>
+      {textCentered ? (
+        <Center ref={groupRef} position={obj.transform.position}>
+          {textMesh}
+        </Center>
+      ) : textMesh}
     </Suspense>
   )
 }

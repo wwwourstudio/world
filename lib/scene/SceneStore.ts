@@ -121,11 +121,13 @@ export interface GeometryConfig {
   fontSize?: number
   textDepth?: number
   bevelEnabled?: boolean
-  font?: 'helvetiker' | 'optimer' | 'gentilis'
+  font?: 'helvetiker' | 'helvetiker_bold' | 'optimer' | 'optimer_regular' | 'gentilis' | 'gentilis_regular' | 'droid_sans' | 'droid_serif' | 'droid_serif_bold'
   letterSpacing?: number
   lineHeight?: number
   bevelThickness?: number
   bevelSize?: number
+  textCenter?: boolean       // center text geometry around origin
+  curveSegments?: number     // font smoothness (3-12, default 6)
   customVertices?: number[]   // flat [x,y,z,...] overrides procedural geometry
 }
 
