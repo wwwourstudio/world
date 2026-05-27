@@ -5,10 +5,34 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 type HistoryMessage = { role: 'user' | 'assistant'; content: string }
 
 export async function POST(request: Request) {
-  const { prompt, systemPrompt, history = [] } = await request.json() as {
+  // B2: Guard against malformed or missing JSON body
+  let body: { prompt?: unknown; systemPrompt?: unknown; history?: unknown }
+  try {
+    body = await request.json()
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  const { prompt, systemPrompt, history = [] } = body as {
     prompt: string
     systemPrompt: string
     history?: HistoryMessage[]
+  }
+
+  if (!prompt || typeof prompt !== 'string') {
+    return new Response(JSON.stringify({ error: 'Missing or invalid "prompt" field' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  if (!systemPrompt || typeof systemPrompt !== 'string') {
+    return new Response(JSON.stringify({ error: 'Missing or invalid "systemPrompt" field' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
@@ -48,13 +72,15 @@ export async function POST(request: Request) {
   }
 
   // Keep last 10 turns (20 messages) to bound context size
-  const trimmedHistory = history.slice(-20)
+  const trimmedHistory = (Array.isArray(history) ? (history as HistoryMessage[]) : []).slice(-20)
 
   const stream = makeStream(async (send) => {
+    // P1: System prompt caching — the system prompt is large and repeated every request.
+    // Passing it as an array with cache_control reduces cost ~90% and latency ~40% on cache hits.
     const claudeStream = client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      system: systemPrompt,
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
       messages: [
         ...trimmedHistory.map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: prompt },

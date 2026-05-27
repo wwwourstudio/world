@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { X, Download, Code, FileJson, Monitor, Camera, Frame, Video, Share2, Package, Globe } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { generateEmbedCode, generateThreeJSCode, exportSceneGLB, generateWebsiteHTML } from '@/lib/three/ExportSystem'
@@ -23,6 +23,12 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   const [glbExporting, setGlbExporting] = useState(false)
   const [iframeWidth, setIframeWidth] = useState(800)
   const [iframeHeight, setIframeHeight] = useState(600)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
 
   const scene = { objects, environment }
   const embedHtml = useMemo(() => generateEmbedCode(scene), [objects, environment])
