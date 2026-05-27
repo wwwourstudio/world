@@ -31,9 +31,8 @@ import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig, ScrollAnimConfig } from '@/lib/scene/SceneStore'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { captureCamera } from '@/lib/captureCamera'
-import { jumpToCamera } from '@/lib/cameraJump'
+import { jumpToCamera, cameraJumpFn } from '@/lib/cameraJump'
 import { cameraFrameFn } from '@/lib/cameraFrame'
-import { cameraJumpFn } from '@/lib/cameraJump'
 import { fbmNoise } from '@/lib/noise'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 
@@ -1279,37 +1278,6 @@ function LightObject({ obj }: { obj: SceneObject }) {
       )}
       <LightGizmo obj={obj} />
     </>
-  )
-}
-
-// ─── Countdown Timer ─────────────────────────────────────────────────────────
-
-function HtmlCountdown({ target }: { target: string }) {
-  const [parts, setParts] = React.useState({ d: 0, h: 0, m: 0, s: 0 })
-  React.useEffect(() => {
-    const tick = () => {
-      const diff = Math.max(0, new Date(target).getTime() - Date.now())
-      const s = Math.floor(diff / 1000) % 60
-      const m = Math.floor(diff / 60000) % 60
-      const h = Math.floor(diff / 3600000) % 24
-      const d = Math.floor(diff / 86400000)
-      setParts({ d, h, m, s })
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [target])
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const unit = { fontSize: '11px', opacity: 0.5, letterSpacing: '0.05em', textTransform: 'uppercase' as const, display: 'block', marginTop: 4 }
-  return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
-      {[['d', parts.d], ['h', parts.h], ['m', parts.m], ['s', parts.s]].map(([label, val]) => (
-        <div key={label as string} style={{ textAlign: 'center' }}>
-          <span style={{ fontSize: 48, fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{pad(val as number)}</span>
-          <span style={unit}>{label}</span>
-        </div>
-      ))}
-    </div>
   )
 }
 
