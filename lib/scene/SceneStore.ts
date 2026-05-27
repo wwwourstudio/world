@@ -121,11 +121,13 @@ export interface GeometryConfig {
   fontSize?: number
   textDepth?: number
   bevelEnabled?: boolean
-  font?: 'helvetiker' | 'optimer' | 'gentilis'
+  font?: 'helvetiker' | 'helvetiker_bold' | 'optimer' | 'optimer_regular' | 'gentilis' | 'gentilis_regular' | 'droid_sans' | 'droid_serif' | 'droid_serif_bold'
   letterSpacing?: number
   lineHeight?: number
   bevelThickness?: number
   bevelSize?: number
+  textCenter?: boolean       // center text geometry around origin
+  curveSegments?: number     // font smoothness (3-12, default 6)
   customVertices?: number[]   // flat [x,y,z,...] overrides procedural geometry
 }
 
@@ -231,12 +233,74 @@ export interface SceneSnapshot {
 }
 
 export interface ParticleConfig {
+  // ── Core ─────────────────────────────────────────
   count: number
   spread: [number, number, number]
-  instanceGeometry: 'sphere' | 'box' | 'cone' | 'tetrahedron'
+  instanceGeometry: 'sphere' | 'box' | 'cone' | 'tetrahedron' | 'point'
   instanceScale: number
   randomScale: number
   preset: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'fire' | 'smoke' | 'magic' | 'custom'
+
+  // ── Emission ─────────────────────────────────────
+  emitterShape?: 'point' | 'sphere' | 'box' | 'cone' | 'hemisphere' | 'ring'
+  emitterRadius?: number
+  emitterConeAngle?: number       // degrees, for cone emitter
+  lifetime?: number               // seconds; 0 = infinite
+  lifetimeRandom?: number         // 0–1 randomness on lifetime
+  emitOnStart?: boolean
+  emissionRate?: number           // particles/sec (when emitOnStart=false)
+
+  // ── Size ─────────────────────────────────────────
+  sizeStart?: number
+  sizeEnd?: number
+  sizeRandom?: number
+  sizeOverLifetime?: 'constant' | 'linear' | 'grow' | 'shrink' | 'pulse'
+
+  // ── Velocity ─────────────────────────────────────
+  velocityX?: number
+  velocityY?: number
+  velocityZ?: number
+  velocityRandom?: number
+  radialVelocity?: number
+  normalVelocity?: number
+
+  // ── Rotation ─────────────────────────────────────
+  rotationMode?: 'none' | 'initial' | 'dynamic'
+  angularVelocityX?: number       // deg/sec
+  angularVelocityY?: number
+  angularVelocityZ?: number
+  rotationRandom?: number
+
+  // ── Physics ──────────────────────────────────────
+  gravityFactor?: number
+  drag?: number
+  bounce?: number
+  turbulence?: number
+  turbulenceScale?: number
+
+  // ── Render ───────────────────────────────────────
+  renderMode?: 'mesh' | 'billboard' | 'trail' | 'point'
+  trailLength?: number
+  opacityStart?: number
+  opacityEnd?: number
+  glowIntensity?: number
+
+  // ── Viewport Display ─────────────────────────────
+  viewportDisplayFraction?: number
+  showEmitter?: boolean
+
+  // ── Children ─────────────────────────────────────
+  childEnabled?: boolean
+  childCount?: number
+  childSpread?: number
+  childSizeScale?: number
+  childPreset?: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'fire' | 'smoke' | 'magic' | 'custom'
+
+  // ── Force Field ──────────────────────────────────
+  forceFieldEnabled?: boolean
+  forceFieldType?: 'wind' | 'vortex' | 'turbulence' | 'gravity' | 'none'
+  forceFieldStrength?: number
+  forceFieldDirection?: [number, number, number]
 }
 
 export interface SceneObject {

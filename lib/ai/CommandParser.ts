@@ -1,4 +1,4 @@
-import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, AnimationConfig, PhysicsConfig, Transform, BehaviorConfig } from '@/lib/scene/SceneStore'
+import type { SceneObject, MaterialConfig, GeometryConfig, LightConfig, AnimationConfig, PhysicsConfig, Transform, BehaviorConfig, HtmlObjectConfig } from '@/lib/scene/SceneStore'
 import { MATERIAL_PRESETS } from '@/lib/scene/SceneStore'
 import { useScene } from '@/lib/scene/SceneStore'
 import { getTemplate } from '@/lib/ai/WorldTemplates'
@@ -173,7 +173,7 @@ export interface AddSceneCmd {
 
 export interface AddParticleCmd {
   action: 'add_particle'
-  preset?: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'custom'
+  preset?: 'scatter' | 'rain' | 'snow' | 'leaves' | 'sparks' | 'fire' | 'smoke' | 'magic' | 'custom'
   count?: number
   spread?: [number, number, number]
   instanceGeometry?: 'sphere' | 'box' | 'cone' | 'tetrahedron'
@@ -181,6 +181,19 @@ export interface AddParticleCmd {
   position?: [number, number, number]
   color?: string
   name?: string
+  // Advanced physics & appearance
+  lifetime?: number
+  emitterShape?: 'point' | 'sphere' | 'box' | 'cone' | 'hemisphere' | 'ring'
+  gravityFactor?: number
+  drag?: number
+  turbulence?: number
+  velocityX?: number
+  velocityY?: number
+  velocityZ?: number
+  renderMode?: 'mesh' | 'billboard' | 'point'
+  opacityStart?: number
+  opacityEnd?: number
+  glowIntensity?: number
 }
 
 export interface ScatterObjectsCmd {
@@ -218,12 +231,68 @@ export interface UpdateObjectCmd {
   visible?: boolean
 }
 
+export interface AddHtmlCmd {
+  action: 'add_html'
+  htmlType?: 'heading' | 'paragraph' | 'button' | 'badge' | 'card' | 'quote' | 'stat' | 'divider' | 'spacer' | 'icontext' | 'form' | 'countdown'
+  content?: string
+  position?: [number, number, number]
+  name?: string
+  color?: string
+  fontSize?: number
+}
+
+export interface AddTerrainCmd {
+  action: 'add_terrain'
+  size?: number
+  heightScale?: number
+  noiseScale?: number
+  seed?: number
+  layers?: number
+  lowColor?: string
+  midColor?: string
+  highColor?: string
+  position?: [number, number, number]
+  name?: string
+}
+
+export interface AddWaterCmd {
+  action: 'add_water'
+  size?: number
+  color?: string
+  opacity?: number
+  waveHeight?: number
+  waveSpeed?: number
+  position?: [number, number, number]
+  name?: string
+}
+
+export interface SetVisibilityCmd {
+  action: 'set_visibility'
+  target: string
+  visible: boolean
+}
+
+export interface AddCameraKeypointCmd {
+  action: 'add_camera_keypoint'
+  label?: string
+  position?: [number, number, number]
+  target?: [number, number, number]
+  fov?: number
+  easing?: 'linear' | 'ease' | 'ease-in' | 'ease-out'
+}
+
+export interface ClearCameraPathCmd {
+  action: 'clear_camera_path'
+}
+
 export type SceneCommand =
   | AddObjectCmd | AddLightCmd | SetMaterialCmd | SetHDRICmd | SetFogCmd
   | SetCameraCmd | AddAnimationCmd | EnablePhysicsCmd | SetEnvironmentCmd
   | DeleteObjectCmd | DuplicateObjectCmd | GroupObjectsCmd | LoadTemplateCmd | SetPostFXCmd
   | AddTextCmd | AddParticleCmd | ScatterObjectsCmd | SetViewModeCmd
   | AddKeyframeAnimationCmd | AddSceneCmd | SetCameraClipCmd | UpdateObjectCmd
+  | AddHtmlCmd | AddTerrainCmd | AddWaterCmd | SetVisibilityCmd
+  | AddCameraKeypointCmd | ClearCameraPathCmd
 
 export interface BehaviorAttachment {
   objectId: string
@@ -734,6 +803,18 @@ export function executeCommand(cmd: SceneCommand): void {
           instanceScale: c.instanceScale ?? 0.08,
           randomScale: 0.5,
           preset: c.preset ?? 'scatter',
+          ...(c.lifetime    !== undefined && { lifetime: c.lifetime }),
+          ...(c.emitterShape !== undefined && { emitterShape: c.emitterShape }),
+          ...(c.gravityFactor !== undefined && { gravityFactor: c.gravityFactor }),
+          ...(c.drag        !== undefined && { drag: c.drag }),
+          ...(c.turbulence  !== undefined && { turbulence: c.turbulence }),
+          ...(c.velocityX   !== undefined && { velocityX: c.velocityX }),
+          ...(c.velocityY   !== undefined && { velocityY: c.velocityY }),
+          ...(c.velocityZ   !== undefined && { velocityZ: c.velocityZ }),
+          ...(c.renderMode  !== undefined && { renderMode: c.renderMode }),
+          ...(c.opacityStart !== undefined && { opacityStart: c.opacityStart }),
+          ...(c.opacityEnd  !== undefined && { opacityEnd: c.opacityEnd }),
+          ...(c.glowIntensity !== undefined && { glowIntensity: c.glowIntensity }),
         },
         transform: { position: c.position ?? [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
       })
@@ -798,6 +879,105 @@ export function executeCommand(cmd: SceneCommand): void {
       }
       if (c.visible !== undefined) patch.visible = c.visible
       store.updateObject(obj.id, patch as Parameters<typeof store.updateObject>[1])
+      break
+    }
+
+    case 'add_html': {
+      const c = cmd as AddHtmlCmd
+      const HTML_LABELS: Record<string, string> = {
+        heading: 'Heading', paragraph: 'Text', button: 'Button', badge: 'Badge',
+        card: 'Card', quote: 'Quote', stat: 'Stat', divider: 'Divider',
+        spacer: 'Spacer', icontext: 'Icon+Text', form: 'Form', countdown: 'Timer',
+      }
+      const htmlType = (c.htmlType ?? 'heading') as HtmlObjectConfig['htmlType']
+      store.addObject({
+        name: c.name ?? HTML_LABELS[htmlType] ?? 'Element',
+        type: 'html',
+        geometry: { type: 'box' },
+        material: { type: 'standard', color: '#ffffff', roughness: 0.5, metalness: 0, emissive: '#000000', emissiveIntensity: 0, opacity: 1, transparent: false, wireframe: false, envMapIntensity: 1, transmission: 0, ior: 1.5, thickness: 0.5, flatShading: false, side: 'front' },
+        htmlConfig: {
+          htmlType,
+          content: c.content,
+          ...(c.color ? { color: c.color } : {}),
+          ...(c.fontSize !== undefined ? { fontSize: c.fontSize } : {}),
+        },
+        transform: { position: c.position ?? [0, 1.5, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      })
+      break
+    }
+
+    case 'add_terrain': {
+      const c = cmd as AddTerrainCmd
+      const size = c.size ?? 50
+      store.addObject({
+        name: c.name ?? 'Terrain',
+        type: 'terrain',
+        geometry: { type: 'plane', width: size, height: size },
+        material: { type: 'standard', color: c.lowColor ?? '#3a7d44', roughness: 0.9, metalness: 0, emissive: '#000000', emissiveIntensity: 0, opacity: 1, transparent: false, wireframe: false, envMapIntensity: 1, transmission: 0, ior: 1.5, thickness: 0.5, flatShading: false, side: 'front' },
+        terrain: {
+          size,
+          resolution: 64,
+          heightScale: c.heightScale ?? 5,
+          noiseScale: c.noiseScale ?? 0.1,
+          seed: c.seed ?? Math.floor(Math.random() * 100),
+          layers: c.layers ?? 4,
+          lowColor: c.lowColor ?? '#3a7d44',
+          midColor: c.midColor ?? '#5a5a3a',
+          highColor: c.highColor ?? '#888888',
+        },
+        transform: { position: c.position ?? [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        castShadow: true,
+        receiveShadow: true,
+      })
+      break
+    }
+
+    case 'add_water': {
+      const c = cmd as AddWaterCmd
+      const size = c.size ?? 30
+      store.addObject({
+        name: c.name ?? 'Water',
+        type: 'water',
+        geometry: { type: 'plane', width: size, height: size },
+        material: { type: 'standard', color: c.color ?? '#0055bb', roughness: 0.05, metalness: 0.2, emissive: '#000000', emissiveIntensity: 0, opacity: c.opacity ?? 0.85, transparent: true, wireframe: false, envMapIntensity: 1, transmission: 0, ior: 1.5, thickness: 0.5, flatShading: false, side: 'front' },
+        water: {
+          size,
+          color: c.color ?? '#0055bb',
+          opacity: c.opacity ?? 0.85,
+          waveHeight: c.waveHeight ?? 0.3,
+          waveSpeed: c.waveSpeed ?? 1.5,
+          waveScale: 1,
+        },
+        transform: { position: c.position ?? [0, 0, 0], rotation: [-1.5708, 0, 0], scale: [1, 1, 1] },
+      })
+      break
+    }
+
+    case 'set_visibility': {
+      const c = cmd as SetVisibilityCmd
+      const obj = findObjectByName(store.objects, c.target)
+      if (!obj) break
+      store.updateObject(obj.id, { visible: c.visible })
+      break
+    }
+
+    case 'add_camera_keypoint': {
+      const c = cmd as AddCameraKeypointCmd
+      const keypointCount = store.cameraPath.length
+      store.addCameraKeypoint({
+        label: c.label ?? `Camera ${keypointCount + 1}`,
+        position: c.position ?? [0, 5, 10],
+        target: c.target ?? [0, 0, 0],
+        fov: c.fov ?? 60,
+        easing: c.easing ?? 'ease',
+      })
+      break
+    }
+
+    case 'clear_camera_path': {
+      for (const kp of [...store.cameraPath]) {
+        store.removeCameraKeypoint(kp.id)
+      }
       break
     }
   }

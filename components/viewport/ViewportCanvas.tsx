@@ -11,6 +11,7 @@ import {
   Html,
   Stars,
   Text3D,
+  Center,
   Outlines,
   Sky,
   OrthographicCamera as DreiOrthoCamera,
@@ -669,18 +670,32 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
 
 const FONTS: Record<string, string> = {
   helvetiker: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_regular.typeface.json',
+  helvetiker_bold: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/helvetiker_bold.typeface.json',
   optimer: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/optimer_bold.typeface.json',
+  optimer_regular: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/optimer_regular.typeface.json',
   gentilis: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/gentilis_bold.typeface.json',
+  gentilis_regular: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/gentilis_regular.typeface.json',
+  droid_sans: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/droid/droid_sans_regular.typeface.json',
+  droid_serif: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/droid/droid_serif_regular.typeface.json',
+  droid_serif_bold: 'https://cdn.jsdelivr.net/npm/three/examples/fonts/droid/droid_serif_bold.typeface.json',
 }
 
 function TextObject({ obj }: { obj: SceneObject }) {
   const ref = useRef<THREE.Mesh>(null)
+  const groupRef = useRef<THREE.Group>(null)
   const { selectObject } = useScene()
   const mat = obj.material
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
-  useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
-  useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
+  const textCenteredForHooks = obj.geometry.textCenter ?? false
+  useAnimation(
+    (textCenteredForHooks ? groupRef : ref) as React.RefObject<THREE.Object3D | null>,
+    obj.animation, obj.id
+  )
+  useBehaviors(
+    (textCenteredForHooks ? groupRef : ref) as React.RefObject<THREE.Object3D | null>,
+    obj.behaviors, obj.id
+  )
 
   const fontUrl = FONTS[obj.geometry.font ?? 'helvetiker'] ?? FONTS.helvetiker
   const fontSize = obj.geometry.fontSize ?? 0.5
@@ -691,46 +706,57 @@ function TextObject({ obj }: { obj: SceneObject }) {
   const bevelThickness = obj.geometry.bevelThickness ?? 0.015
   const bevelSize = obj.geometry.bevelSize ?? 0.008
 
+  const curveSegments = obj.geometry.curveSegments ?? 6
+  const textCentered = textCenteredForHooks
+
+  const textMesh = (
+    <Text3D
+      ref={textCentered ? undefined : ref}
+      font={fontUrl}
+      position={textCentered ? undefined : obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      size={fontSize}
+      height={textDepth}
+      curveSegments={curveSegments}
+      letterSpacing={letterSpacing}
+      lineHeight={lineHeight}
+      bevelEnabled={bevelEnabled}
+      bevelThickness={bevelThickness}
+      bevelSize={bevelSize}
+      bevelSegments={3}
+      castShadow={obj.castShadow}
+      visible={obj.visible}
+      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+      onContextMenu={(e) => {
+        e.stopPropagation()
+        selectObject(obj.id, false)
+        useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+      }}
+    >
+      {obj.geometry.text ?? 'Text'}
+      <meshStandardMaterial
+        color={isSelected && !isPlaying ? '#7B8CFF' : mat.color}
+        roughness={mat.roughness}
+        metalness={mat.metalness}
+        emissive={isSelected && !isPlaying ? new THREE.Color('#5B6CFF') : new THREE.Color(mat.emissive)}
+        emissiveIntensity={isSelected && !isPlaying ? 0.3 : mat.emissiveIntensity}
+      />
+    </Text3D>
+  )
+
   return (
     <Suspense fallback={null}>
-      <Text3D
-        ref={ref}
-        font={fontUrl}
-        position={obj.transform.position}
-        rotation={obj.transform.rotation}
-        scale={obj.transform.scale}
-        size={fontSize}
-        height={textDepth}
-        curveSegments={6}
-        letterSpacing={letterSpacing}
-        lineHeight={lineHeight}
-        bevelEnabled={bevelEnabled}
-        bevelThickness={bevelThickness}
-        bevelSize={bevelSize}
-        bevelSegments={3}
-        castShadow={obj.castShadow}
-        visible={obj.visible}
-        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
-        onContextMenu={(e) => {
-          e.stopPropagation()
-          selectObject(obj.id, false)
-          useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
-        }}
-      >
-        {obj.geometry.text ?? 'Text'}
-        <meshStandardMaterial
-          color={isSelected && !isPlaying ? '#7B8CFF' : mat.color}
-          roughness={mat.roughness}
-          metalness={mat.metalness}
-          emissive={isSelected && !isPlaying ? new THREE.Color('#5B6CFF') : new THREE.Color(mat.emissive)}
-          emissiveIntensity={isSelected && !isPlaying ? 0.3 : mat.emissiveIntensity}
-        />
-      </Text3D>
+      {textCentered ? (
+        <Center ref={groupRef} position={obj.transform.position}>
+          {textMesh}
+        </Center>
+      ) : textMesh}
     </Suspense>
   )
 }
 
-// ─── Particle Object ──────────────────────────────────────────────────────────
+// ─── Particle System ─────────────────────────────────────────────────────────
 
 const DEFAULT_PARTICLE: ParticleConfig = {
   count: 200,
@@ -739,120 +765,444 @@ const DEFAULT_PARTICLE: ParticleConfig = {
   instanceScale: 0.08,
   randomScale: 0.5,
   preset: 'scatter',
+  // Emission
+  emitterShape: 'box', emitterRadius: 3, emitterConeAngle: 45,
+  lifetime: 0, lifetimeRandom: 0, emitOnStart: true, emissionRate: 60,
+  // Size
+  sizeStart: 0.08, sizeEnd: 0.02, sizeRandom: 0.5, sizeOverLifetime: 'constant',
+  // Velocity
+  velocityX: 0, velocityY: 0, velocityZ: 0,
+  velocityRandom: 0, radialVelocity: 0, normalVelocity: 0,
+  // Rotation
+  rotationMode: 'none',
+  angularVelocityX: 0, angularVelocityY: 0, angularVelocityZ: 0,
+  rotationRandom: 1,
+  // Physics
+  gravityFactor: 0, drag: 0, bounce: 0, turbulence: 0, turbulenceScale: 1,
+  // Render
+  renderMode: 'mesh', trailLength: 8, opacityStart: 1, opacityEnd: 0, glowIntensity: 0,
+  // Viewport
+  viewportDisplayFraction: 1, showEmitter: false,
+  // Children
+  childEnabled: false, childCount: 2, childSpread: 0.3, childSizeScale: 0.5, childPreset: 'scatter',
+  // Force Field
+  forceFieldEnabled: false, forceFieldType: 'none', forceFieldStrength: 1,
+  forceFieldDirection: [1, 0, 0],
 }
 
-function ParticleObject({ obj }: { obj: SceneObject }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null)
-  const material = useSceneMaterial(obj.material)
-  const { selectObject } = useScene()
-  const cfg = obj.particle ?? DEFAULT_PARTICLE
-  const cfgKey = JSON.stringify(cfg)
+/** Spawn position based on emitter shape */
+function pSpawn(cfg: Required<ParticleConfig>, i: number): [number, number, number] {
+  const [sx, sy, sz] = cfg.spread
+  const r = cfg.emitterRadius
+  const p = cfg.preset
+  switch (cfg.emitterShape) {
+    case 'sphere': {
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
+      return [r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta), r * Math.cos(phi)]
+    }
+    case 'hemisphere': {
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(Math.random())
+      return [r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta)]
+    }
+    case 'ring': {
+      const theta = Math.random() * Math.PI * 2
+      return [r * Math.cos(theta), 0, r * Math.sin(theta)]
+    }
+    case 'cone': {
+      const halfAngle = (cfg.emitterConeAngle * Math.PI) / 180
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.random() * halfAngle
+      const d = Math.random() * r
+      return [d * Math.sin(phi) * Math.cos(theta), d * Math.cos(phi), d * Math.sin(phi) * Math.sin(theta)]
+    }
+    case 'point': return [0, 0, 0]
+    default: { // box / default
+      const x = (Math.random() - 0.5) * sx
+      const z = (Math.random() - 0.5) * sz
+      const y = (p === 'rain' || p === 'snow' || p === 'sparks') ? Math.random() * sy
+        : (p === 'leaves') ? Math.random() * sy * 0.6
+        : (p === 'fire' || p === 'smoke') ? -sy * 0.5 + Math.random() * sy * 0.3
+        : (Math.random() - 0.5) * sy
+      return [x, y, z]
+    }
+  }
+}
 
-  const matrices = useMemo(() => {
-    const dummy = new THREE.Object3D()
-    const result: THREE.Matrix4[] = []
+/** Preset-based initial velocity */
+function pVelocity(preset: string, i: number): [number, number, number] {
+  const rng = ((i * 1619) % 100) / 100
+  switch (preset) {
+    case 'rain':   return [0, -(4 + rng * 2), 0]
+    case 'snow':   return [(Math.random() - 0.5) * 0.2, -(0.2 + rng * 0.3), (Math.random() - 0.5) * 0.2]
+    case 'sparks': return [(Math.random() - 0.5) * 1.5, -(2 + rng * 1.5), (Math.random() - 0.5) * 1.5]
+    case 'fire':   return [(Math.random() - 0.5) * 0.6, 1.5 + rng * 0.8, (Math.random() - 0.5) * 0.6]
+    case 'smoke':  return [(Math.random() - 0.5) * 0.3, 0.5 + rng * 0.4, (Math.random() - 0.5) * 0.3]
+    case 'leaves': return [(Math.random() - 0.5) * 0.8, -(0.3 + rng * 0.5), (Math.random() - 0.5) * 0.8]
+    default:       return [0, 0, 0]
+  }
+}
+
+/** Size at normalized age [0,1] */
+function pSizeAtAge(cfg: Required<ParticleConfig>, t: number): number {
+  const s0 = cfg.sizeStart
+  const s1 = cfg.sizeEnd
+  switch (cfg.sizeOverLifetime) {
+    case 'linear': return THREE.MathUtils.lerp(s0, s1, t)
+    case 'grow':   return THREE.MathUtils.lerp(s0, s0 * 2, t)
+    case 'shrink': return s0 * Math.pow(1 - t, 2)
+    case 'pulse':  return s0 * (0.5 + 0.5 * Math.abs(Math.sin(t * Math.PI * 4)))
+    default:       return s0
+  }
+}
+
+/** Point-cloud mode (separate component to keep hook order stable) */
+function ParticlePointCloud({ obj }: { obj: SceneObject }) {
+  const selectObject = useScene((s) => s.selectObject)
+  const cfg = { ...DEFAULT_PARTICLE, ...obj.particle } as Required<ParticleConfig>
+  const cfgKey = JSON.stringify(obj.particle)
+  const positions = useMemo(() => {
+    const arr = new Float32Array(cfg.count * 3)
     const [sx, sy, sz] = cfg.spread
     for (let i = 0; i < cfg.count; i++) {
-      let x = (Math.random() - 0.5) * sx
-      let y = cfg.preset === 'rain' || cfg.preset === 'snow' || cfg.preset === 'sparks'
-        ? Math.random() * sy
-        : cfg.preset === 'leaves' ? Math.random() * sy * 0.6
-        : (Math.random() - 0.5) * sy
-      let z = (Math.random() - 0.5) * sz
-      dummy.position.set(x, y, z)
-      dummy.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
-      const sc = cfg.instanceScale * (1 - cfg.randomScale * 0.5 + Math.random() * cfg.randomScale)
-      dummy.scale.setScalar(Math.max(0.001, sc))
-      dummy.updateMatrix()
-      result.push(dummy.matrix.clone())
+      arr[i * 3]     = (Math.random() - 0.5) * sx
+      arr[i * 3 + 1] = (Math.random() - 0.5) * sy
+      arr[i * 3 + 2] = (Math.random() - 0.5) * sz
     }
-    return result
+    return arr
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfgKey])
+  const matColor = (obj.material as { color?: string }).color ?? '#ffffff'
+  return (
+    <points
+      position={obj.transform.position}
+      rotation={obj.transform.rotation}
+      scale={obj.transform.scale}
+      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+    >
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} count={cfg.count} array={positions} itemSize={3} />
+      </bufferGeometry>
+      <pointsMaterial
+        size={cfg.instanceScale * 2} color={matColor}
+        transparent opacity={cfg.opacityStart} sizeAttenuation
+      />
+    </points>
+  )
+}
+
+/** Instanced mesh particle system with full physics */
+function ParticleInstanced({ obj }: { obj: SceneObject }) {
+  const meshRef      = useRef<THREE.InstancedMesh>(null)
+  const childMeshRef = useRef<THREE.InstancedMesh>(null)
+  const material     = useSceneMaterial(obj.material)
+  const selectObject = useScene((s) => s.selectObject)
+  const { camera }   = useThree()
+  const cfg = { ...DEFAULT_PARTICLE, ...obj.particle } as Required<ParticleConfig>
+  // Sync sizeStart default with instanceScale so existing scenes work correctly
+  if (!obj.particle?.sizeStart) cfg.sizeStart = cfg.instanceScale
+  const cfgKey = JSON.stringify(obj.particle)
+
+  const velocities  = useRef(new Float32Array(cfg.count * 3))
+  const ages        = useRef(new Float32Array(cfg.count))
+  const lifetimes   = useRef(new Float32Array(cfg.count))
+  const dummy       = useRef(new THREE.Object3D())
+  const childDummy  = useRef(new THREE.Object3D())
+  const euler       = useRef(new THREE.Euler())
+
+  const displayCount = Math.max(1, Math.round(cfg.count * cfg.viewportDisplayFraction))
+  const childTotal   = cfg.childEnabled ? displayCount * cfg.childCount : 0
+
+  // ── Initialize / reinitialize on config change ──────────────────────────
+  useEffect(() => {
+    velocities.current = new Float32Array(cfg.count * 3)
+    ages.current       = new Float32Array(cfg.count)
+    lifetimes.current  = new Float32Array(cfg.count)
+    if (!meshRef.current) return
+
+    const d = dummy.current
+    const vels = velocities.current
+    const lts  = lifetimes.current
+    const agesArr = ages.current
+    const hasLt = cfg.lifetime > 0
+
+    for (let i = 0; i < cfg.count; i++) {
+      const [px, py, pz] = pSpawn(cfg, i)
+      d.position.set(px, py, pz)
+      const rr = cfg.rotationRandom
+      if (cfg.rotationMode !== 'none') {
+        d.rotation.set(
+          Math.random() * Math.PI * 2 * rr,
+          Math.random() * Math.PI * 2 * rr,
+          Math.random() * Math.PI * 2 * rr,
+        )
+      } else {
+        d.rotation.set(0, 0, 0)
+      }
+      const sRand = 1 - cfg.randomScale * 0.5 + Math.random() * cfg.randomScale
+      d.scale.setScalar(Math.max(0.001, cfg.instanceScale * sRand))
+      d.updateMatrix()
+      meshRef.current.setMatrixAt(i, d.matrix)
+
+      const [pvx, pvy, pvz] = pVelocity(cfg.preset, i)
+      const vr = cfg.velocityRandom
+      vels[i * 3]     = pvx + cfg.velocityX + (Math.random() - 0.5) * vr * 2
+      vels[i * 3 + 1] = pvy + cfg.velocityY + (Math.random() - 0.5) * vr * 2
+      vels[i * 3 + 2] = pvz + cfg.velocityZ + (Math.random() - 0.5) * vr * 2
+
+      if (cfg.radialVelocity !== 0) {
+        const len = Math.sqrt(px * px + py * py + pz * pz)
+        if (len > 0.001) {
+          vels[i * 3]     += (px / len) * cfg.radialVelocity
+          vels[i * 3 + 1] += (py / len) * cfg.radialVelocity
+          vels[i * 3 + 2] += (pz / len) * cfg.radialVelocity
+        }
+      }
+
+      const lt = hasLt
+        ? cfg.lifetime * (1 - cfg.lifetimeRandom * 0.5 + Math.random() * cfg.lifetimeRandom)
+        : Infinity
+      lts[i] = lt
+      agesArr[i] = hasLt ? Math.random() * lt : 0
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true
+    meshRef.current.count = displayCount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfgKey])
 
-  useEffect(() => {
-    if (!meshRef.current) return
-    matrices.forEach((m, i) => meshRef.current!.setMatrixAt(i, m))
-    meshRef.current.instanceMatrix.needsUpdate = true
-  }, [matrices])
-
+  // ── Per-frame physics update ─────────────────────────────────────────────
   useFrame((state, delta) => {
     if (!meshRef.current) return
     const preset = cfg.preset
-    const animated = ['rain', 'snow', 'sparks', 'fire', 'smoke', 'magic']
-    if (!animated.includes(preset)) return
-    const dummy = new THREE.Object3D()
-    const [sx, sy, sz] = cfg.spread
     const t = state.clock.elapsedTime
+    const d = dummy.current
+    const [sx, sy, sz] = cfg.spread
+    const vels = velocities.current
+    const agesArr = ages.current
+    const lts  = lifetimes.current
+    const isBillboard = cfg.renderMode === 'billboard'
+    const cameraQuat  = camera.quaternion
 
+    // Magic: pure orbital, bypass physics
     if (preset === 'magic') {
-      for (let i = 0; i < cfg.count; i++) {
+      for (let i = 0; i < displayCount; i++) {
         const phase = (i / cfg.count) * Math.PI * 2
         const layer = i % 3
         const speed = 0.3 + ((i * 37) % 7) * 0.07
         const angle = phase + t * speed
         const radius = sx * 0.35 * (0.4 + 0.6 * ((i * 173) % 100) / 100)
         const hy = Math.sin(phase * 2 + t * 0.5) * sy * 0.4 + (layer - 1) * sy * 0.15
-        dummy.position.set(Math.cos(angle) * radius, hy, Math.sin(angle) * radius)
+        d.position.set(Math.cos(angle) * radius, hy, Math.sin(angle) * radius)
         const sc = cfg.instanceScale * (0.5 + 0.5 * Math.abs(Math.sin(t * 3 + phase)))
-        dummy.scale.setScalar(Math.max(0.001, sc))
-        dummy.updateMatrix()
-        meshRef.current.setMatrixAt(i, dummy.matrix)
+        d.scale.setScalar(Math.max(0.001, sc))
+        if (isBillboard) d.quaternion.copy(cameraQuat)
+        d.updateMatrix()
+        meshRef.current.setMatrixAt(i, d.matrix)
       }
       meshRef.current.instanceMatrix.needsUpdate = true
       return
     }
 
-    const isRising = preset === 'fire' || preset === 'smoke'
-    const speed = preset === 'rain' ? 4 : preset === 'sparks' ? 2.5 : preset === 'snow' ? 0.5 : preset === 'fire' ? 1.8 : 0.7
-    for (let i = 0; i < cfg.count; i++) {
-      meshRef.current.getMatrixAt(i, dummy.matrix)
-      dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale)
-      if (isRising) {
-        const speedMult = 0.5 + ((i * 1619) % 100) / 100
-        dummy.position.y += speed * delta * speedMult
-        if (preset === 'smoke') {
-          dummy.position.x += Math.sin(t + i) * delta * 0.08
-          dummy.position.z += Math.cos(t * 0.7 + i) * delta * 0.08
-        }
-        if (dummy.position.y > sy * 0.5) {
-          const r = (preset === 'fire' ? 0.3 : 0.5) * (((i * 997) % 100) / 100)
-          const a = ((i * 127) % 100) / 100 * Math.PI * 2
-          dummy.position.set(Math.cos(a) * r * sx, -sy * 0.5 + ((i * 43) % 30) / 100, Math.sin(a) * r * sz)
-          dummy.scale.setScalar(cfg.instanceScale * (0.3 + ((i * 317) % 100) / 100 * 0.7))
-        }
+    // Skip if fully static (no forces, no lifetime, no billboard)
+    const hasPhysics = cfg.gravityFactor !== 0 || cfg.turbulence !== 0 || cfg.forceFieldEnabled
+    const isStatic = preset === 'scatter' && cfg.lifetime === 0 && !hasPhysics
+      && cfg.velocityX === 0 && cfg.velocityY === 0 && cfg.velocityZ === 0 && cfg.radialVelocity === 0
+    if (isStatic && !isBillboard && cfg.sizeOverLifetime === 'constant' && cfg.rotationMode !== 'dynamic') return
+
+    const hasLt = cfg.lifetime > 0
+    const G     = 9.8 * cfg.gravityFactor
+    const drag  = cfg.drag
+    const bounce = cfg.bounce
+    const turb  = cfg.turbulence
+    const turbS = cfg.turbulenceScale
+    const avx   = (cfg.angularVelocityX * Math.PI / 180) * delta
+    const avy   = (cfg.angularVelocityY * Math.PI / 180) * delta
+    const avz   = (cfg.angularVelocityZ * Math.PI / 180) * delta
+    const isDynRot = cfg.rotationMode === 'dynamic'
+    const ffOn  = cfg.forceFieldEnabled && cfg.forceFieldType !== 'none'
+    const ffStr = cfg.forceFieldStrength
+    const [ffdx, ffdy, ffdz] = cfg.forceFieldDirection
+
+    for (let i = 0; i < displayCount; i++) {
+      meshRef.current.getMatrixAt(i, d.matrix)
+      d.matrix.decompose(d.position, d.quaternion, d.scale)
+      agesArr[i] += delta
+
+      // Lifetime recycle
+      if (hasLt && agesArr[i] > lts[i]) {
+        const [px, py, pz] = pSpawn(cfg, i)
+        d.position.set(px, py, pz)
+        agesArr[i] = 0
+        const [pvx, pvy, pvz] = pVelocity(preset, i)
+        const vr = cfg.velocityRandom
+        vels[i * 3]     = pvx + cfg.velocityX + (Math.random() - 0.5) * vr * 2
+        vels[i * 3 + 1] = pvy + cfg.velocityY + (Math.random() - 0.5) * vr * 2
+        vels[i * 3 + 2] = pvz + cfg.velocityZ + (Math.random() - 0.5) * vr * 2
       } else {
-        dummy.position.y -= speed * delta
-        if (dummy.position.y < -sy * 0.5) {
-          dummy.position.y = sy * 0.5
-          dummy.position.x = (Math.random() - 0.5) * sx
-          dummy.position.z = (Math.random() - 0.5) * sz
+        let vx = vels[i * 3], vy = vels[i * 3 + 1], vz = vels[i * 3 + 2]
+
+        // 1. Gravity
+        vy -= G * delta
+
+        // 2. Turbulence
+        if (turb > 0) {
+          vx += Math.sin(t * turbS * 3.1 + i * 0.17) * turb * delta
+          vy += Math.sin(t * turbS * 2.9 + i * 0.31) * turb * delta
+          vz += Math.sin(t * turbS * 3.7 + i * 0.23) * turb * delta
+        }
+
+        // 3. Force field
+        if (ffOn) {
+          if (cfg.forceFieldType === 'wind') {
+            vx += ffdx * ffStr * delta
+            vy += ffdy * ffStr * delta
+            vz += ffdz * ffStr * delta
+          } else if (cfg.forceFieldType === 'gravity') {
+            vy -= ffStr * 9.8 * delta
+          } else if (cfg.forceFieldType === 'vortex') {
+            const cosV = Math.cos(ffStr * delta), sinV = Math.sin(ffStr * delta)
+            const origX = vx
+            vx = origX * cosV - vz * sinV
+            vz = origX * sinV + vz * cosV
+          } else if (cfg.forceFieldType === 'turbulence') {
+            vx += (Math.sin(t * 7.3 + i * 0.13) - 0.5) * ffStr * delta * 4
+            vy += (Math.sin(t * 5.1 + i * 0.21) - 0.5) * ffStr * delta * 4
+            vz += (Math.sin(t * 6.7 + i * 0.17) - 0.5) * ffStr * delta * 4
+          }
+        }
+
+        // 4. Drag
+        if (drag > 0) {
+          const f = Math.max(0, 1 - drag * delta * 60)
+          vx *= f; vy *= f; vz *= f
+        }
+
+        vels[i * 3] = vx; vels[i * 3 + 1] = vy; vels[i * 3 + 2] = vz
+
+        d.position.x += vx * delta
+        d.position.y += vy * delta
+        d.position.z += vz * delta
+
+        // 5. Floor bounce
+        if (bounce > 0 && d.position.y < 0) {
+          d.position.y = 0
+          vels[i * 3 + 1] = Math.abs(vy) * bounce
+        }
+
+        // 6. Wrap / recycle at spread bounds (presets without lifetime)
+        if (!hasLt) {
+          if (preset === 'rain' || preset === 'snow' || preset === 'sparks' || preset === 'leaves') {
+            if (d.position.y < -sy * 0.5) {
+              d.position.y = sy * 0.5
+              d.position.x = (Math.random() - 0.5) * sx
+              d.position.z = (Math.random() - 0.5) * sz
+              const [pvx, pvy, pvz] = pVelocity(preset, i)
+              vels[i * 3] = pvx; vels[i * 3 + 1] = pvy; vels[i * 3 + 2] = pvz
+            }
+          } else if (preset === 'fire' || preset === 'smoke') {
+            if (d.position.y > sy * 0.5) {
+              const a = ((i * 127) % 100) / 100 * Math.PI * 2
+              const rr = 0.3 * (((i * 997) % 100) / 100)
+              d.position.set(Math.cos(a) * rr * sx, -sy * 0.5, Math.sin(a) * rr * sz)
+              const [pvx, pvy, pvz] = pVelocity(preset, i)
+              vels[i * 3] = pvx; vels[i * 3 + 1] = pvy; vels[i * 3 + 2] = pvz
+            }
+          }
         }
       }
-      dummy.updateMatrix()
-      meshRef.current.setMatrixAt(i, dummy.matrix)
+
+      // 7. Size over lifetime
+      const ageT = (hasLt && lts[i] !== Infinity) ? Math.min(1, agesArr[i] / lts[i]) : 0
+      const sRandI = 1 - cfg.randomScale * 0.5 + ((i * 317) % 100) / 100 * cfg.randomScale
+      d.scale.setScalar(Math.max(0.001, pSizeAtAge(cfg, ageT) * sRandI))
+
+      // 8. Rotation
+      if (isDynRot) {
+        euler.current.setFromQuaternion(d.quaternion)
+        euler.current.x += avx; euler.current.y += avy; euler.current.z += avz
+        d.quaternion.setFromEuler(euler.current)
+      }
+      if (isBillboard) d.quaternion.copy(cameraQuat)
+
+      d.updateMatrix()
+      meshRef.current.setMatrixAt(i, d.matrix)
     }
     meshRef.current.instanceMatrix.needsUpdate = true
+
+    // 9. Update child particles
+    if (cfg.childEnabled && childMeshRef.current) {
+      const cSpread = cfg.childSpread
+      const cScale  = cfg.childSizeScale * cfg.instanceScale
+      const cCount  = cfg.childCount
+      const cd = childDummy.current
+      for (let i = 0; i < displayCount; i++) {
+        meshRef.current.getMatrixAt(i, d.matrix)
+        d.matrix.decompose(d.position, d.quaternion, d.scale)
+        for (let j = 0; j < cCount; j++) {
+          const phase = (j / cCount) * Math.PI * 2
+          const rr = cSpread * (((j * 37 + i * 13) % 10) / 10 + 0.2)
+          cd.position.set(
+            d.position.x + Math.cos(phase + t * (0.3 + i * 0.007)) * rr,
+            d.position.y + Math.sin(phase * 0.7 + t * 0.5) * cSpread * 0.5,
+            d.position.z + Math.sin(phase + t * (0.3 + i * 0.007)) * rr,
+          )
+          cd.scale.setScalar(Math.max(0.001, cScale * (0.5 + ((j * 17 + i * 31) % 100) / 100 * 0.5)))
+          cd.updateMatrix()
+          childMeshRef.current.setMatrixAt(i * cCount + j, cd.matrix)
+        }
+      }
+      childMeshRef.current.instanceMatrix.needsUpdate = true
+    }
   })
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[undefined, undefined, cfg.count]}
-      position={obj.transform.position}
-      rotation={obj.transform.rotation}
-      scale={obj.transform.scale}
-      visible={obj.visible}
-      castShadow={obj.castShadow}
-      onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
-    >
-      {cfg.instanceGeometry === 'box' && <boxGeometry args={[1, 1, 1]} />}
-      {cfg.instanceGeometry === 'cone' && <coneGeometry args={[0.5, 1, 4]} />}
-      {cfg.instanceGeometry === 'tetrahedron' && <tetrahedronGeometry args={[0.5, 0]} />}
-      {(cfg.instanceGeometry === 'sphere' || !cfg.instanceGeometry) && <sphereGeometry args={[0.5, 6, 6]} />}
-      <primitive object={material} attach="material" />
-    </instancedMesh>
+    <>
+      <instancedMesh
+        ref={meshRef}
+        args={[undefined, undefined, cfg.count]}
+        position={obj.transform.position}
+        rotation={obj.transform.rotation}
+        scale={obj.transform.scale}
+        visible={obj.visible}
+        castShadow={obj.castShadow}
+        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+      >
+        {cfg.instanceGeometry === 'box'         && <boxGeometry args={[1, 1, 1]} />}
+        {cfg.instanceGeometry === 'cone'        && <coneGeometry args={[0.5, 1, 4]} />}
+        {cfg.instanceGeometry === 'tetrahedron' && <tetrahedronGeometry args={[0.5, 0]} />}
+        {(cfg.instanceGeometry === 'sphere' || !cfg.instanceGeometry) && <sphereGeometry args={[0.5, 6, 6]} />}
+        <primitive object={material} attach="material" />
+      </instancedMesh>
+      {childTotal > 0 && (
+        <instancedMesh
+          ref={childMeshRef}
+          args={[undefined, undefined, childTotal]}
+          position={obj.transform.position}
+          rotation={obj.transform.rotation}
+          scale={obj.transform.scale}
+          visible={obj.visible}
+        >
+          <sphereGeometry args={[0.5, 4, 4]} />
+          <primitive object={material} attach="material" />
+        </instancedMesh>
+      )}
+      {cfg.showEmitter && (
+        <mesh position={obj.transform.position} scale={cfg.spread}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial wireframe color="#5B6CFF" opacity={0.25} transparent />
+        </mesh>
+      )}
+    </>
   )
+}
+
+function ParticleObject({ obj }: { obj: SceneObject }) {
+  const cfg = { ...DEFAULT_PARTICLE, ...obj.particle } as Required<ParticleConfig>
+  if (cfg.renderMode === 'point' || cfg.instanceGeometry === 'point') {
+    return <ParticlePointCloud obj={obj} />
+  }
+  return <ParticleInstanced obj={obj} />
 }
 
 // ─── Terrain Object ──────────────────────────────────────────────────────────

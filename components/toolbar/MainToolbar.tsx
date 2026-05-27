@@ -5,7 +5,7 @@ import {
   MousePointer2, Move, RotateCw, Maximize2,
   PanelLeft, PanelRight, PanelBottom, Play, Square,
   Undo2, Redo2, Grid3X3, Download, Upload,
-  ChevronDown, Zap, Eye, Paintbrush, Mountain, Monitor, Globe2, Type,
+  ChevronDown, Zap, Eye, Paintbrush, Mountain, Monitor, Globe2, Type, Navigation,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { WORLD_TEMPLATES } from '@/lib/ai/WorldTemplates'
@@ -54,6 +54,8 @@ export function MainToolbar() {
   const appMode = useScene((s) => s.appMode)
   const setAppMode = useScene((s) => s.setAppMode)
   const setPreviewMode = useScene((s) => s.setPreviewMode)
+  const cameraMode = useScene((s) => s.cameraMode)
+  const setCameraMode = useScene((s) => s.setCameraMode)
 
   const [showTemplates, setShowTemplates] = useState(false)
   const [showExport, setShowExport] = useState(false)
@@ -222,6 +224,34 @@ export function MainToolbar() {
           <span className="hidden md:inline font-medium">Snap</span>
         </button>
 
+        {/* Camera control mode */}
+        <div className="flex items-center p-0.5 rounded-lg" style={{ background: '#000', border: '1px solid #1a1a1a' }}>
+          <button
+            onClick={() => setCameraMode('orbit')}
+            title="Orbit Camera (click + drag)"
+            className="flex items-center gap-1.5 px-2 h-6 rounded-md text-[10px] font-medium transition-all"
+            style={cameraMode === 'orbit'
+              ? { background: 'rgba(255,255,255,0.12)', color: '#f0f0f0' }
+              : { background: 'transparent', color: '#555555' }
+            }
+          >
+            <RotateCw size={10} strokeWidth={2} />
+            Orbit
+          </button>
+          <button
+            onClick={() => setCameraMode('fly')}
+            title="Fly Camera (WASD + mouse)"
+            className="flex items-center gap-1.5 px-2 h-6 rounded-md text-[10px] font-medium transition-all"
+            style={cameraMode === 'fly'
+              ? { background: 'rgba(255,255,255,0.12)', color: '#f0f0f0' }
+              : { background: 'transparent', color: '#555555' }
+            }
+          >
+            <Navigation size={10} strokeWidth={2} />
+            Fly
+          </button>
+        </div>
+
         <div className="flex-1" />
 
         {/* Undo/Redo */}
@@ -336,11 +366,33 @@ export function MainToolbar() {
           </button>
           {showTemplates && (
             <Dropdown onClose={() => setShowTemplates(false)} align="right">
-              {WORLD_TEMPLATES.map((t) => (
-                <DropdownItem key={t.id} onClick={() => loadTemplate(t.id)}>
-                  <span className="mr-2">{t.icon}</span>{t.name}
-                </DropdownItem>
-              ))}
+              {(() => {
+                const worldTpls = WORLD_TEMPLATES.filter((t) => !t.appMode || t.appMode === 'world')
+                const websiteTpls = WORLD_TEMPLATES.filter((t) => t.appMode === 'website')
+                const primaryTpls = appMode === 'website' ? websiteTpls : worldTpls
+                const secondaryTpls = appMode === 'website' ? worldTpls : websiteTpls
+                const secondaryLabel = appMode === 'website' ? '3D World Templates' : 'Website Templates'
+                return (
+                  <>
+                    {primaryTpls.map((t) => (
+                      <DropdownItem key={t.id} onClick={() => loadTemplate(t.id)}>
+                        <span className="mr-2">{t.icon}</span>{t.name}
+                      </DropdownItem>
+                    ))}
+                    {secondaryTpls.length > 0 && (
+                      <>
+                        <div style={{ borderTop: '1px solid #1a1c24', margin: '4px 0' }} />
+                        <div style={{ color: '#3a3e50', fontSize: 9, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{secondaryLabel}</div>
+                        {secondaryTpls.map((t) => (
+                          <DropdownItem key={t.id} onClick={() => loadTemplate(t.id)}>
+                            <span className="mr-2">{t.icon}</span>{t.name}
+                          </DropdownItem>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )
+              })()}
             </Dropdown>
           )}
         </div>
