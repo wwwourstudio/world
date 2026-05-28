@@ -231,26 +231,26 @@ export default function WorldBuilderPage() {
         {panels.leftOpen && !isPreviewMode && (
           <div className="flex flex-col w-64 shrink-0 overflow-hidden" style={{ borderRight: '1px solid #1E2028' }}>
             {/* Tab bar */}
-            <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14' }}>
+            <div className="flex h-10 shrink-0 items-center px-1.5 gap-0.5 overflow-x-auto" style={{ borderBottom: '1px solid #1E2028', background: '#0d0f14', scrollbarWidth: 'none' }}>
               {([
-                { id: 'outliner', label: 'Scene', icon: <Layers size={12} strokeWidth={1.75} /> },
-                { id: 'camera', label: 'Camera', icon: <Video size={12} strokeWidth={1.75} /> },
-                { id: 'material', label: 'Mat', icon: <Palette size={12} strokeWidth={1.75} /> },
-                { id: 'lighting', label: 'Light', icon: <Sun size={12} strokeWidth={1.75} /> },
-                ...(appMode === 'website' ? [{ id: 'website', label: 'Web', icon: <Globe2 size={12} strokeWidth={1.75} /> }] : []),
+                { id: 'outliner', label: 'Scene', icon: <Layers size={11} strokeWidth={1.75} /> },
+                { id: 'camera', label: 'Camera', icon: <Video size={11} strokeWidth={1.75} /> },
+                { id: 'material', label: 'Mat', icon: <Palette size={11} strokeWidth={1.75} /> },
+                { id: 'lighting', label: 'Light', icon: <Sun size={11} strokeWidth={1.75} /> },
+                ...(appMode === 'website' ? [{ id: 'website', label: 'Web', icon: <Globe2 size={11} strokeWidth={1.75} /> }] : []),
               ] as Array<{ id: string; label: string; icon: React.ReactNode }>).map((t) => (
                 <button
                   key={t.id}
                   onClick={() => useScene.getState().setPanelTab('left', t.id as 'outliner' | 'camera' | 'material' | 'lighting' | 'website')}
-                  className="flex-1 flex items-center justify-center gap-1.5 text-[11px] font-medium capitalize transition-colors"
+                  className="flex items-center justify-center gap-1 shrink-0 flex-1 min-w-0 h-7 rounded-md text-[10.5px] font-medium transition-all"
                   style={{
-                    color: panels.leftTab === t.id ? '#E8E9F0' : '#7A7E92',
-                    borderBottom: panels.leftTab === t.id ? '2px solid #5B6CFF' : '2px solid transparent',
-                    background: panels.leftTab === t.id ? '#5B6CFF10' : 'transparent',
+                    color: panels.leftTab === t.id ? '#E8E9F0' : '#5A5F78',
+                    background: panels.leftTab === t.id ? 'rgba(91,108,255,0.15)' : 'transparent',
+                    boxShadow: panels.leftTab === t.id ? 'inset 0 0 0 1px rgba(91,108,255,0.3)' : 'none',
                   }}
                 >
                   {t.icon}
-                  {t.label}
+                  <span className="truncate">{t.label}</span>
                 </button>
               ))}
             </div>
@@ -293,15 +293,16 @@ export default function WorldBuilderPage() {
         {panels.rightOpen && !isPreviewMode && (
           <div className="flex flex-col w-80 shrink-0 overflow-hidden" style={{ borderLeft: '1px solid #1E2028' }}>
             {/* Tab bar */}
-            <div className="flex h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
+            <div className="flex h-10 shrink-0 items-center px-1.5 gap-1" style={{ borderBottom: '1px solid #1E2028' }}>
               {(['chat', 'assets'] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => useScene.getState().setPanelTab('right', t)}
-                  className="flex-1 text-[11px] font-medium capitalize transition-colors"
+                  className="flex-1 h-7 rounded-md text-[11px] font-medium transition-all"
                   style={{
-                    color: panels.rightTab === t ? '#E8E9F0' : '#7A7E92',
-                    borderBottom: panels.rightTab === t ? '2px solid #5B6CFF' : '2px solid transparent',
+                    color: panels.rightTab === t ? '#E8E9F0' : '#5A5F78',
+                    background: panels.rightTab === t ? 'rgba(91,108,255,0.15)' : 'transparent',
+                    boxShadow: panels.rightTab === t ? 'inset 0 0 0 1px rgba(91,108,255,0.3)' : 'none',
                   }}
                 >
                   {t === 'chat' ? 'AI Chat' : 'Assets & FX'}
@@ -320,15 +321,16 @@ export default function WorldBuilderPage() {
       {/* Bottom panel — hidden in preview mode */}
       {panels.bottomOpen && !isPreviewMode && (
         <div className="shrink-0 h-56 overflow-hidden">
-          <div className="flex h-9 shrink-0" style={{ borderTop: '1px solid #1E2028', borderBottom: '1px solid #1E2028', background: '#111318' }}>
+          <div className="flex h-10 shrink-0 items-center px-1.5 gap-1" style={{ borderTop: '1px solid #1E2028', borderBottom: '1px solid #1E2028', background: '#111318' }}>
             {(['animation', 'physics'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => useScene.getState().setPanelTab('bottom', t)}
-                className="px-5 text-[11px] font-medium capitalize transition-colors"
+                className="px-4 h-7 rounded-md text-[11px] font-medium capitalize transition-all"
                 style={{
-                  color: panels.bottomTab === t ? '#E8E9F0' : '#7A7E92',
-                  borderBottom: panels.bottomTab === t ? '2px solid #5B6CFF' : '2px solid transparent',
+                  color: panels.bottomTab === t ? '#E8E9F0' : '#5A5F78',
+                  background: panels.bottomTab === t ? 'rgba(91,108,255,0.15)' : 'transparent',
+                  boxShadow: panels.bottomTab === t ? 'inset 0 0 0 1px rgba(91,108,255,0.3)' : 'none',
                 }}
               >
                 {t}
