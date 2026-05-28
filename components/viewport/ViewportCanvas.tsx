@@ -12,7 +12,6 @@ import {
   Stars,
   Text3D,
   Center,
-  Outlines,
   Sky,
   OrthographicCamera as DreiOrthoCamera,
   Line,
@@ -537,7 +536,10 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       <SceneGeometry geo={obj.geometry} />
       <primitive object={material} attach="material" />
       {isSelected && !isPlaying && (
-        <Outlines thickness={0.4} color="#5B6CFF" screenspace transparent opacity={0.7} />
+        <mesh>
+          <SceneGeometry geo={obj.geometry} />
+          <meshBasicMaterial color="#5B6CFF" transparent opacity={0.1} depthTest={false} depthWrite={false} />
+        </mesh>
       )}
       {ix?.tooltipText && hovered.current && (
         <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
@@ -657,8 +659,8 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
         <primitive object={cloned} />
         {isSelected && !isPlaying && (
           <mesh position={bbCenter.toArray() as [number, number, number]}>
-            <boxGeometry args={[bbSize.x * 1.02, bbSize.y * 1.02, bbSize.z * 1.02]} />
-            <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.5} />
+            <boxGeometry args={[bbSize.x * 1.01, bbSize.y * 1.01, bbSize.z * 1.01]} />
+            <meshBasicMaterial color="#5B6CFF" transparent opacity={0.08} depthTest={false} depthWrite={false} />
           </mesh>
         )}
       </group>
@@ -1337,8 +1339,8 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
       <primitive object={terrainMat} attach="material" />
       {isSelected && (
         <mesh>
-          <boxGeometry args={[cfg.size * 1.01, 0.05, cfg.size * 1.01]} />
-          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.3} />
+          <boxGeometry args={[cfg.size, 0.02, cfg.size]} />
+          <meshBasicMaterial color="#5B6CFF" transparent opacity={0.08} depthTest={false} depthWrite={false} />
         </mesh>
       )}
     </mesh>
@@ -1393,8 +1395,8 @@ function WaterObject({ obj }: { obj: SceneObject }) {
       <primitive object={waterMat} attach="material" />
       {isSelected && (
         <mesh>
-          <planeGeometry args={[cfg.size * 1.01, cfg.size * 1.01]} />
-          <meshBasicMaterial color="#5B6CFF" wireframe transparent opacity={0.3} />
+          <planeGeometry args={[cfg.size, cfg.size]} />
+          <meshBasicMaterial color="#5B6CFF" transparent opacity={0.08} depthTest={false} depthWrite={false} />
         </mesh>
       )}
     </mesh>
