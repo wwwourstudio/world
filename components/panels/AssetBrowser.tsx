@@ -1041,12 +1041,11 @@ function HDRITab() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-type AssetTab = 'prims' | 'models' | 'mats' | 'tex' | 'fx' | 'hdri'
+type AssetTab = 'prims' | 'models' | 'tex' | 'fx' | 'hdri'
 
 const TABS: { id: AssetTab; label: string }[] = [
   { id: 'prims',  label: 'Prims'  },
   { id: 'models', label: 'Models' },
-  { id: 'mats',   label: 'Mats'   },
   { id: 'tex',    label: 'Tex'    },
   { id: 'fx',     label: 'FX'     },
   { id: 'hdri',   label: 'HDRI'   },
@@ -1058,16 +1057,16 @@ export function AssetBrowser() {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ background: '#111318' }}>
       {/* Tab bar */}
-      <div className="flex shrink-0 h-9" style={{ borderBottom: '1px solid #1E2028' }}>
+      <div className="flex shrink-0 h-10 items-center px-1.5 gap-0.5 overflow-x-auto" style={{ borderBottom: '1px solid #1E2028', scrollbarWidth: 'none' }}>
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className="flex-1 text-[9px] font-medium uppercase tracking-wider transition-colors"
+            className="flex items-center justify-center shrink-0 flex-1 min-w-0 h-7 rounded-md text-[10px] font-medium tracking-wide transition-all"
             style={{
-              color: tab === t.id ? '#E8E9F0' : '#7A7E92',
-              borderBottom: tab === t.id ? '2px solid #5B6CFF' : '2px solid transparent',
-              background: tab === t.id ? '#5B6CFF08' : 'transparent',
+              color: tab === t.id ? '#E8E9F0' : '#5A5F78',
+              background: tab === t.id ? 'rgba(91,108,255,0.15)' : 'transparent',
+              boxShadow: tab === t.id ? 'inset 0 0 0 1px rgba(91,108,255,0.3)' : 'none',
             }}
           >
             {t.label}
@@ -1077,7 +1076,6 @@ export function AssetBrowser() {
 
       {tab === 'prims'  && <PrimitivesTab />}
       {tab === 'models' && <ModelsTab />}
-      {tab === 'mats'   && <MaterialsTab />}
       {tab === 'tex'    && <TexturesTab />}
       {tab === 'fx'     && <FXTab />}
       {tab === 'hdri'   && <HDRITab />}
