@@ -234,6 +234,56 @@ function SmallBtn({ onClick, children }: { onClick: () => void; children: React.
   )
 }
 
+function PaintBrushSection({
+  id, obj, updateObject,
+}: {
+  id: string
+  obj: SceneObject
+  updateObject: (id: string, patch: import('@/lib/scene/SceneStore').DeepPartial<SceneObject>) => void
+}) {
+  const activeTool = useScene((s) => s.activeTool)
+  const paintColor = useScene((s) => s.paintColor)
+  const paintRadius = useScene((s) => s.paintRadius)
+  const paintStrength = useScene((s) => s.paintStrength)
+  const setPaintColor = useScene((s) => s.setPaintColor)
+  const setPaintRadius = useScene((s) => s.setPaintRadius)
+  const setPaintStrength = useScene((s) => s.setPaintStrength)
+  const hasVertexColors = !!(obj.geometry?.vertexPaintColors && obj.geometry.vertexPaintColors.length > 0)
+
+  return (
+    <Section label="Vertex Paint" icon={<Paintbrush size={11} />} defaultOpen={activeTool === 'paint'}>
+      <div className="flex flex-col gap-2">
+        {activeTool !== 'paint' && (
+          <p className="text-[10px]" style={{ color: '#4a4e62' }}>
+            Select Paint tool (P) then click/drag on this mesh to paint vertex colors.
+          </p>
+        )}
+        {activeTool === 'paint' && (
+          <p className="text-[10px]" style={{ color: '#22c55e' }}>● Painting active — click/drag on mesh</p>
+        )}
+        <Row label="Paint Color">
+          <div className="flex items-center gap-1.5">
+            <input type="color" value={paintColor}
+              onChange={(e) => setPaintColor(e.target.value)}
+              className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }} />
+            <input value={paintColor}
+              onChange={(e) => setPaintColor(e.target.value)}
+              className="flex-1 h-6 px-1.5 rounded text-[11px] font-mono outline-none border"
+              style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
+          </div>
+        </Row>
+        <SliderRow label="Brush Radius" value={paintRadius} min={0.1} max={5} step={0.05} onChange={setPaintRadius} />
+        <SliderRow label="Strength" value={paintStrength} min={0.01} max={1} step={0.01} onChange={setPaintStrength} />
+        {hasVertexColors && (
+          <SmallBtn onClick={() => updateObject(id, { geometry: { ...obj.geometry, vertexPaintColors: undefined } })}>
+            Clear Paint
+          </SmallBtn>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 function TerrainSection({
   id, terrain, updateObject,
 }: {
@@ -245,9 +295,11 @@ function TerrainSection({
   const sculptMode = useScene((s) => s.sculptMode)
   const sculptRadius = useScene((s) => s.sculptRadius)
   const sculptStrength = useScene((s) => s.sculptStrength)
+  const sculptFalloff = useScene((s) => s.sculptFalloff)
   const setSculptMode = useScene((s) => s.setSculptMode)
   const setSculptRadius = useScene((s) => s.setSculptRadius)
   const setSculptStrength = useScene((s) => s.setSculptStrength)
+  const setSculptFalloff = useScene((s) => s.setSculptFalloff)
   const tc = terrain
 
   return (
@@ -291,8 +343,8 @@ function TerrainSection({
       <Section label="Sculpt" icon={<Paintbrush size={11} />} defaultOpen={activeTool === 'sculpt'}>
         <div className="flex flex-col gap-2">
           <Row label="Mode">
-            <div className="flex gap-1">
-              {(['raise', 'lower', 'smooth', 'flatten'] as SculptMode[]).map((m) => (
+            <div className="flex flex-wrap gap-1">
+              {(['raise', 'lower', 'smooth', 'flatten', 'stamp', 'inflate'] as SculptMode[]).map((m) => (
                 <button key={m}
                   onClick={() => setSculptMode(m)}
                   className="px-1.5 h-5 rounded text-[9px] font-medium capitalize transition-all"
@@ -306,8 +358,24 @@ function TerrainSection({
               ))}
             </div>
           </Row>
-          <SliderRow label="Radius" value={sculptRadius} min={0.5} max={10} step={0.1} onChange={setSculptRadius} />
-          <SliderRow label="Strength" value={sculptStrength} min={0.01} max={1} step={0.01} onChange={setSculptStrength} />
+          <Row label="Falloff">
+            <div className="flex gap-1">
+              {(['smooth', 'linear', 'sharp'] as import('@/lib/scene/SceneStore').SculptFalloff[]).map((f) => (
+                <button key={f}
+                  onClick={() => setSculptFalloff(f)}
+                  className="px-1.5 h-5 rounded text-[9px] font-medium capitalize transition-all flex-1"
+                  style={{
+                    background: sculptFalloff === f ? '#8B5CF6' : '#1E2028',
+                    color: sculptFalloff === f ? '#fff' : '#7A7E92',
+                    border: '1px solid #2a2d3a',
+                  }}>
+                  {f}
+                </button>
+              ))}
+            </div>
+          </Row>
+          <SliderRow label="Radius" value={sculptRadius} min={0.5} max={20} step={0.1} onChange={setSculptRadius} />
+          <SliderRow label="Strength" value={sculptStrength} min={0.01} max={3} step={0.01} onChange={setSculptStrength} />
           <p className="text-[10px] leading-relaxed" style={{ color: '#4a4e62' }}>
             Select Sculpt tool (T) then click/drag on terrain to sculpt.
           </p>
@@ -1237,6 +1305,35 @@ export function PropertiesPanel() {
                     style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
                   />
                 </div>
+                <SliderRow label="Letter Spacing" value={obj.htmlConfig.letterSpacing ?? 0} min={-0.1} max={0.4} step={0.005}
+                  onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, letterSpacing: v } })} />
+                <SliderRow label="Line Height" value={obj.htmlConfig.lineHeight ?? (obj.htmlConfig.htmlType === 'heading' ? 1.1 : 1.6)} min={0.7} max={3} step={0.05}
+                  onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, lineHeight: v } })} />
+                <Row label="Transform">
+                  <select
+                    value={obj.htmlConfig.textTransform ?? 'none'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, textTransform: e.target.value as 'none' | 'uppercase' | 'lowercase' | 'capitalize' } })}
+                    className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                  >
+                    <option value="none">None</option>
+                    <option value="uppercase">UPPERCASE</option>
+                    <option value="lowercase">lowercase</option>
+                    <option value="capitalize">Capitalize</option>
+                  </select>
+                </Row>
+                <Row label="Decoration">
+                  <select
+                    value={obj.htmlConfig.textDecoration ?? 'none'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, textDecoration: e.target.value as 'none' | 'underline' | 'line-through' } })}
+                    className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+                  >
+                    <option value="none">None</option>
+                    <option value="underline">Underline</option>
+                    <option value="line-through">Strikethrough</option>
+                  </select>
+                </Row>
               </>
             )}
             {/* Colors */}
@@ -1304,9 +1401,60 @@ export function PropertiesPanel() {
               onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, borderRadius: v } })} />
             <SliderRow label="Opacity" value={obj.htmlConfig.opacity ?? 1} min={0} max={1} step={0.01}
               onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, opacity: v } })} />
+            {/* Border */}
+            <SliderRow label="Border Width" value={obj.htmlConfig.borderWidth ?? 0} min={0} max={20} step={1}
+              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, borderWidth: v } })} />
+            {(obj.htmlConfig.borderWidth ?? 0) > 0 && (<>
+              <Row label="Border Color">
+                <div className="flex items-center gap-1.5">
+                  <input type="color"
+                    value={obj.htmlConfig.borderColor && !obj.htmlConfig.borderColor.startsWith('rgba') ? obj.htmlConfig.borderColor : '#ffffff'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, borderColor: e.target.value } })}
+                    className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent" />
+                  <input value={obj.htmlConfig.borderColor ?? 'rgba(255,255,255,0.2)'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, borderColor: e.target.value } })}
+                    className="flex-1 h-6 px-1.5 rounded text-[11px] font-mono outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
+                </div>
+              </Row>
+              <Row label="Border Style">
+                <select value={obj.htmlConfig.borderStyle ?? 'solid'}
+                  onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, borderStyle: e.target.value as 'solid' | 'dashed' | 'dotted' } })}
+                  className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                  <option value="solid">Solid</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="dotted">Dotted</option>
+                </select>
+              </Row>
+            </>)}
+            {/* Shadow */}
+            <SliderRow label="Shadow Blur" value={obj.htmlConfig.shadowBlur ?? 0} min={0} max={80} step={1}
+              onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, shadowBlur: v } })} />
+            {(obj.htmlConfig.shadowBlur ?? 0) > 0 && (<>
+              <Row label="Shadow Color">
+                <div className="flex items-center gap-1.5">
+                  <input type="color"
+                    value={obj.htmlConfig.shadowColor && !obj.htmlConfig.shadowColor.startsWith('rgba') ? obj.htmlConfig.shadowColor : '#000000'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, shadowColor: e.target.value } })}
+                    className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent" />
+                  <input value={obj.htmlConfig.shadowColor ?? 'rgba(0,0,0,0.5)'}
+                    onChange={(e) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, shadowColor: e.target.value } })}
+                    className="flex-1 h-6 px-1.5 rounded text-[11px] font-mono outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
+                </div>
+              </Row>
+              <SliderRow label="Shadow X" value={obj.htmlConfig.shadowX ?? 0} min={-40} max={40} step={1}
+                onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, shadowX: v } })} />
+              <SliderRow label="Shadow Y" value={obj.htmlConfig.shadowY ?? 4} min={-40} max={40} step={1}
+                onChange={(v) => updateObject(id, { htmlConfig: { ...obj.htmlConfig!, shadowY: v } })} />
+            </>)}
           </div>
         </Section>
       )}
+
+      {/* Paint Brush */}
+      {obj.type === 'mesh' && <PaintBrushSection id={id} obj={obj} updateObject={updateObject} />}
 
       {/* Interactions */}
       {(obj.type === 'mesh' || obj.type === 'group' || obj.geometry?.type === 'gltf') && (

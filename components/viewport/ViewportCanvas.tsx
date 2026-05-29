@@ -101,6 +101,23 @@ function useSceneMaterial(cfg: MaterialConfig) {
   }, [JSON.stringify(cfg)])
 }
 
+// ─── Shadow Bounds Helper ─────────────────────────────────────────────────────
+
+function useSceneShadowBounds() {
+  return useScene((s) => {
+    const objs = Object.values(s.objects)
+    if (objs.length === 0) return { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
+    for (const o of objs) {
+      const [x, , z] = o.transform.position
+      if (x < minX) minX = x; if (x > maxX) maxX = x
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
+    }
+    const pad = Math.max((maxX - minX) * 0.3, (maxZ - minZ) * 0.3, 8)
+    return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad }
+  })
+}
+
 // ─── Keyframe Interpolation ───────────────────────────────────────────────────
 
 function lerpAngle(a: number, b: number, t: number) {
@@ -108,6 +125,21 @@ function lerpAngle(a: number, b: number, t: number) {
   while (diff > Math.PI) diff -= Math.PI * 2
   while (diff < -Math.PI) diff += Math.PI * 2
   return a + diff * t
+}
+
+function applyEasing(t: number, easing?: string): number {
+  switch (easing) {
+    case 'ease-in':      return t * t
+    case 'ease-out':     return t * (2 - t)
+    case 'ease-in-out':  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+    case 'bounce': {
+      if (t < 1 / 2.75)      return 7.5625 * t * t
+      if (t < 2 / 2.75)      { t -= 1.5 / 2.75;   return 7.5625 * t * t + 0.75 }
+      if (t < 2.5 / 2.75)   { t -= 2.25 / 2.75;  return 7.5625 * t * t + 0.9375 }
+      t -= 2.625 / 2.75; return 7.5625 * t * t + 0.984375
+    }
+    default:             return t
+  }
 }
 
 function interpolateKeyframes(kfs: Keyframe[], playhead: number): THREE.Object3D | null {
@@ -138,7 +170,8 @@ function interpolateKeyframes(kfs: Keyframe[], playhead: number): THREE.Object3D
   let i = 0
   while (i < kfs.length - 1 && kfs[i + 1].time <= t) i++
   const k0 = kfs[i], k1 = kfs[i + 1]
-  const alpha = (t - k0.time) / (k1.time - k0.time)
+  const rawAlpha = (t - k0.time) / (k1.time - k0.time)
+  const alpha = applyEasing(rawAlpha, k1.easing)
   const dummy = new THREE.Object3D()
   dummy.position.set(
     k0.transform.position[0] + (k1.transform.position[0] - k0.transform.position[0]) * alpha,
@@ -419,6 +452,75 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
   useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
 
+  // ── Vertex painting ──
+  const painting = useRef(false)
+  const paintColors = useRef<Float32Array | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const mesh = ref.current
+    if (!mesh) return
+    const stored = obj.geometry.vertexPaintColors
+    if (stored && stored.length > 0) {
+      const colors = new Float32Array(stored)
+      mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      paintColors.current = colors
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      if (!mat.vertexColors) { mat.vertexColors = true; mat.needsUpdate = true }
+    } else if (!stored) {
+      if (mesh.geometry.hasAttribute('color')) {
+        mesh.geometry.deleteAttribute('color')
+        const mat = mesh.material as THREE.MeshStandardMaterial
+        mat.vertexColors = false; mat.needsUpdate = true
+      }
+      paintColors.current = null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obj.geometry.type, obj.geometry.vertexPaintColors])
+
+  function handlePaintAt(point: THREE.Vector3) {
+    const mesh = ref.current
+    if (!mesh) return
+    const geo = mesh.geometry
+    const posAttr = geo.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!posAttr) return
+    const count = posAttr.count
+    const { paintColor, paintRadius, paintStrength } = useScene.getState()
+
+    if (!paintColors.current || paintColors.current.length !== count * 3) {
+      paintColors.current = new Float32Array(count * 3).fill(1)
+    }
+    if (!geo.hasAttribute('color')) {
+      geo.setAttribute('color', new THREE.BufferAttribute(paintColors.current, 3))
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.vertexColors = true; mat.needsUpdate = true
+    }
+
+    const colorAttr = geo.getAttribute('color') as THREE.BufferAttribute
+    const pc = new THREE.Color(paintColor)
+    const localPt = mesh.worldToLocal(point.clone())
+
+    for (let i = 0; i < count; i++) {
+      const dx = posAttr.getX(i) - localPt.x
+      const dy = posAttr.getY(i) - localPt.y
+      const dz = posAttr.getZ(i) - localPt.z
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      if (dist > paintRadius) continue
+      const t = Math.pow(1 - dist / paintRadius, 2) * paintStrength
+      colorAttr.setXYZ(i,
+        colorAttr.getX(i) + (pc.r - colorAttr.getX(i)) * t,
+        colorAttr.getY(i) + (pc.g - colorAttr.getY(i)) * t,
+        colorAttr.getZ(i) + (pc.b - colorAttr.getZ(i)) * t,
+      )
+    }
+    colorAttr.needsUpdate = true
+
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      useScene.getState().saveVertexPaintColors(obj.id, Array.from(paintColors.current!))
+    }, 400)
+  }
+
   useEffect(() => {
     if (!obj.scrollAnim || obj.scrollAnim.effect === 'none') return
     const mat = ref.current?.material as THREE.MeshStandardMaterial | undefined
@@ -483,6 +585,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       receiveShadow={obj.receiveShadow}
       onClick={(e) => {
         e.stopPropagation()
+        if (activeTool === 'paint') { handlePaintAt(e.point); return }
         if (activeTool === 'select' || activeTool === 'translate' || activeTool === 'rotate' || activeTool === 'scale') {
           selectObject(obj.id, e.shiftKey)
         }
@@ -512,8 +615,16 @@ function MeshObject({ obj }: { obj: SceneObject }) {
         selectObject(obj.id, false)
         useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
       }}
+      onPointerDown={(e) => {
+        if (activeTool === 'paint') { e.stopPropagation(); painting.current = true; handlePaintAt(e.point) }
+      }}
+      onPointerUp={() => { painting.current = false }}
+      onPointerMove={(e) => {
+        if (activeTool === 'paint' && painting.current) { e.stopPropagation(); handlePaintAt(e.point) }
+      }}
       onPointerEnter={(e) => {
         e.stopPropagation()
+        if (activeTool === 'paint') { document.body.style.cursor = 'crosshair'; return }
         if (!ix || ix.hoverEffect === 'none') return
         hovered.current = true
         if (ref.current) {
@@ -527,6 +638,8 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       }}
       onPointerLeave={(e) => {
         e.stopPropagation()
+        painting.current = false
+        if (activeTool === 'paint') { document.body.style.cursor = ''; return }
         if (!ix || ix.hoverEffect === 'none') return
         hovered.current = false
         if (ref.current) {
@@ -1626,6 +1739,7 @@ function LightObject({ obj }: { obj: SceneObject }) {
   const pos = obj.transform.position
   const shadowMapSize = useScene((s) => s.environment.shadowMapSize)
   const mapSize = shadowMapSize ?? 2048
+  const shadowBounds = useSceneShadowBounds()
 
   return (
     <>
@@ -1642,11 +1756,11 @@ function LightObject({ obj }: { obj: SceneObject }) {
           intensity={cfg.intensity}
           castShadow={cfg.castShadow}
           shadow-mapSize={[mapSize, mapSize]}
-          shadow-camera-far={100}
-          shadow-camera-left={-20}
-          shadow-camera-right={20}
-          shadow-camera-top={20}
-          shadow-camera-bottom={-20}
+          shadow-camera-far={150}
+          shadow-camera-left={shadowBounds.minX}
+          shadow-camera-right={shadowBounds.maxX}
+          shadow-camera-top={shadowBounds.maxZ}
+          shadow-camera-bottom={shadowBounds.minZ}
         />
       )}
       {cfg.type === 'point' && (
@@ -1732,6 +1846,13 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
     transition: 'none',
   }
 
+  const shadowCss = cfg.shadowBlur
+    ? `${cfg.shadowX ?? 0}px ${cfg.shadowY ?? 4}px ${cfg.shadowBlur}px ${cfg.shadowColor ?? 'rgba(0,0,0,0.5)'}`
+    : undefined
+  const borderCss = cfg.borderWidth
+    ? `${cfg.borderWidth}px ${cfg.borderStyle ?? 'solid'} ${cfg.borderColor ?? 'rgba(255,255,255,0.2)'}`
+    : undefined
+
   return (
     <Html
       position={obj.transform.position}
@@ -1751,6 +1872,8 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
             borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined,
             textAlign: cfg.textAlign ?? 'left',
             fontFamily,
+            border: borderCss,
+            boxShadow: shadowCss,
             outline: isSelected ? '2px solid rgba(255,255,255,0.8)' : 'none',
             outlineOffset: '4px',
             cursor: 'pointer',
@@ -1759,12 +1882,26 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
           }}
         >
           {cfg.htmlType === 'heading' && (
-            <h1 style={{ fontSize: `${cfg.fontSize ?? 64}px`, fontWeight: cfg.fontWeight ?? '700', margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em', fontFamily }}>
+            <h1 style={{
+              fontSize: `${cfg.fontSize ?? 64}px`, fontWeight: cfg.fontWeight ?? '700', margin: 0,
+              lineHeight: cfg.lineHeight ?? 1.1,
+              letterSpacing: cfg.letterSpacing != null ? `${cfg.letterSpacing}em` : '-0.02em',
+              textTransform: (cfg.textTransform as React.CSSProperties['textTransform']) ?? 'none',
+              textDecoration: cfg.textDecoration ?? 'none',
+              fontFamily,
+            }}>
               {cfg.content ?? 'Heading'}
             </h1>
           )}
           {cfg.htmlType === 'paragraph' && (
-            <p style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '400', margin: 0, lineHeight: 1.6, fontFamily }}>
+            <p style={{
+              fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '400', margin: 0,
+              lineHeight: cfg.lineHeight ?? 1.6,
+              letterSpacing: cfg.letterSpacing != null ? `${cfg.letterSpacing}em` : undefined,
+              textTransform: (cfg.textTransform as React.CSSProperties['textTransform']) ?? 'none',
+              textDecoration: cfg.textDecoration ?? 'none',
+              fontFamily,
+            }}>
               {cfg.content ?? 'Paragraph text'}
             </p>
           )}
@@ -1969,7 +2106,7 @@ function GizmoControl() {
     }
   }, [obj, selectedId])
 
-  if (!obj || isPlaying || activeTool === 'select' || activeTool === 'sculpt') return null
+  if (!obj || isPlaying || activeTool === 'select' || activeTool === 'sculpt' || activeTool === 'paint') return null
 
   const mode = activeTool === 'rotate' ? 'rotate' : activeTool === 'scale' ? 'scale' : 'translate'
 
@@ -2262,30 +2399,41 @@ function CameraCapture() {
 
 function CameraPathVisual() {
   const appMode = useScene((s) => s.appMode)
+  const leftTab = useScene((s) => s.panels.leftTab)
   const cameraPath = useScene((s) => s.cameraPath)
 
-  const lineGeometry = useMemo(() => {
+  const splinePoints = useMemo(() => {
     if (cameraPath.length < 2) return null
-    const positions = new Float32Array(cameraPath.flatMap((kp) => kp.position))
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    return geo
+    const pts = cameraPath.map((kp) => new THREE.Vector3(...kp.position))
+    const curve = new THREE.CatmullRomCurve3(pts)
+    return curve.getPoints(Math.max(cameraPath.length * 20, 60))
   }, [cameraPath])
 
-  if (appMode !== 'website' || cameraPath.length < 1) return null
+  const visible = appMode === 'website' || leftTab === 'camera'
+  if (!visible || cameraPath.length < 1) return null
 
   return (
     <group>
-      {lineGeometry && (
-        <lineSegments geometry={lineGeometry}>
-          <lineBasicMaterial color="#5B6CFF" linewidth={1} />
-        </lineSegments>
+      {splinePoints && (
+        <Line
+          points={splinePoints}
+          color="#5B6CFF"
+          lineWidth={1.5}
+          dashed={false}
+        />
       )}
       {cameraPath.map((kp) => (
-        <mesh key={kp.id} position={kp.position}>
-          <sphereGeometry args={[0.22, 10, 10]} />
-          <meshBasicMaterial color="#5B6CFF" />
-        </mesh>
+        <group key={kp.id} position={kp.position}>
+          <mesh>
+            <sphereGeometry args={[0.22, 10, 10]} />
+            <meshBasicMaterial color="#5B6CFF" />
+          </mesh>
+          {/* Camera frustum wireframe */}
+          <mesh>
+            <boxGeometry args={[1.2, 0.9, 0.6]} />
+            <meshBasicMaterial color="#8B5CF6" wireframe transparent opacity={0.5} />
+          </mesh>
+        </group>
       ))}
     </group>
   )
@@ -2302,6 +2450,7 @@ function InnerScene() {
   const deselectAll = useScene((s) => s.deselectAll)
   const transformSpace = useScene((s) => s.transformSpace)
   const appMode = useScene((s) => s.appMode)
+  const shadowBounds = useSceneShadowBounds()
 
   const mapSize = environment.shadowMapSize ?? 2048
 
@@ -2323,11 +2472,11 @@ function InnerScene() {
         position={skyDirPos}
         castShadow={environment.shadowsEnabled}
         shadow-mapSize={[mapSize, mapSize]}
-        shadow-camera-far={100}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
+        shadow-camera-far={150}
+        shadow-camera-left={shadowBounds.minX}
+        shadow-camera-right={shadowBounds.maxX}
+        shadow-camera-top={shadowBounds.maxZ}
+        shadow-camera-bottom={shadowBounds.minZ}
       />
 
       {rootIds.map((id) => <SceneObjectNode key={id} id={id} />)}
