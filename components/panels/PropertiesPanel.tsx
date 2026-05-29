@@ -3,10 +3,10 @@
 import { useState } from 'react'
 import {
   ChevronDown, ChevronRight, Move3D, RotateCcw, Eye, Lightbulb, Sun,
-  Type, Sparkles, Play, Box, Group, Flame, Maximize2, Mountain, Droplets, Paintbrush,
+  Type, Sparkles, Play, Box, Group, Flame, Maximize2, Mountain, Droplets, Paintbrush, Zap,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig, SceneObject, SculptMode, ScrollAnimConfig } from '@/lib/scene/SceneStore'
+import type { AnimationConfig, AnimationPreset, ParticleConfig, GeometryConfig, SceneObject, SculptMode, ScrollAnimConfig, BehaviorConfig, BehaviorType } from '@/lib/scene/SceneStore'
 
 function getNaturalSize(geo: GeometryConfig): number {
   switch (geo.type) {
@@ -561,6 +561,193 @@ function ParticleSection({
   )
 }
 
+const ALL_BEHAVIOR_TYPES: { type: BehaviorType; label: string }[] = [
+  { type: 'rotate', label: 'Rotate' },
+  { type: 'sway', label: 'Sway' },
+  { type: 'oscillate', label: 'Oscillate' },
+  { type: 'scalePulse', label: 'Scale Pulse' },
+  { type: 'emissivePulse', label: 'Emissive Pulse' },
+  { type: 'lookAtCamera', label: 'Look at Camera' },
+  { type: 'randomWander', label: 'Random Wander' },
+  { type: 'patrol', label: 'Patrol' },
+  { type: 'follow', label: 'Follow' },
+  { type: 'lookAt', label: 'Look At' },
+  { type: 'onClick', label: 'On Click' },
+  { type: 'proximityTrigger', label: 'Proximity Trigger' },
+]
+
+function AxisPicker({ value, onChange }: { value?: 'x' | 'y' | 'z'; onChange: (v: 'x' | 'y' | 'z') => void }) {
+  const active = value ?? 'y'
+  return (
+    <div className="flex gap-1 items-center">
+      <span className="text-[10px] w-16 shrink-0" style={{ color: '#7A7E92' }}>Axis</span>
+      {(['x', 'y', 'z'] as const).map((ax) => (
+        <button key={ax} onClick={() => onChange(ax)}
+          className="w-7 h-5 rounded text-[10px] font-mono font-bold"
+          style={{ background: active === ax ? '#5B6CFF' : '#1E2028', color: active === ax ? '#fff' : '#7A7E92' }}>
+          {ax.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function BehaviorItem({ objId, b }: { objId: string; b: BehaviorConfig }) {
+  const detachBehavior = useScene((s) => s.detachBehavior)
+  const updateBehavior = useScene((s) => s.updateBehavior)
+  const [open, setOpen] = useState(true)
+  const upd = (patch: Partial<BehaviorConfig>) => updateBehavior(objId, b.id, patch)
+  const label = ALL_BEHAVIOR_TYPES.find((x) => x.type === b.type)?.label ?? b.type
+
+  return (
+    <div className="mb-2 rounded-md overflow-hidden" style={{ border: '1px solid #1E2028' }}>
+      <div className="flex items-center gap-1.5 h-7 px-2 cursor-pointer select-none"
+        style={{ background: '#12141a' }}
+        onClick={() => setOpen(!open)}>
+        {open ? <ChevronDown size={9} style={{ color: '#5A5E72' }} /> : <ChevronRight size={9} style={{ color: '#5A5E72' }} />}
+        <span className="flex-1 text-[11px] font-medium" style={{ color: '#E8E9F0' }}>{label}</span>
+        <input type="checkbox" checked={b.enabled}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => upd({ enabled: e.target.checked })} />
+        <button
+          onClick={(e) => { e.stopPropagation(); detachBehavior(objId, b.id) }}
+          className="ml-1.5 px-1.5 h-5 rounded text-[10px]"
+          style={{ background: 'transparent', color: '#f87171' }}>✕</button>
+      </div>
+      {open && (
+        <div className="flex flex-col gap-1.5 px-2 py-2" style={{ borderTop: '1px solid #1E2028' }}>
+          {b.type === 'rotate' && (
+            <>
+              <AxisPicker value={b.axis} onChange={(v) => upd({ axis: v })} />
+              <SliderRow label="Speed" value={b.speed ?? 1} min={0.1} max={5} step={0.1} onChange={(v) => upd({ speed: v })} />
+            </>
+          )}
+          {b.type === 'sway' && (
+            <>
+              <AxisPicker value={b.axis} onChange={(v) => upd({ axis: v })} />
+              <SliderRow label="Amplitude" value={b.amplitude ?? 0.3} min={0.01} max={2} step={0.01} onChange={(v) => upd({ amplitude: v })} />
+              <SliderRow label="Speed" value={b.speed ?? 1} min={0.1} max={5} step={0.1} onChange={(v) => upd({ speed: v })} />
+            </>
+          )}
+          {b.type === 'oscillate' && (
+            <>
+              <AxisPicker value={b.axis} onChange={(v) => upd({ axis: v })} />
+              <SliderRow label="Amplitude" value={b.amplitude ?? 1} min={0.01} max={5} step={0.05} onChange={(v) => upd({ amplitude: v })} />
+              <SliderRow label="Frequency" value={b.frequency ?? 1} min={0.1} max={5} step={0.1} onChange={(v) => upd({ frequency: v })} />
+              <SliderRow label="Phase Offset" value={b.offset ?? 0} min={0} max={6.28} step={0.01} onChange={(v) => upd({ offset: v })} />
+            </>
+          )}
+          {b.type === 'scalePulse' && (
+            <>
+              <SliderRow label="Min Scale" value={b.minValue ?? 0.8} min={0.1} max={2} step={0.01} onChange={(v) => upd({ minValue: v })} />
+              <SliderRow label="Max Scale" value={b.maxValue ?? 1.2} min={0.5} max={3} step={0.01} onChange={(v) => upd({ maxValue: v })} />
+              <SliderRow label="Speed" value={b.speed ?? 1} min={0.1} max={5} step={0.1} onChange={(v) => upd({ speed: v })} />
+            </>
+          )}
+          {b.type === 'emissivePulse' && (
+            <>
+              <SliderRow label="Min Intensity" value={b.minValue ?? 0} min={0} max={3} step={0.01} onChange={(v) => upd({ minValue: v })} />
+              <SliderRow label="Max Intensity" value={b.maxValue ?? 2} min={0.1} max={10} step={0.1} onChange={(v) => upd({ maxValue: v })} />
+              <SliderRow label="Speed" value={b.speed ?? 1} min={0.1} max={5} step={0.1} onChange={(v) => upd({ speed: v })} />
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] w-24 shrink-0 truncate" style={{ color: '#7A7E92' }}>Color Override</span>
+                <input type="color" value={b.color ?? '#ffffff'}
+                  onChange={(e) => upd({ color: e.target.value })}
+                  className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }} />
+                <span className="text-[10px] font-mono" style={{ color: '#7A7E92' }}>{b.color ?? '#ffffff'}</span>
+              </div>
+            </>
+          )}
+          {b.type === 'lookAtCamera' && (
+            <span className="text-[10px]" style={{ color: '#5A5E72' }}>Object continuously faces the camera.</span>
+          )}
+          {b.type === 'randomWander' && (
+            <>
+              <SliderRow label="Speed" value={b.speed ?? 1} min={0.1} max={10} step={0.1} onChange={(v) => upd({ speed: v })} />
+              <SliderRow label="Radius" value={b.radius ?? 5} min={0.5} max={30} step={0.5} onChange={(v) => upd({ radius: v })} />
+              <SliderRow label="Interval (s)" value={b.interval ?? 2} min={0.5} max={10} step={0.5} onChange={(v) => upd({ interval: v })} />
+            </>
+          )}
+          {b.type === 'patrol' && (
+            <>
+              <SliderRow label="Speed" value={b.speed ?? 2} min={0.1} max={10} step={0.1} onChange={(v) => upd({ speed: v })} />
+              <SliderRow label="Pause (s)" value={b.pauseTime ?? 1} min={0} max={10} step={0.5} onChange={(v) => upd({ pauseTime: v })} />
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] w-24 shrink-0" style={{ color: '#7A7E92' }}>Loop</span>
+                <input type="checkbox" checked={b.loop ?? true} onChange={(e) => upd({ loop: e.target.checked })} />
+              </div>
+              <span className="text-[10px]" style={{ color: '#5A5E72' }}>
+                {b.waypoints?.length ?? 0} waypoints — use AI chat to define path
+              </span>
+            </>
+          )}
+          {(b.type === 'follow' || b.type === 'lookAt') && (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px]" style={{ color: '#7A7E92' }}>Target Name</span>
+                <input value={b.targetName ?? ''} placeholder="Object name…"
+                  onChange={(e) => upd({ targetName: e.target.value })}
+                  className="h-6 px-2 rounded text-[11px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
+              </div>
+              {b.type === 'follow' && (
+                <>
+                  <SliderRow label="Speed" value={b.speed ?? 2} min={0.1} max={10} step={0.1} onChange={(v) => upd({ speed: v })} />
+                  <SliderRow label="Min Distance" value={b.minDistance ?? 1} min={0} max={20} step={0.5} onChange={(v) => upd({ minDistance: v })} />
+                </>
+              )}
+            </>
+          )}
+          {b.type === 'onClick' && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] w-24 shrink-0" style={{ color: '#7A7E92' }}>Action</span>
+                <select value={b.action ?? 'none'} onChange={(e) => upd({ action: e.target.value })}
+                  className="flex-1 h-6 px-1.5 rounded text-[10px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                  <option value="none">None</option>
+                  <option value="link">Open Link</option>
+                  <option value="toggle-visible">Toggle Visible</option>
+                  <option value="switch-scene">Switch Scene</option>
+                </select>
+              </div>
+              {b.action === 'link' && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px]" style={{ color: '#7A7E92' }}>URL</span>
+                  <input value={b.linkUrl ?? ''} placeholder="https://…"
+                    onChange={(e) => upd({ linkUrl: e.target.value })}
+                    className="h-6 px-2 rounded text-[11px] outline-none border"
+                    style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }} />
+                </div>
+              )}
+            </>
+          )}
+          {b.type === 'proximityTrigger' && (
+            <>
+              <SliderRow label="Range" value={b.range ?? 5} min={0.5} max={50} step={0.5} onChange={(v) => upd({ range: v })} />
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] w-24 shrink-0" style={{ color: '#7A7E92' }}>Action</span>
+                <select value={b.action ?? 'none'} onChange={(e) => upd({ action: e.target.value })}
+                  className="flex-1 h-6 px-1.5 rounded text-[10px] outline-none border"
+                  style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}>
+                  <option value="none">None</option>
+                  <option value="show">Show</option>
+                  <option value="hide">Hide</option>
+                  <option value="switch-scene">Switch Scene</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] w-24 shrink-0" style={{ color: '#7A7E92' }}>Fire Once</span>
+                <input type="checkbox" checked={b.once ?? false} onChange={(e) => upd({ once: e.target.checked })} />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function PropertiesPanel() {
   const selectedIds = useScene((s) => s.selectedIds)
   const objects = useScene((s) => s.objects)
@@ -569,6 +756,7 @@ export function PropertiesPanel() {
   const appMode = useScene((s) => s.appMode)
   const cameraPath = useScene((s) => s.cameraPath)
   const scenes = useScene((s) => s.scenes)
+  const attachBehavior = useScene((s) => s.attachBehavior)
 
   const id = selectedIds[0]
   const obj = id ? objects[id] : null
@@ -640,7 +828,7 @@ export function PropertiesPanel() {
                 className="flex-1 h-6 px-1.5 rounded text-[11px] outline-none border"
                 style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
               >
-                {['ambient', 'directional', 'point', 'spot', 'hemisphere'].map((t) => (
+                {['ambient', 'directional', 'point', 'spot', 'hemisphere', 'rectarea'].map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
@@ -664,6 +852,30 @@ export function PropertiesPanel() {
             {obj.light.type === 'spot' && (
               <SliderRow label="Angle" value={obj.light.angle} min={0} max={Math.PI / 2} step={0.01}
                 onChange={(v) => updateObject(id, { light: { ...obj.light!, angle: v } })} />
+            )}
+            {obj.light.type === 'hemisphere' && (
+              <>
+                <Row label="Sky Color">
+                  <input type="color" value={obj.light.skyColor ?? '#ffffff'}
+                    onChange={(e) => updateObject(id, { light: { ...obj.light!, skyColor: e.target.value } })}
+                    className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }} />
+                  <span className="text-[11px] font-mono ml-1" style={{ color: '#7A7E92' }}>{obj.light.skyColor ?? '#ffffff'}</span>
+                </Row>
+                <Row label="Ground Color">
+                  <input type="color" value={obj.light.groundColor ?? '#444444'}
+                    onChange={(e) => updateObject(id, { light: { ...obj.light!, groundColor: e.target.value } })}
+                    className="w-7 h-6 rounded cursor-pointer border-0 p-0" style={{ background: 'transparent' }} />
+                  <span className="text-[11px] font-mono ml-1" style={{ color: '#7A7E92' }}>{obj.light.groundColor ?? '#444444'}</span>
+                </Row>
+              </>
+            )}
+            {obj.light.type === 'rectarea' && (
+              <>
+                <SliderRow label="Width" value={obj.light.rectAreaWidth ?? 4} min={0.5} max={20} step={0.5}
+                  onChange={(v) => updateObject(id, { light: { ...obj.light!, rectAreaWidth: v } })} />
+                <SliderRow label="Height" value={obj.light.rectAreaHeight ?? 4} min={0.5} max={20} step={0.5}
+                  onChange={(v) => updateObject(id, { light: { ...obj.light!, rectAreaHeight: v } })} />
+              </>
             )}
             <Row label="Shadow">
               <input
@@ -781,6 +993,34 @@ export function PropertiesPanel() {
           </div>
         </Section>
       )}
+
+      {/* Behaviors */}
+      <Section label="Behaviors" icon={<Zap size={11} />} defaultOpen={(obj.behaviors?.length ?? 0) > 0}>
+        <div className="flex flex-col">
+          {(obj.behaviors ?? []).map((b) => (
+            <BehaviorItem key={b.id} objId={id} b={b} />
+          ))}
+          {(obj.behaviors ?? []).length === 0 && (
+            <span className="text-[10px] mb-2" style={{ color: '#5A5E72' }}>No behaviors attached</span>
+          )}
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value) {
+                attachBehavior(id, { type: e.target.value as BehaviorType, enabled: true })
+                e.target.value = ''
+              }
+            }}
+            className="h-6 px-1.5 rounded text-[10px] outline-none border"
+            style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+          >
+            <option value="">+ Add Behavior</option>
+            {ALL_BEHAVIOR_TYPES
+              .filter(({ type }) => !(obj.behaviors ?? []).some((b) => b.type === type))
+              .map(({ type, label }) => <option key={type} value={type}>{label}</option>)}
+          </select>
+        </div>
+      </Section>
 
       {/* Animation */}
       <Section label="Animation" icon={<Play size={11} />} defaultOpen={false}>
