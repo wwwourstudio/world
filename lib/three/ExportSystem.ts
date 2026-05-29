@@ -288,6 +288,35 @@ function buildHtmlElementDOM(o: SceneObject): string {
       return `<div style="height:${cfg.height ?? 80}px"></div>`
     case 'icontext':
       return `<div style="display:flex;align-items:center;gap:16px"><span style="font-size:${fs ?? 40}px">${cfg.content ?? '✦'}</span><span style="font-size:${(fs ?? 40) * 0.4}px;font-weight:${fw}">${cfg.subtitle ?? 'Feature'}</span></div>`
+    case 'image': {
+      const src = cfg.content ?? ''
+      return `<img src="${src}" alt="" style="width:${cfg.width ?? 400}px;max-width:100%;border-radius:${cfg.borderRadius ?? 0}px;object-fit:cover;display:block" />`
+    }
+    case 'video': {
+      const url = cfg.videoUrl ?? cfg.content ?? ''
+      const isYT = url.includes('youtube.com') || url.includes('youtu.be')
+      const vidW = cfg.width ?? 560
+      const vidH = Math.round(vidW * 0.5625)
+      if (isYT) {
+        const vid = url.includes('v=') ? url.split('v=')[1].split('&')[0] : url.split('/').pop() ?? ''
+        return `<iframe src="https://www.youtube.com/embed/${vid}" width="${vidW}" height="${vidH}" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen style="border-radius:${cfg.borderRadius ?? 8}px;display:block"></iframe>`
+      }
+      return `<video src="${url}" controls style="width:${vidW}px;max-width:100%;border-radius:${cfg.borderRadius ?? 8}px;display:block"></video>`
+    }
+    case 'form': {
+      const btnColor = cfg.accentColor ?? '#5B6CFF'
+      const radius = cfg.borderRadius ?? 8
+      const fsize = cfg.fontSize ?? 14
+      return `<form onsubmit="event.preventDefault();this.querySelector('.fs').style.display='block';this.querySelector('.ff').style.display='none'" style="width:${cfg.width ?? 400}px;font-family:inherit"><div class="ff" style="display:flex;flex-direction:column;gap:12px"><input name="name" placeholder="Your name" required style="padding:10px 14px;border-radius:${radius}px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:inherit;font-size:${fsize}px;outline:none"><input name="email" type="email" placeholder="Email address" required style="padding:10px 14px;border-radius:${radius}px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:inherit;font-size:${fsize}px;outline:none"><textarea name="message" placeholder="Your message" rows="4" style="padding:10px 14px;border-radius:${radius}px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:inherit;font-size:${fsize}px;outline:none;resize:vertical"></textarea><button type="submit" style="padding:12px 24px;background:${btnColor};color:#fff;border:none;border-radius:${radius}px;font-size:${fsize}px;font-weight:600;cursor:pointer">${cfg.content ?? 'Send Message'}</button></div><div class="fs" style="display:none;text-align:center;padding:24px;opacity:0.7">&#10003; Message sent — thank you!</div></form>`
+    }
+    case 'countdown': {
+      const target = cfg.countdownTarget ?? new Date(Date.now() + 7 * 86400000).toISOString()
+      const cid = 'cd' + Math.random().toString(36).slice(2, 8)
+      const cdFs = cfg.fontSize ?? 64
+      const cdAccent = cfg.accentColor ?? '#5B6CFF'
+      const cdGap = cfg.padding ?? 16
+      return `<div id="${cid}" style="display:flex;gap:${cdGap}px;font-family:inherit"></div><script>(function(){var el=document.getElementById('${cid}');var tgt=new Date('${target}');function fmt(n){return String(n).padStart(2,'0')}function tick(){var d=Math.max(0,tgt-Date.now());var days=Math.floor(d/86400000);var hrs=Math.floor(d%86400000/3600000);var min=Math.floor(d%3600000/60000);var sec=Math.floor(d%60000/1000);var u=['Days','Hours','Mins','Secs'];var v=[days,hrs,min,sec];var h='';for(var i=0;i<4;i++){if(i>0)h+='<div style="font-size:${cdFs}px;font-weight:300;opacity:0.3;line-height:1">:</div>';h+='<div style="text-align:center"><div style="font-size:${cdFs}px;font-weight:800;line-height:1;color:${cdAccent}">'+fmt(v[i])+'</div><div style="font-size:${Math.round(cdFs * 0.2)}px;opacity:0.5;letter-spacing:0.1em;text-transform:uppercase;margin-top:4px">'+u[i]+'</div></div>';}el.innerHTML=h;}tick();setInterval(tick,1000);})();</script>`
+    }
     default:
       return `<div>${cfg.content ?? ''}</div>`
   }

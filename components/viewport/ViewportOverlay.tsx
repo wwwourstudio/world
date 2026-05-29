@@ -264,15 +264,16 @@ export function ViewportOverlay() {
             <div className="w-px h-4" style={{ background: '#2a2d40' }} />
             <button
               onClick={() => {
-                if (selectedIds.length > 0) duplicateObject(selectedIds[0])
+                selectedIds.forEach((id) => duplicateObject(id))
+                deselectAll()
               }}
-              title="Duplicate"
+              title="Duplicate all selected"
               className="flex items-center gap-1 text-[10px] transition-colors"
               style={{ color: '#7A7E92' }}
               onMouseEnter={(e) => { e.currentTarget.style.color = '#C8C9D0' }}
               onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92' }}
             >
-              <Copy size={11} /> Group
+              <Copy size={11} /> Duplicate
             </button>
             <button
               onClick={() => {
