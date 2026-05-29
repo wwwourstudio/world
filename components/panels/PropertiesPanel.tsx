@@ -69,23 +69,25 @@ function SliderRow({ label, value, min = 0, max = 1, step = 0.01, onChange }: {
   label: string; value: number; min?: number; max?: number; step?: number; onChange: (v: number) => void
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] w-24 truncate" style={{ color: '#7A7E92' }}>{label}</span>
-      <input
-        type="range"
-        min={min} max={max} step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="flex-1 h-4"
-      />
-      <input
-        type="number"
-        value={value.toFixed(2)}
-        step={step}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-14 h-6 px-1 rounded text-[11px] font-mono text-center outline-none border"
-        style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
-      />
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px]" style={{ color: '#7A7E92' }}>{label}</span>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="range"
+          min={min} max={max} step={step}
+          value={value}
+          onChange={(e) => onChange(parseFloat(e.target.value))}
+          className="flex-1 h-4"
+        />
+        <input
+          type="number"
+          value={value.toFixed(2)}
+          step={step}
+          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+          className="w-14 h-6 px-1 rounded text-[11px] font-mono text-center outline-none border"
+          style={{ background: '#0B0C0F', color: '#E8E9F0', borderColor: '#1E2028' }}
+        />
+      </div>
     </div>
   )
 }
