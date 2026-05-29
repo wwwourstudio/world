@@ -101,6 +101,23 @@ function useSceneMaterial(cfg: MaterialConfig) {
   }, [JSON.stringify(cfg)])
 }
 
+// ─── Shadow Bounds Helper ─────────────────────────────────────────────────────
+
+function useSceneShadowBounds() {
+  return useScene((s) => {
+    const objs = Object.values(s.objects)
+    if (objs.length === 0) return { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
+    for (const o of objs) {
+      const [x, , z] = o.transform.position
+      if (x < minX) minX = x; if (x > maxX) maxX = x
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
+    }
+    const pad = Math.max((maxX - minX) * 0.3, (maxZ - minZ) * 0.3, 8)
+    return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad }
+  })
+}
+
 // ─── Keyframe Interpolation ───────────────────────────────────────────────────
 
 function lerpAngle(a: number, b: number, t: number) {
@@ -108,6 +125,21 @@ function lerpAngle(a: number, b: number, t: number) {
   while (diff > Math.PI) diff -= Math.PI * 2
   while (diff < -Math.PI) diff += Math.PI * 2
   return a + diff * t
+}
+
+function applyEasing(t: number, easing?: string): number {
+  switch (easing) {
+    case 'ease-in':      return t * t
+    case 'ease-out':     return t * (2 - t)
+    case 'ease-in-out':  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+    case 'bounce': {
+      if (t < 1 / 2.75)      return 7.5625 * t * t
+      if (t < 2 / 2.75)      { t -= 1.5 / 2.75;   return 7.5625 * t * t + 0.75 }
+      if (t < 2.5 / 2.75)   { t -= 2.25 / 2.75;  return 7.5625 * t * t + 0.9375 }
+      t -= 2.625 / 2.75; return 7.5625 * t * t + 0.984375
+    }
+    default:             return t
+  }
 }
 
 function interpolateKeyframes(kfs: Keyframe[], playhead: number): THREE.Object3D | null {
@@ -138,7 +170,8 @@ function interpolateKeyframes(kfs: Keyframe[], playhead: number): THREE.Object3D
   let i = 0
   while (i < kfs.length - 1 && kfs[i + 1].time <= t) i++
   const k0 = kfs[i], k1 = kfs[i + 1]
-  const alpha = (t - k0.time) / (k1.time - k0.time)
+  const rawAlpha = (t - k0.time) / (k1.time - k0.time)
+  const alpha = applyEasing(rawAlpha, k1.easing)
   const dummy = new THREE.Object3D()
   dummy.position.set(
     k0.transform.position[0] + (k1.transform.position[0] - k0.transform.position[0]) * alpha,
@@ -1626,6 +1659,7 @@ function LightObject({ obj }: { obj: SceneObject }) {
   const pos = obj.transform.position
   const shadowMapSize = useScene((s) => s.environment.shadowMapSize)
   const mapSize = shadowMapSize ?? 2048
+  const shadowBounds = useSceneShadowBounds()
 
   return (
     <>
@@ -1642,11 +1676,11 @@ function LightObject({ obj }: { obj: SceneObject }) {
           intensity={cfg.intensity}
           castShadow={cfg.castShadow}
           shadow-mapSize={[mapSize, mapSize]}
-          shadow-camera-far={100}
-          shadow-camera-left={-20}
-          shadow-camera-right={20}
-          shadow-camera-top={20}
-          shadow-camera-bottom={-20}
+          shadow-camera-far={150}
+          shadow-camera-left={shadowBounds.minX}
+          shadow-camera-right={shadowBounds.maxX}
+          shadow-camera-top={shadowBounds.maxZ}
+          shadow-camera-bottom={shadowBounds.minZ}
         />
       )}
       {cfg.type === 'point' && (
@@ -2262,30 +2296,41 @@ function CameraCapture() {
 
 function CameraPathVisual() {
   const appMode = useScene((s) => s.appMode)
+  const leftTab = useScene((s) => s.panels.leftTab)
   const cameraPath = useScene((s) => s.cameraPath)
 
-  const lineGeometry = useMemo(() => {
+  const splinePoints = useMemo(() => {
     if (cameraPath.length < 2) return null
-    const positions = new Float32Array(cameraPath.flatMap((kp) => kp.position))
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    return geo
+    const pts = cameraPath.map((kp) => new THREE.Vector3(...kp.position))
+    const curve = new THREE.CatmullRomCurve3(pts)
+    return curve.getPoints(Math.max(cameraPath.length * 20, 60))
   }, [cameraPath])
 
-  if (appMode !== 'website' || cameraPath.length < 1) return null
+  const visible = appMode === 'website' || leftTab === 'camera'
+  if (!visible || cameraPath.length < 1) return null
 
   return (
     <group>
-      {lineGeometry && (
-        <lineSegments geometry={lineGeometry}>
-          <lineBasicMaterial color="#5B6CFF" linewidth={1} />
-        </lineSegments>
+      {splinePoints && (
+        <Line
+          points={splinePoints}
+          color="#5B6CFF"
+          lineWidth={1.5}
+          dashed={false}
+        />
       )}
       {cameraPath.map((kp) => (
-        <mesh key={kp.id} position={kp.position}>
-          <sphereGeometry args={[0.22, 10, 10]} />
-          <meshBasicMaterial color="#5B6CFF" />
-        </mesh>
+        <group key={kp.id} position={kp.position}>
+          <mesh>
+            <sphereGeometry args={[0.22, 10, 10]} />
+            <meshBasicMaterial color="#5B6CFF" />
+          </mesh>
+          {/* Camera frustum wireframe */}
+          <mesh>
+            <boxGeometry args={[1.2, 0.9, 0.6]} />
+            <meshBasicMaterial color="#8B5CF6" wireframe transparent opacity={0.5} />
+          </mesh>
+        </group>
       ))}
     </group>
   )
@@ -2302,6 +2347,7 @@ function InnerScene() {
   const deselectAll = useScene((s) => s.deselectAll)
   const transformSpace = useScene((s) => s.transformSpace)
   const appMode = useScene((s) => s.appMode)
+  const shadowBounds = useSceneShadowBounds()
 
   const mapSize = environment.shadowMapSize ?? 2048
 
@@ -2323,11 +2369,11 @@ function InnerScene() {
         position={skyDirPos}
         castShadow={environment.shadowsEnabled}
         shadow-mapSize={[mapSize, mapSize]}
-        shadow-camera-far={100}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
+        shadow-camera-far={150}
+        shadow-camera-left={shadowBounds.minX}
+        shadow-camera-right={shadowBounds.maxX}
+        shadow-camera-top={shadowBounds.maxZ}
+        shadow-camera-bottom={shadowBounds.minZ}
       />
 
       {rootIds.map((id) => <SceneObjectNode key={id} id={id} />)}

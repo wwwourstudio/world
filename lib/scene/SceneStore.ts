@@ -160,6 +160,7 @@ export interface PhysicsConfig {
 export interface Keyframe {
   time: number
   transform: Transform
+  easing?: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bounce'
 }
 
 export interface CameraKeypoint {
