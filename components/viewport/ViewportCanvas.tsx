@@ -1,6 +1,6 @@
 'use client'
 
-import React, { Suspense, useRef, useEffect, useMemo, Component, type ReactNode } from 'react'
+import React, { Suspense, useRef, useEffect, useMemo, useState, Component, type ReactNode } from 'react'
 import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
 import {
   OrbitControls,
@@ -499,6 +499,13 @@ function MeshObject({ obj }: { obj: SceneObject }) {
         if (ix?.clickAction === 'switch-scene' && ix.targetSceneId) {
           useScene.getState().switchScene(ix.targetSceneId)
         }
+        for (const b of (obj.behaviors ?? [])) {
+          if (b.type === 'onClick' && b.enabled) {
+            if (b.action === 'link' && b.linkUrl) window.open(b.linkUrl, '_blank')
+            if (b.action === 'toggle-visible') updateObject(obj.id, { visible: !obj.visible })
+            if (b.action === 'switch-scene' && b.targetSceneId) useScene.getState().switchScene(b.targetSceneId)
+          }
+        }
       }}
       onContextMenu={(e) => {
         e.stopPropagation()
@@ -601,11 +608,14 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
   const url = obj.geometry.url ?? ''
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
   useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
-  const { selectObject } = useScene()
+  const { selectObject, updateObject } = useScene()
+  const activeTool = useScene((s) => s.activeTool)
   const isSelected = useScene((s) => s.selectedIds.includes(obj.id))
   const isPlaying = useScene((s) => s.isPlaying)
+  const [hoveredIx, setHoveredIx] = useState(false)
   const { scene: gltfScene } = useGLTF(url)
   const { opacity, dx, dy, dz, scaleFactor } = useScrollAnim(obj.scrollAnim)
+  const ix = obj.interaction
 
   useEffect(() => {
     if (!obj.scrollAnim || obj.scrollAnim.effect === 'none') return
@@ -649,11 +659,45 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
         rotation={obj.transform.rotation}
         scale={obj.transform.scale}
         visible={obj.visible}
-        onClick={(e) => { e.stopPropagation(); selectObject(obj.id, e.shiftKey) }}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (activeTool === 'select' || activeTool === 'translate' || activeTool === 'rotate' || activeTool === 'scale') {
+            selectObject(obj.id, e.shiftKey)
+          }
+          if (ix?.clickAction === 'link' && ix.linkUrl) window.open(ix.linkUrl, '_blank')
+          if (ix?.clickAction === 'toggle-visible') updateObject(obj.id, { visible: !obj.visible })
+          if (ix?.clickAction === 'toggle-anim') { const p = useScene.getState().isPlaying; useScene.getState().setPlaying(!p) }
+          if (ix?.clickAction === 'camera-link' && ix.cameraKeypointId) {
+            const kp = useScene.getState().cameraPath.find(k => k.id === ix.cameraKeypointId)
+            if (kp) cameraJumpFn.fn?.(kp)
+          }
+          if (ix?.clickAction === 'switch-scene' && ix.targetSceneId) useScene.getState().switchScene(ix.targetSceneId)
+          for (const b of (obj.behaviors ?? [])) {
+            if (b.type === 'onClick' && b.enabled) {
+              if (b.action === 'link' && b.linkUrl) window.open(b.linkUrl, '_blank')
+              if (b.action === 'toggle-visible') updateObject(obj.id, { visible: !obj.visible })
+              if (b.action === 'switch-scene' && b.targetSceneId) useScene.getState().switchScene(b.targetSceneId)
+            }
+          }
+        }}
         onContextMenu={(e) => {
           e.stopPropagation()
           selectObject(obj.id, false)
           useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
+        }}
+        onPointerEnter={(e) => {
+          e.stopPropagation()
+          if (!ix || ix.hoverEffect === 'none') return
+          setHoveredIx(true)
+          if (ix.hoverEffect === 'scale' && ref.current) ref.current.scale.multiplyScalar(1.08)
+          document.body.style.cursor = 'pointer'
+        }}
+        onPointerLeave={(e) => {
+          e.stopPropagation()
+          if (!ix || ix.hoverEffect === 'none') return
+          setHoveredIx(false)
+          if (ix.hoverEffect === 'scale' && ref.current) ref.current.scale.set(...obj.transform.scale)
+          document.body.style.cursor = ''
         }}
       >
         <primitive object={cloned} />
@@ -662,6 +706,15 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
             <boxGeometry args={[bbSize.x * 1.01, bbSize.y * 1.01, bbSize.z * 1.01]} />
             <meshBasicMaterial color="#5B6CFF" transparent opacity={0.08} depthTest={false} depthWrite={false} />
           </mesh>
+        )}
+        {ix?.tooltipText && hoveredIx && (
+          <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
+            <div style={{
+              background: 'rgba(10,11,15,0.9)', color: '#E8E9F0', padding: '4px 8px',
+              borderRadius: '6px', fontSize: '11px', whiteSpace: 'nowrap',
+              border: '1px solid #1E2028', backdropFilter: 'blur(4px)',
+            }}>{ix.tooltipText}</div>
+          </Html>
         )}
       </group>
     </group>
