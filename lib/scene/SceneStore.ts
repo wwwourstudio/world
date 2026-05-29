@@ -12,7 +12,7 @@ export type MaterialType = 'standard' | 'physical' | 'toon' | 'wireframe' | 'gla
 export type AnimationPreset = 'none' | 'float' | 'spin' | 'pulse' | 'orbit' | 'shake' | 'wave' | 'bounce'
 export type PhysicsBodyType = 'dynamic' | 'static' | 'kinematic'
 export type PhysicsShape = 'auto' | 'box' | 'sphere' | 'capsule' | 'hull'
-export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale' | 'sculpt' | 'edit'
+export type ActiveTool = 'select' | 'translate' | 'rotate' | 'scale' | 'sculpt' | 'edit' | 'paint'
 export type SculptMode = 'raise' | 'lower' | 'smooth' | 'flatten' | 'stamp' | 'inflate'
 export type SculptFalloff = 'smooth' | 'linear' | 'sharp'
 export type ViewMode = 'persp' | 'top' | 'front' | 'right' | 'left' | 'bottom' | 'iso'
@@ -128,7 +128,8 @@ export interface GeometryConfig {
   bevelSize?: number
   textCenter?: boolean       // center text geometry around origin
   curveSegments?: number     // font smoothness (3-12, default 6)
-  customVertices?: number[]   // flat [x,y,z,...] overrides procedural geometry
+  customVertices?: number[]     // flat [x,y,z,...] overrides procedural geometry
+  vertexPaintColors?: number[]  // flat [r,g,b,...] per vertex (0–1 range)
 }
 
 export interface LightConfig {
@@ -195,6 +196,20 @@ export interface HtmlObjectConfig {
   linkUrl?: string
   dividerStyle?: 'solid' | 'gradient' | 'dashed'
   countdownTarget?: string
+  // Typography
+  letterSpacing?: number  // em units, e.g. -0.05 to 0.3
+  lineHeight?: number     // e.g. 0.8 to 3
+  textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize'
+  textDecoration?: 'none' | 'underline' | 'line-through'
+  // Border
+  borderWidth?: number
+  borderColor?: string
+  borderStyle?: 'solid' | 'dashed' | 'dotted'
+  // Shadow
+  shadowBlur?: number
+  shadowColor?: string
+  shadowX?: number
+  shadowY?: number
 }
 
 export interface ObjectInteraction {
@@ -514,6 +529,10 @@ interface SceneActions {
   setSculptRadius: (v: number) => void
   setSculptStrength: (v: number) => void
   setSculptFalloff: (f: SculptFalloff) => void
+  setPaintColor: (c: string) => void
+  setPaintRadius: (v: number) => void
+  setPaintStrength: (v: number) => void
+  saveVertexPaintColors: (objectId: string, colors: number[]) => void
   setContextMenu: (menu: { x: number; y: number; objectId: string | null } | null) => void
   updateTerrain: (objectId: string, patch: Partial<TerrainConfig>) => void
   sculptTerrain: (objectId: string, cx: number, cz: number) => void
@@ -594,6 +613,9 @@ interface SceneState extends SceneActions {
   sculptRadius: number
   sculptStrength: number
   sculptFalloff: SculptFalloff
+  paintColor: string
+  paintRadius: number
+  paintStrength: number
   contextMenu: { x: number; y: number; objectId: string | null } | null
 
   past: string[]
@@ -741,6 +763,9 @@ export const useScene = create<SceneState>()(
       sculptRadius: 5,
       sculptStrength: 1.5,
       sculptFalloff: 'smooth',
+      paintColor: '#ff4444',
+      paintRadius: 1.5,
+      paintStrength: 0.5,
       contextMenu: null,
 
       past: [],
@@ -1081,6 +1106,14 @@ export const useScene = create<SceneState>()(
       setSculptRadius(v) { set((s) => { s.sculptRadius = v }) },
       setSculptStrength(v) { set((s) => { s.sculptStrength = v }) },
       setSculptFalloff(f) { set((s) => { s.sculptFalloff = f }) },
+      setPaintColor(c) { set((s) => { s.paintColor = c }) },
+      setPaintRadius(v) { set((s) => { s.paintRadius = v }) },
+      setPaintStrength(v) { set((s) => { s.paintStrength = v }) },
+      saveVertexPaintColors(objectId, colors) {
+        set((s) => {
+          if (s.objects[objectId]) s.objects[objectId].geometry.vertexPaintColors = colors
+        })
+      },
 
       attachBehavior(objectId, config) {
         const id = makeId()

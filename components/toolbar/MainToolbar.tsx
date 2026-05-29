@@ -19,7 +19,8 @@ const TOOLS: { id: ActiveTool; icon: typeof MousePointer2; label: string; key: s
   { id: 'translate', icon: Move, label: 'Move', key: 'W' },
   { id: 'rotate', icon: RotateCw, label: 'Rotate', key: 'E' },
   { id: 'scale', icon: Maximize2, label: 'Scale', key: 'R' },
-  { id: 'sculpt', icon: Paintbrush, label: 'Sculpt', key: 'T' },
+  { id: 'sculpt', icon: Mountain, label: 'Sculpt', key: 'T' },
+  { id: 'paint', icon: Paintbrush, label: 'Paint', key: 'P' },
 ]
 
 const HTML_ELEMENTS = [

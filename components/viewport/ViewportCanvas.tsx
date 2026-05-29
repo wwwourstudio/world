@@ -452,6 +452,75 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
   useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
 
+  // ── Vertex painting ──
+  const painting = useRef(false)
+  const paintColors = useRef<Float32Array | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const mesh = ref.current
+    if (!mesh) return
+    const stored = obj.geometry.vertexPaintColors
+    if (stored && stored.length > 0) {
+      const colors = new Float32Array(stored)
+      mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      paintColors.current = colors
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      if (!mat.vertexColors) { mat.vertexColors = true; mat.needsUpdate = true }
+    } else if (!stored) {
+      if (mesh.geometry.hasAttribute('color')) {
+        mesh.geometry.deleteAttribute('color')
+        const mat = mesh.material as THREE.MeshStandardMaterial
+        mat.vertexColors = false; mat.needsUpdate = true
+      }
+      paintColors.current = null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obj.geometry.type, obj.geometry.vertexPaintColors])
+
+  function handlePaintAt(point: THREE.Vector3) {
+    const mesh = ref.current
+    if (!mesh) return
+    const geo = mesh.geometry
+    const posAttr = geo.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!posAttr) return
+    const count = posAttr.count
+    const { paintColor, paintRadius, paintStrength } = useScene.getState()
+
+    if (!paintColors.current || paintColors.current.length !== count * 3) {
+      paintColors.current = new Float32Array(count * 3).fill(1)
+    }
+    if (!geo.hasAttribute('color')) {
+      geo.setAttribute('color', new THREE.BufferAttribute(paintColors.current, 3))
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      mat.vertexColors = true; mat.needsUpdate = true
+    }
+
+    const colorAttr = geo.getAttribute('color') as THREE.BufferAttribute
+    const pc = new THREE.Color(paintColor)
+    const localPt = mesh.worldToLocal(point.clone())
+
+    for (let i = 0; i < count; i++) {
+      const dx = posAttr.getX(i) - localPt.x
+      const dy = posAttr.getY(i) - localPt.y
+      const dz = posAttr.getZ(i) - localPt.z
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+      if (dist > paintRadius) continue
+      const t = Math.pow(1 - dist / paintRadius, 2) * paintStrength
+      colorAttr.setXYZ(i,
+        colorAttr.getX(i) + (pc.r - colorAttr.getX(i)) * t,
+        colorAttr.getY(i) + (pc.g - colorAttr.getY(i)) * t,
+        colorAttr.getZ(i) + (pc.b - colorAttr.getZ(i)) * t,
+      )
+    }
+    colorAttr.needsUpdate = true
+
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      useScene.getState().saveVertexPaintColors(obj.id, Array.from(paintColors.current!))
+    }, 400)
+  }
+
   useEffect(() => {
     if (!obj.scrollAnim || obj.scrollAnim.effect === 'none') return
     const mat = ref.current?.material as THREE.MeshStandardMaterial | undefined
@@ -516,6 +585,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       receiveShadow={obj.receiveShadow}
       onClick={(e) => {
         e.stopPropagation()
+        if (activeTool === 'paint') { handlePaintAt(e.point); return }
         if (activeTool === 'select' || activeTool === 'translate' || activeTool === 'rotate' || activeTool === 'scale') {
           selectObject(obj.id, e.shiftKey)
         }
@@ -545,8 +615,16 @@ function MeshObject({ obj }: { obj: SceneObject }) {
         selectObject(obj.id, false)
         useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
       }}
+      onPointerDown={(e) => {
+        if (activeTool === 'paint') { e.stopPropagation(); painting.current = true; handlePaintAt(e.point) }
+      }}
+      onPointerUp={() => { painting.current = false }}
+      onPointerMove={(e) => {
+        if (activeTool === 'paint' && painting.current) { e.stopPropagation(); handlePaintAt(e.point) }
+      }}
       onPointerEnter={(e) => {
         e.stopPropagation()
+        if (activeTool === 'paint') { document.body.style.cursor = 'crosshair'; return }
         if (!ix || ix.hoverEffect === 'none') return
         hovered.current = true
         if (ref.current) {
@@ -560,6 +638,8 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       }}
       onPointerLeave={(e) => {
         e.stopPropagation()
+        painting.current = false
+        if (activeTool === 'paint') { document.body.style.cursor = ''; return }
         if (!ix || ix.hoverEffect === 'none') return
         hovered.current = false
         if (ref.current) {
@@ -1766,6 +1846,13 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
     transition: 'none',
   }
 
+  const shadowCss = cfg.shadowBlur
+    ? `${cfg.shadowX ?? 0}px ${cfg.shadowY ?? 4}px ${cfg.shadowBlur}px ${cfg.shadowColor ?? 'rgba(0,0,0,0.5)'}`
+    : undefined
+  const borderCss = cfg.borderWidth
+    ? `${cfg.borderWidth}px ${cfg.borderStyle ?? 'solid'} ${cfg.borderColor ?? 'rgba(255,255,255,0.2)'}`
+    : undefined
+
   return (
     <Html
       position={obj.transform.position}
@@ -1785,6 +1872,8 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
             borderRadius: cfg.borderRadius ? `${cfg.borderRadius}px` : undefined,
             textAlign: cfg.textAlign ?? 'left',
             fontFamily,
+            border: borderCss,
+            boxShadow: shadowCss,
             outline: isSelected ? '2px solid rgba(255,255,255,0.8)' : 'none',
             outlineOffset: '4px',
             cursor: 'pointer',
@@ -1793,12 +1882,26 @@ function HtmlObject({ obj }: { obj: SceneObject }) {
           }}
         >
           {cfg.htmlType === 'heading' && (
-            <h1 style={{ fontSize: `${cfg.fontSize ?? 64}px`, fontWeight: cfg.fontWeight ?? '700', margin: 0, lineHeight: 1.1, letterSpacing: '-0.02em', fontFamily }}>
+            <h1 style={{
+              fontSize: `${cfg.fontSize ?? 64}px`, fontWeight: cfg.fontWeight ?? '700', margin: 0,
+              lineHeight: cfg.lineHeight ?? 1.1,
+              letterSpacing: cfg.letterSpacing != null ? `${cfg.letterSpacing}em` : '-0.02em',
+              textTransform: (cfg.textTransform as React.CSSProperties['textTransform']) ?? 'none',
+              textDecoration: cfg.textDecoration ?? 'none',
+              fontFamily,
+            }}>
               {cfg.content ?? 'Heading'}
             </h1>
           )}
           {cfg.htmlType === 'paragraph' && (
-            <p style={{ fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '400', margin: 0, lineHeight: 1.6, fontFamily }}>
+            <p style={{
+              fontSize: `${cfg.fontSize ?? 16}px`, fontWeight: cfg.fontWeight ?? '400', margin: 0,
+              lineHeight: cfg.lineHeight ?? 1.6,
+              letterSpacing: cfg.letterSpacing != null ? `${cfg.letterSpacing}em` : undefined,
+              textTransform: (cfg.textTransform as React.CSSProperties['textTransform']) ?? 'none',
+              textDecoration: cfg.textDecoration ?? 'none',
+              fontFamily,
+            }}>
               {cfg.content ?? 'Paragraph text'}
             </p>
           )}
@@ -2003,7 +2106,7 @@ function GizmoControl() {
     }
   }, [obj, selectedId])
 
-  if (!obj || isPlaying || activeTool === 'select' || activeTool === 'sculpt') return null
+  if (!obj || isPlaying || activeTool === 'select' || activeTool === 'sculpt' || activeTool === 'paint') return null
 
   const mode = activeTool === 'rotate' ? 'rotate' : activeTool === 'scale' ? 'scale' : 'translate'
 
