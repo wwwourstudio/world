@@ -49,6 +49,14 @@ const ENHANCEMENTS: Array<{ pattern: RegExp; expansion: string }> = [
     pattern: /product|showcase|presentation|portfolio/i,
     expansion: 'three-point lighting: key light front-right white 2.0, fill light left white 0.8, rim light behind #8888ff 1.5, background dark #0B0C0F, minimal geometry',
   },
+  {
+    pattern: /industrial|factory|warehouse|district/i,
+    expansion: 'add_sketchfab_model: industrial warehouse + pipe sections + cranes. ground concrete roughness 0.9, fog exponential 0.025 #1a1208, directional warm #ffaa66 1.5, ambient 0.2',
+  },
+  {
+    pattern: /city|urban|downtown|block/i,
+    expansion: 'add_sketchfab_model: city building facades variety:4 + street lamps + road sections. ground concrete, directional 1.5 #fff5e0, ambient 0.3, slight fog exponential 0.01',
+  },
 ]
 
 export function enhancePrompt(input: string, sceneContext: string): string {
@@ -202,6 +210,23 @@ ALL AVAILABLE COMMANDS
     { "action": "set_camera_clip", "near": 0.1, "far": 1000 },
     { "action": "set_camera", "position": [10,8,10], "target": [0,0,0], "fov": 60 },
 
+    // ── REAL 3D MODELS (Sketchfab) ────────────────────────────────────────
+    // Searches Sketchfab for real GLB/GLTF models and places them in arrays.
+    // Models auto-scale to ~2m; use scale[] to resize. Always pair with ground + lights.
+    // layout: "grid" = square grid, "line" = row, "circle" = ring, "scatter" = random spread
+    // variety = fetch N distinct models and cycle through them (good for count>4)
+    { "action": "add_sketchfab_model",
+      "query": "3-5 word search term",
+      "name": "display name prefix",
+      "count": 6,
+      "variety": 3,
+      "layout": "grid",
+      "spacing": 5,
+      "position": [0, 0, 0],
+      "yOffset": 0,
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1] },
+
     // ── TEMPLATES & SCENES ─────────────────────────────────────────────────
     { "action": "load_template", "id": "ancient_forest|scifi_base|medieval_village|cyberpunk_city|space_station|golden_sunset|deep_space|landing_page|portfolio" },
     { "action": "add_scene", "name": "Scene Name" }
@@ -254,6 +279,39 @@ When building website/landing page content:
 HTML element types: heading, paragraph, button, badge, card, quote, stat, divider, spacer, icontext, form, countdown
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCENE KIT CONSTRUCTION (Sketchfab real models)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use add_sketchfab_model when the user wants real architectural detail, props, or kits.
+ALWAYS pair with: ground plane, at least 2 lights, fog or HDRI for atmosphere.
+
+EXAMPLE — Industrial District:
+  1. Ground plane (geometry:plane roughness:0.9 size:60×60 rotation:[-1.5708,0,0])
+  2. set_environment + add_light directional warm #ffaa66 + add_light point
+  3. add_sketchfab_model query:"industrial warehouse building" count:4 layout:"grid" spacing:15
+  4. add_sketchfab_model query:"industrial pipe fitting" count:12 layout:"scatter" spacing:5
+  5. add_sketchfab_model query:"construction crane" count:2 layout:"line" spacing:20 position:[0,0,-15]
+  6. set_fog exponential + set_hdri satara_night
+
+EXAMPLE — City Block:
+  1. Ground concrete plane
+  2. add_sketchfab_model query:"city building facade low poly" count:8 variety:4 layout:"grid" spacing:12
+  3. add_sketchfab_model query:"urban street lamp post" count:16 layout:"line" spacing:6 position:[0,0,8]
+  4. add_sketchfab_model query:"road asphalt section" count:20 layout:"grid" spacing:4 yOffset:-0.05
+  5. Three-point lighting + slight fog
+
+EXAMPLE — Sci-Fi Corridor:
+  1. add_sketchfab_model query:"sci fi corridor modular panel" count:10 layout:"line" spacing:3
+  2. add_sketchfab_model query:"sci fi pipe cable industrial" count:8 layout:"scatter" spacing:2 yOffset:0.5
+  3. Neon point lights + bloom + fog exponential 0.04
+
+RULES for add_sketchfab_model:
+- Keep query concise and searchable (3–5 words, specific beats vague)
+- Use variety:2 or variety:3 for count>4 to avoid repetition
+- Do NOT use add_sketchfab_model for simple shapes (use geometry primitives instead)
+- scale[] overrides auto-scale; default auto-scale fits model to ~2m bounding box
+- Always include ground + lighting in the same response as sketchfab commands
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CINEMATIC SCENE BUILDING PATTERNS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Three-point lighting: key light (front-right, intense), fill (left, softer), rim (behind, accent color)
@@ -285,7 +343,8 @@ QUALITY CHECKLIST (apply to every scene you build)
 ✓ Emissive objects have a matching nearby point light
 ✓ Terrain or scenery provides depth
 ✓ Suggestions block always has exactly 3 short follow-ups (4–6 words)
-✓ Scene state referenced for move/modify operations (use exact object names)`
+✓ Scene state referenced for move/modify operations (use exact object names)
+✓ For add_sketchfab_model: always include ground + lighting in the same response`
 }
 
 export function buildSceneContext(

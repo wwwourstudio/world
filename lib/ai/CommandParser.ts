@@ -285,6 +285,20 @@ export interface ClearCameraPathCmd {
   action: 'clear_camera_path'
 }
 
+export interface AddSketchfabModelCmd {
+  action: 'add_sketchfab_model'
+  query: string
+  name?: string
+  count?: number
+  variety?: number
+  layout?: 'grid' | 'line' | 'circle' | 'scatter'
+  spacing?: number
+  position?: [number, number, number]
+  yOffset?: number
+  rotation?: [number, number, number]
+  scale?: [number, number, number]
+}
+
 export type SceneCommand =
   | AddObjectCmd | AddLightCmd | SetMaterialCmd | SetHDRICmd | SetFogCmd
   | SetCameraCmd | AddAnimationCmd | EnablePhysicsCmd | SetEnvironmentCmd
@@ -292,7 +306,56 @@ export type SceneCommand =
   | AddTextCmd | AddParticleCmd | ScatterObjectsCmd | SetViewModeCmd
   | AddKeyframeAnimationCmd | AddSceneCmd | SetCameraClipCmd | UpdateObjectCmd
   | AddHtmlCmd | AddTerrainCmd | AddWaterCmd | SetVisibilityCmd
-  | AddCameraKeypointCmd | ClearCameraPathCmd
+  | AddCameraKeypointCmd | ClearCameraPathCmd | AddSketchfabModelCmd
+
+export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
+  return cmd.action === 'add_sketchfab_model'
+}
+
+export function computeLayoutPositions(
+  count: number,
+  layout: 'grid' | 'line' | 'circle' | 'scatter',
+  origin: [number, number, number],
+  spacing: number,
+  yOffset: number,
+): Array<[number, number, number]> {
+  const positions: Array<[number, number, number]> = []
+  const n = Math.max(count, 1)
+
+  if (layout === 'grid') {
+    const cols = Math.ceil(Math.sqrt(n))
+    const rows = Math.ceil(n / cols)
+    const startX = origin[0] - ((cols - 1) * spacing) / 2
+    const startZ = origin[2] - ((rows - 1) * spacing) / 2
+    for (let i = 0; i < n; i++) {
+      positions.push([startX + (i % cols) * spacing, origin[1] + yOffset, startZ + Math.floor(i / cols) * spacing])
+    }
+  } else if (layout === 'line') {
+    const startX = origin[0] - ((n - 1) * spacing) / 2
+    for (let i = 0; i < n; i++) {
+      positions.push([startX + i * spacing, origin[1] + yOffset, origin[2]])
+    }
+  } else if (layout === 'circle') {
+    const r = n > 1 ? (n * spacing) / (2 * Math.PI) : 0
+    const step = (2 * Math.PI) / n
+    for (let i = 0; i < n; i++) {
+      positions.push([origin[0] + Math.cos(i * step) * r, origin[1] + yOffset, origin[2] + Math.sin(i * step) * r])
+    }
+  } else {
+    // scatter — deterministic LCG so positions don't jitter on re-render
+    const spread = spacing * Math.sqrt(n)
+    let seed = (Math.abs(Math.floor(origin[0] * 100 + origin[2] * 100)) + n) || 1
+    function lcg() {
+      seed = (seed * 1664525 + 1013904223) & 0xffffffff
+      return (seed >>> 0) / 0xffffffff
+    }
+    for (let i = 0; i < n; i++) {
+      positions.push([origin[0] + (lcg() - 0.5) * spread, origin[1] + yOffset, origin[2] + (lcg() - 0.5) * spread])
+    }
+  }
+
+  return positions
+}
 
 export interface BehaviorAttachment {
   objectId: string
