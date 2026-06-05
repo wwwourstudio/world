@@ -29,6 +29,7 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig, ScrollAnimConfig } from '@/lib/scene/SceneStore'
+import { useShallow } from 'zustand/react/shallow'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { captureCamera } from '@/lib/captureCamera'
 import { jumpToCamera, cameraJumpFn } from '@/lib/cameraJump'
@@ -104,7 +105,7 @@ function useSceneMaterial(cfg: MaterialConfig) {
 // ─── Shadow Bounds Helper ─────────────────────────────────────────────────────
 
 function useSceneShadowBounds() {
-  return useScene((s) => {
+  return useScene(useShallow((s) => {
     const objs = Object.values(s.objects)
     if (objs.length === 0) return { minX: -20, maxX: 20, minZ: -20, maxZ: 20 }
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
@@ -115,7 +116,7 @@ function useSceneShadowBounds() {
     }
     const pad = Math.max((maxX - minX) * 0.3, (maxZ - minZ) * 0.3, 8)
     return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad }
-  })
+  }))
 }
 
 // ─── Keyframe Interpolation ───────────────────────────────────────────────────
