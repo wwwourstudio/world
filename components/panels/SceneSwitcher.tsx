@@ -124,7 +124,7 @@ export function SceneSwitcher() {
           className="fixed z-50 rounded-lg shadow-xl overflow-hidden"
           style={{
             left: contextMenu.x,
-            top: contextMenu.y,
+            bottom: window.innerHeight - contextMenu.y,
             background: '#1E2028',
             border: '1px solid #2a2d3a',
             minWidth: 140,
