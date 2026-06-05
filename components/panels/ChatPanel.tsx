@@ -8,8 +8,8 @@ import {
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { BehaviorConfig } from '@/lib/scene/SceneStore'
-import { parseCommands, executeCommands } from '@/lib/ai/CommandParser'
-import type { BehaviorAttachment, GallerySpec } from '@/lib/ai/CommandParser'
+import { parseCommands, executeCommands, isSketchfabCmd, computeLayoutPositions } from '@/lib/ai/CommandParser'
+import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd } from '@/lib/ai/CommandParser'
 import { ChatAssetCarousel } from '@/components/panels/ChatAssetCarousel'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
 
@@ -18,7 +18,7 @@ interface AssistantMessage {
   role: 'assistant'
   content: string
   commandCount: number
-  status: 'streaming' | 'complete' | 'error'
+  status: 'streaming' | 'resolving' | 'complete' | 'error'
   suggestions?: string[]
   actionErrors?: string[]
   behaviorAttachments?: BehaviorAttachment[]
@@ -253,6 +253,7 @@ export function ChatPanel() {
       let buffer = ''
       let fullText = ''
       let executed = false
+      let syncCommandCount = 0
 
       while (true) {
         const { done, value } = await reader.read()
@@ -270,8 +271,10 @@ export function ChatPanel() {
             patchLast({ content: displayText || '…' })
             if (!executed && fullText.includes('```') && fullText.split('```').length > 2) {
               const { commands, actions, text, suggestions, gallery } = parseCommands(fullText)
-              if (commands.length > 0 || actions.length > 0) {
-                const result = executeCommands(commands, actions)
+              const syncCmdsEarly = commands.filter((cmd) => !isSketchfabCmd(cmd))
+              if (syncCmdsEarly.length > 0 || actions.length > 0) {
+                const result = executeCommands(syncCmdsEarly, actions)
+                syncCommandCount = result.executed
                 const inferred = inferAmbientBehaviors(result.newObjectIds)
                 const allBehaviors = [...result.behaviorAttachments, ...inferred]
                 executed = true
@@ -293,8 +296,13 @@ export function ChatPanel() {
 
       const { commands, actions, text, suggestions, gallery } = parseCommands(fullText)
       const cleanedText = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
-      if (!executed && (commands.length > 0 || actions.length > 0)) {
-        const result = executeCommands(commands, actions)
+      const sketchfabCmds = commands.filter(isSketchfabCmd) as AddSketchfabModelCmd[]
+      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd))
+      const hasSketchfab = sketchfabCmds.length > 0
+
+      if (!executed && (syncCmds.length > 0 || actions.length > 0)) {
+        const result = executeCommands(syncCmds, actions)
+        syncCommandCount = result.executed
         const inferred = inferAmbientBehaviors(result.newObjectIds)
         const allBehaviors = [...result.behaviorAttachments, ...inferred]
         const bSuggs = getBehaviorSuggestions(allBehaviors)
@@ -305,10 +313,87 @@ export function ChatPanel() {
           suggestions: bSuggs.length > 0 ? bSuggs : suggestions,
           behaviorAttachments: allBehaviors.length > 0 ? allBehaviors : undefined,
           gallery: gallery ?? undefined,
-          status: 'complete',
+          status: hasSketchfab ? 'resolving' : 'complete',
         })
       } else {
-        patchLast({ content: cleanedText, suggestions: suggestions ?? undefined, gallery: gallery ?? undefined, status: 'complete' })
+        patchLast({ content: cleanedText, suggestions: suggestions ?? undefined, gallery: gallery ?? undefined, status: hasSketchfab ? 'resolving' : 'complete' })
+      }
+
+      if (hasSketchfab) {
+        try {
+          const resolveBody = {
+            queries: sketchfabCmds.map((cmd) => ({
+              query: cmd.query,
+              count: cmd.variety ?? 1,
+            })),
+          }
+          const resolveRes = await fetch('/api/sketchfab/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(resolveBody),
+          })
+          if (!resolveRes.ok) throw new Error(`Sketchfab resolve failed: ${resolveRes.status}`)
+
+          const resolveData = await resolveRes.json() as {
+            results: Array<{ query: string; uid: string; name: string; url: string; thumbnail: string | null }>
+            fallbacks: string[]
+          }
+
+          const store = useScene.getState()
+          const FULL_MAT = { type: 'standard' as const, color: '#ffffff', roughness: 0.5, metalness: 0, emissive: '#000000', emissiveIntensity: 0, opacity: 1, transparent: false, wireframe: false, envMapIntensity: 1, transmission: 0, ior: 1.5, thickness: 0.5, flatShading: false, side: 'front' as const }
+          let modelCommandCount = 0
+
+          for (const cmd of sketchfabCmds) {
+            const models = resolveData.results.filter((r) => r.query === cmd.query)
+            const totalCount = Math.max(cmd.count ?? 1, 1)
+            const positions = computeLayoutPositions(
+              totalCount,
+              cmd.layout ?? 'grid',
+              cmd.position ?? [0, 0, 0],
+              cmd.spacing ?? 4,
+              cmd.yOffset ?? 0,
+            )
+
+            if (models.length === 0) {
+              store.addObject({
+                name: cmd.name ?? cmd.query,
+                type: 'mesh',
+                geometry: { type: 'box', width: 2, height: 2, depth: 2 },
+                material: { ...FULL_MAT, color: '#cc3333' },
+                transform: { position: positions[0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+              })
+              modelCommandCount++
+              continue
+            }
+
+            for (let i = 0; i < totalCount; i++) {
+              const model = models[i % models.length]
+              store.addObject({
+                name: `${cmd.name ?? model.name}${totalCount > 1 ? ` ${i + 1}` : ''}`,
+                type: 'mesh',
+                geometry: { type: 'gltf', url: model.url },
+                material: FULL_MAT,
+                transform: {
+                  position: positions[i],
+                  rotation: cmd.rotation ?? [0, 0, 0],
+                  scale: cmd.scale ?? [1, 1, 1],
+                },
+                castShadow: true,
+                receiveShadow: true,
+              })
+              modelCommandCount++
+            }
+          }
+
+          if (resolveData.fallbacks?.length) {
+            store.showNotification(`Sketchfab: no models found for "${resolveData.fallbacks.join('", "')}" — used placeholders`)
+          }
+
+          patchLast({ commandCount: syncCommandCount + modelCommandCount, status: 'complete' })
+        } catch (e) {
+          useScene.getState().showNotification(`Sketchfab error: ${e instanceof Error ? e.message : 'Failed to load models'}`)
+          patchLast({ status: 'complete' })
+        }
       }
 
       const cleanText = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
@@ -618,6 +703,13 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
         </div>
       ) : null}
 
+      {msg.status === 'resolving' && (
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: '#8B9CF4' }}>
+          <Loader2 size={11} className="animate-spin" />
+          <span>Fetching 3D models from Sketchfab…</span>
+        </div>
+      )}
+
       {msg.actionErrors && msg.actionErrors.length > 0 && (
         <div className="flex flex-col gap-1">
           {msg.actionErrors.map((err, i) => (
@@ -630,7 +722,7 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
         </div>
       )}
 
-      {msg.status === 'complete' && msg.commandCount > 0 && onUndo && (
+      {(msg.status === 'complete') && msg.commandCount > 0 && onUndo && (
         <button
           onClick={onUndo}
           className="self-start flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors border"
