@@ -420,7 +420,20 @@ export function buildSceneContext(
       : ''
     const geomStr = obj.geometry?.type ? `/${obj.geometry.type}` : ''
 
-    return `  • "${obj.name}" (${obj.type}${geomStr}) @[${pos}]${scaleStr}${details}${animStr}${behaviorStr}${visStr} id:${obj.id}`
+    let dimsStr = ''
+    if (obj.geometry) {
+      const g = obj.geometry as { type: string; width?: number; height?: number; depth?: number; radius?: number; radiusTop?: number; radiusBottom?: number }
+      if (g.type === 'box' && (g.width || g.height || g.depth))
+        dimsStr = ` dims:[w:${(g.width ?? 1).toFixed(1)} h:${(g.height ?? 1).toFixed(1)} d:${(g.depth ?? 1).toFixed(1)}]`
+      else if (g.type === 'sphere' && g.radius)
+        dimsStr = ` [r:${g.radius.toFixed(2)}]`
+      else if ((g.type === 'cylinder' || g.type === 'cone') && (g.radiusTop || g.radiusBottom || g.height))
+        dimsStr = ` [rt:${(g.radiusTop ?? 0.5).toFixed(2)} rb:${(g.radiusBottom ?? 0.5).toFixed(2)} h:${(g.height ?? 1).toFixed(1)}]`
+      else if (g.type === 'plane' && (g.width || g.height))
+        dimsStr = ` [w:${(g.width ?? 1).toFixed(1)} h:${(g.height ?? 1).toFixed(1)}]`
+    }
+
+    return `  • "${obj.name}" (${obj.type}${geomStr}) @[${pos}]${scaleStr}${dimsStr}${details}${animStr}${behaviorStr}${visStr} id:${obj.id}`
   })
 
   const env = environment as {

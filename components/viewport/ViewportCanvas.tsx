@@ -15,6 +15,8 @@ import {
   Sky,
   OrthographicCamera as DreiOrthoCamera,
   Line,
+  GizmoHelper,
+  GizmoViewport,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -2643,6 +2645,11 @@ export function ViewportCanvas() {
             dampingFactor={0.05}
             enabled={orbitEnabled}
           />
+          {viewMode === 'persp' && (
+            <GizmoHelper alignment="bottom-right" margin={[60, 60]} renderPriority={2}>
+              <GizmoViewport axisColors={['#ef4444', '#22c55e', '#3b82f6']} labelColor="#E8E9F0" />
+            </GizmoHelper>
+          )}
         </Suspense>
       </Canvas>
     </div>

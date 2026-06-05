@@ -14,6 +14,7 @@ import { ChatAssetCarousel } from '@/components/panels/ChatAssetCarousel'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
 
 interface UserMessage { role: 'user'; content: string }
+interface SketchfabPlacedModel { query: string; name: string; thumbnail: string | null }
 interface AssistantMessage {
   role: 'assistant'
   content: string
@@ -23,6 +24,7 @@ interface AssistantMessage {
   actionErrors?: string[]
   behaviorAttachments?: BehaviorAttachment[]
   gallery?: GallerySpec
+  sketchfabResults?: SketchfabPlacedModel[]
 }
 type Message = UserMessage | AssistantMessage
 type HistoryMessage = { role: 'user' | 'assistant'; content: string }
@@ -332,7 +334,16 @@ export function ChatPanel() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(resolveBody),
           })
-          if (!resolveRes.ok) throw new Error(`Sketchfab resolve failed: ${resolveRes.status}`)
+          if (!resolveRes.ok) {
+            let errorMsg = `Sketchfab resolve failed (${resolveRes.status})`
+            try {
+              const errData = await resolveRes.json() as { error?: string }
+              if (errData.error?.includes('API_KEY'))
+                errorMsg = 'Sketchfab is not configured — add SKETCHFAB_API_KEY to your environment variables'
+              else if (errData.error) errorMsg = errData.error
+            } catch { /* ignore parse error */ }
+            throw new Error(errorMsg)
+          }
 
           const resolveData = await resolveRes.json() as {
             results: Array<{ query: string; uid: string; name: string; url: string; thumbnail: string | null }>
@@ -389,7 +400,12 @@ export function ChatPanel() {
             store.showNotification(`Sketchfab: no models found for "${resolveData.fallbacks.join('", "')}" — used placeholders`)
           }
 
-          patchLast({ commandCount: syncCommandCount + modelCommandCount, status: 'complete' })
+          const placedModels: SketchfabPlacedModel[] = resolveData.results.map((r) => ({
+            query: r.query,
+            name: r.name,
+            thumbnail: r.thumbnail ?? null,
+          }))
+          patchLast({ commandCount: syncCommandCount + modelCommandCount, status: 'complete', sketchfabResults: placedModels.length ? placedModels : undefined })
         } catch (e) {
           useScene.getState().showNotification(`Sketchfab error: ${e instanceof Error ? e.message : 'Failed to load models'}`)
           patchLast({ status: 'complete' })
@@ -748,6 +764,26 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
       )}
 
       {msg.gallery && <ChatAssetCarousel spec={msg.gallery} />}
+
+      {msg.sketchfabResults && msg.sketchfabResults.length > 0 && (
+        <div className="flex flex-col gap-1 mt-1">
+          <span className="text-[9px] uppercase tracking-wider" style={{ color: '#3a3e50' }}>
+            {msg.sketchfabResults.length} model{msg.sketchfabResults.length !== 1 ? 's' : ''} placed
+          </span>
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+            {msg.sketchfabResults.map((r, i) => (
+              <div key={i} className="shrink-0 flex flex-col gap-0.5" style={{ width: 56 }}>
+                <div className="rounded-md overflow-hidden" style={{ width: 56, height: 42, background: '#12141a', border: '1px solid #1E2028' }}>
+                  {r.thumbnail
+                    ? <img src={r.thumbnail} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <div className="w-full h-full flex items-center justify-center text-base">📦</div>}
+                </div>
+                <span className="text-[9px] leading-tight truncate" style={{ color: '#7A7E92' }} title={r.name}>{r.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {msg.status === 'complete' && msg.suggestions && msg.suggestions.length > 0 && onSuggestion && (
         <div className="flex flex-wrap gap-1.5 mt-0.5">

@@ -818,6 +818,38 @@ function BehaviorItem({ objId, b }: { objId: string; b: BehaviorConfig }) {
   )
 }
 
+function GeometrySection({ id, geo, updateObject }: {
+  id: string
+  geo: GeometryConfig
+  updateObject: (id: string, patch: import('@/lib/scene/SceneStore').DeepPartial<SceneObject>) => void
+}) {
+  if (!['box', 'sphere', 'cylinder', 'cone', 'plane'].includes(geo.type)) return null
+  const upG = (patch: Partial<GeometryConfig>) => updateObject(id, { geometry: { ...geo, ...patch } as GeometryConfig })
+  return (
+    <Section label="Geometry" icon={<Box size={11} />} defaultOpen>
+      <div className="flex flex-col gap-2">
+        {geo.type === 'box' && (<>
+          <SliderRow label="Width"  value={geo.width  ?? 1} min={0.01} max={20} step={0.05} onChange={(v) => upG({ width: v })} />
+          <SliderRow label="Height" value={geo.height ?? 1} min={0.01} max={20} step={0.05} onChange={(v) => upG({ height: v })} />
+          <SliderRow label="Depth"  value={geo.depth  ?? 1} min={0.01} max={20} step={0.05} onChange={(v) => upG({ depth: v })} />
+        </>)}
+        {geo.type === 'sphere' && (
+          <SliderRow label="Radius" value={geo.radius ?? 0.5} min={0.01} max={10} step={0.05} onChange={(v) => upG({ radius: v })} />
+        )}
+        {(geo.type === 'cylinder' || geo.type === 'cone') && (<>
+          <SliderRow label="Radius Top"    value={geo.radiusTop    ?? 0.5} min={0}    max={10} step={0.05} onChange={(v) => upG({ radiusTop: v })} />
+          <SliderRow label="Radius Bottom" value={geo.radiusBottom ?? 0.5} min={0}    max={10} step={0.05} onChange={(v) => upG({ radiusBottom: v })} />
+          <SliderRow label="Height"        value={geo.height       ?? 1}   min={0.01} max={20} step={0.05} onChange={(v) => upG({ height: v })} />
+        </>)}
+        {geo.type === 'plane' && (<>
+          <SliderRow label="Width"  value={geo.width  ?? 1} min={0.01} max={100} step={0.1} onChange={(v) => upG({ width: v })} />
+          <SliderRow label="Height" value={geo.height ?? 1} min={0.01} max={100} step={0.1} onChange={(v) => upG({ height: v })} />
+        </>)}
+      </div>
+    </Section>
+  )
+}
+
 export function PropertiesPanel() {
   const selectedIds = useScene((s) => s.selectedIds)
   const objects = useScene((s) => s.objects)
@@ -970,6 +1002,11 @@ export function PropertiesPanel() {
             </Row>
           </div>
         </Section>
+      )}
+
+      {/* Geometry dimensions — primitive shapes only */}
+      {obj.type === 'mesh' && obj.geometry && !['gltf', 'text', 'torus', 'ring', 'capsule', 'tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron', 'custom'].includes(obj.geometry.type) && (
+        <GeometrySection id={id} geo={obj.geometry} updateObject={updateObject} />
       )}
 
       {/* 3D Text editing */}
