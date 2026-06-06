@@ -297,6 +297,7 @@ export interface AddSketchfabModelCmd {
   yOffset?: number
   rotation?: [number, number, number]
   scale?: [number, number, number]
+  targetSize?: number     // real-world largest dimension in meters (building ~25, prop ~1)
 }
 
 export type SceneCommand =

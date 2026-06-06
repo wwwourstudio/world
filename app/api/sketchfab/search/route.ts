@@ -1,3 +1,5 @@
+import { fetchSketchfab } from '@/lib/sketchfab/fetchWithRetry'
+
 interface SketchfabModel {
   uid: string
   name: string
@@ -28,10 +30,7 @@ export async function GET(request: Request) {
 
   let res: Response
   try {
-    res = await fetch(url.toString(), {
-      headers: { Authorization: `Token ${apiKey}` },
-      cache: 'no-store',
-    })
+    res = await fetchSketchfab(url.toString(), apiKey)
   } catch (e) {
     return Response.json(
       { error: `Sketchfab network error: ${e instanceof Error ? e.message : String(e)}` },

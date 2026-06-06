@@ -15,6 +15,8 @@ import {
   Sky,
   OrthographicCamera as DreiOrthoCamera,
   Line,
+  GizmoHelper,
+  GizmoViewport,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -747,23 +749,36 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
 
   const { cloned, bbSize, bbCenter } = useMemo(() => {
     const c = gltfScene.clone(true)
-    // Auto-normalize: scale imported models to fit ~2m bounding box
+    const target = obj.geometry.targetSize ?? 2
+
+    // 1) Measure raw bounds
     const box = new THREE.Box3().setFromObject(c)
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z)
-    if (maxDim > 0.001 && (maxDim > 5 || maxDim < 0.1)) {
-      const factor = 2 / maxDim
-      c.scale.setScalar(factor)
-      const center = box.getCenter(new THREE.Vector3())
-      c.position.sub(center.multiplyScalar(factor))
-    }
+
+    // 2) ALWAYS normalize largest dimension to target meters (preserves aspect ratio)
+    if (maxDim > 0.0001) c.scale.setScalar(target / maxDim)
+
+    // 3) Enable shadows on every child mesh (primitive group sets none by default)
+    c.traverse((child) => {
+      const m = child as THREE.Mesh
+      if (m.isMesh) { m.castShadow = true; m.receiveShadow = true }
+    })
+
+    // 4) Ground-snap: center on X/Z, lift so the base sits at local origin y=0
+    const scaledBox = new THREE.Box3().setFromObject(c)
+    const ctr = scaledBox.getCenter(new THREE.Vector3())
+    c.position.x -= ctr.x
+    c.position.z -= ctr.z
+    c.position.y -= scaledBox.min.y
+
     const finalBox = new THREE.Box3().setFromObject(c)
     return {
       cloned: c,
       bbSize: finalBox.getSize(new THREE.Vector3()),
       bbCenter: finalBox.getCenter(new THREE.Vector3()),
     }
-  }, [gltfScene])
+  }, [gltfScene, obj.geometry.targetSize])
 
   return (
     <group position={[dx, dy, dz]} scale={[scaleFactor, scaleFactor, scaleFactor]}>
@@ -2643,6 +2658,11 @@ export function ViewportCanvas() {
             dampingFactor={0.05}
             enabled={orbitEnabled}
           />
+          {viewMode === 'persp' && (
+            <GizmoHelper alignment="bottom-right" margin={[60, 60]} renderPriority={2}>
+              <GizmoViewport axisColors={['#ef4444', '#22c55e', '#3b82f6']} labelColor="#E8E9F0" />
+            </GizmoHelper>
+          )}
         </Suspense>
       </Canvas>
     </div>

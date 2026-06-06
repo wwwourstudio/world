@@ -1,3 +1,5 @@
+import { fetchSketchfab } from '@/lib/sketchfab/fetchWithRetry'
+
 interface ResolveQuery {
   query: string
   count: number
@@ -18,6 +20,24 @@ interface ResolvedModel {
   thumbnail: string | null
 }
 
+type SearchModel = { uid: string; name: string; thumbnail: string | null }
+
+// ─── In-memory caches (best-effort; wiped on serverless cold start) ──────────
+// Search results are stable → cache long. Download URLs are signed and expire
+// in ~24h → cache short (30 min) so a served URL is always comfortably fresh.
+const SEARCH_TTL = 6 * 60 * 60_000
+const DL_TTL = 30 * 60_000
+const MAX_CACHE = 500
+
+const searchCache = new Map<string, { models: SearchModel[]; expires: number }>()
+const dlCache = new Map<string, { url: string; expires: number }>()
+
+const norm = (q: string) => q.trim().toLowerCase().replace(/\s+/g, ' ')
+
+function cacheBound<V>(map: Map<string, V>) {
+  if (map.size > MAX_CACHE) map.clear()
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.SKETCHFAB_API_KEY
   if (!apiKey) {
@@ -36,10 +56,19 @@ export async function POST(request: Request) {
     return Response.json({ results: [], fallbacks: [] })
   }
 
-  // Search all queries in parallel
+  const now = Date.now()
+
+  // ── Phase 1: search (cache-first) ──────────────────────────────────────────
   const searchResults = await Promise.allSettled(
     queries.map(async ({ query, count }) => {
-      const fetchCount = Math.min(Math.max(count, 1) * 2, 10)
+      const wanted = Math.max(count, 1)
+      const key = `${norm(query)}::${wanted}`
+      const cached = searchCache.get(key)
+      if (cached && cached.expires > now) {
+        return { query, models: cached.models }
+      }
+
+      const fetchCount = Math.min(wanted * 2, 10)
       const url = new URL('https://api.sketchfab.com/v3/models')
       url.searchParams.set('q', query)
       url.searchParams.set('count', String(fetchCount))
@@ -47,20 +76,21 @@ export async function POST(request: Request) {
       url.searchParams.set('type', 'models')
       url.searchParams.set('sort_by', 'relevance')
 
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: `Token ${apiKey}` },
-        cache: 'no-store',
-      })
+      const res = await fetchSketchfab(url.toString(), apiKey)
       if (!res.ok) throw new Error(`Search failed: ${res.status}`)
       const data = await res.json()
-      const models = (data.results as SketchfabSearchModel[])
+      const models: SearchModel[] = (data.results as SketchfabSearchModel[])
         .filter((m) => m.isDownloadable)
-        .slice(0, Math.max(count, 1))
+        .slice(0, wanted)
+        .map((m) => ({ uid: m.uid, name: m.name, thumbnail: m.thumbnails?.images?.[0]?.url ?? null }))
+
+      cacheBound(searchCache)
+      searchCache.set(key, { models, expires: now + SEARCH_TTL })
       return { query, models }
     })
   )
 
-  // Collect models that need download URL resolution, track fallbacks
+  // Collect download tasks, track fallbacks for failed/empty searches
   const fallbacks: string[] = []
   const downloadTasks: Array<{ query: string; uid: string; name: string; thumbnail: string | null }> = []
 
@@ -71,38 +101,35 @@ export async function POST(request: Request) {
       continue
     }
     for (const model of r.value.models) {
-      downloadTasks.push({
-        query: r.value.query,
-        uid: model.uid,
-        name: model.name,
-        thumbnail: model.thumbnails?.images?.[0]?.url ?? null,
-      })
+      downloadTasks.push({ query: r.value.query, uid: model.uid, name: model.name, thumbnail: model.thumbnail })
     }
   }
 
-  // Cap total models at 20, fetch download URLs in parallel
+  // ── Phase 2: resolve download URLs (cache-first), capped at 20 total ────────
   const cappedTasks = downloadTasks.slice(0, 20)
   const downloadResults = await Promise.allSettled(
     cappedTasks.map(async (task) => {
-      const res = await fetch(`https://api.sketchfab.com/v3/models/${task.uid}/download`, {
-        headers: { Authorization: `Token ${apiKey}` },
-        cache: 'no-store',
-      })
+      const cached = dlCache.get(task.uid)
+      if (cached && cached.expires > now) {
+        return { ...task, url: cached.url } as ResolvedModel
+      }
+
+      const res = await fetchSketchfab(`https://api.sketchfab.com/v3/models/${task.uid}/download`, apiKey)
       if (!res.ok) throw new Error(`Download URL fetch failed for ${task.uid}: ${res.status}`)
       const data = await res.json()
       // Prefer GLB for Three.js, fall back to GLTF
       const glbUrl: string | undefined = data.glb?.url ?? data.gltf?.url
       if (!glbUrl) throw new Error(`No GLB/GLTF URL for ${task.uid}`)
+
+      cacheBound(dlCache)
+      dlCache.set(task.uid, { url: glbUrl, expires: now + DL_TTL })
       return { ...task, url: glbUrl } as ResolvedModel
     })
   )
 
   const results: ResolvedModel[] = []
-  for (let i = 0; i < downloadResults.length; i++) {
-    const dr = downloadResults[i]
-    if (dr.status === 'fulfilled') {
-      results.push(dr.value)
-    }
+  for (const dr of downloadResults) {
+    if (dr.status === 'fulfilled') results.push(dr.value)
     // Silently skip failed download URLs — search succeeded, just this model is unavailable
   }
 
