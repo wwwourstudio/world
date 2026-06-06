@@ -117,6 +117,7 @@ export interface GeometryConfig {
   segments?: number
   tube?: number
   url?: string
+  targetSize?: number        // gltf: normalize largest dimension to this many meters
   text?: string
   fontSize?: number
   textDepth?: number

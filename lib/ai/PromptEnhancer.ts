@@ -51,11 +51,23 @@ const ENHANCEMENTS: Array<{ pattern: RegExp; expansion: string }> = [
   },
   {
     pattern: /industrial|factory|warehouse|district/i,
-    expansion: 'add_sketchfab_model: industrial warehouse + pipe sections + cranes. ground concrete roughness 0.9, fog exponential 0.025 #1a1208, directional warm #ffaa66 1.5, ambient 0.2',
+    expansion: 'add_sketchfab_model: warehouse building (targetSize:22) + industrial pipe (targetSize:2.5 scatter) + construction crane (targetSize:18). ground concrete roughness 0.9, fog exponential 0.025 #1a1208, directional warm #ffaa66 1.5, ambient 0.2',
   },
   {
     pattern: /city|urban|downtown|block/i,
-    expansion: 'add_sketchfab_model: city building facades variety:4 + street lamps + road sections. ground concrete, directional 1.5 #fff5e0, ambient 0.3, slight fog exponential 0.01',
+    expansion: 'add_sketchfab_model: city building facade variety:4 (targetSize:25) + street lamp post (targetSize:4) + road section (targetSize:12). ground concrete, directional 1.5 #fff5e0, ambient 0.3, slight fog exponential 0.01',
+  },
+  {
+    pattern: /forest|woods|jungle|nature|woodland/i,
+    expansion: 'add_sketchfab_model: pine tree variety:4 (targetSize:7 scatter) + forest rock variety:3 (targetSize:1.5 scatter) + fern bush (targetSize:0.8). ground mossy green roughness 0.95, fog exponential 0.02 green tint, directional warm 1.2, ambient 0.3',
+  },
+  {
+    pattern: /medieval|village|fantasy|castle|hamlet/i,
+    expansion: 'add_sketchfab_model: medieval house variety:4 (targetSize:9 grid) + market stall (targetSize:3 line) + wooden cart (targetSize:2.5 scatter). ground dirt, warm directional 1.4, ambient 0.3, light fog',
+  },
+  {
+    pattern: /warehouse interior|storage|logistics|stockroom/i,
+    expansion: 'add_sketchfab_model: warehouse shelf rack variety:3 (targetSize:4 grid) + cardboard box pallet (targetSize:1.2 scatter) + forklift (targetSize:3). large floor plane concrete, overhead point lights, slight fog',
   },
 ]
 
@@ -212,16 +224,18 @@ ALL AVAILABLE COMMANDS
 
     // ── REAL 3D MODELS (Sketchfab) ────────────────────────────────────────
     // Searches Sketchfab for real GLB/GLTF models and places them in arrays.
-    // Models auto-scale to ~2m; use scale[] to resize. Always pair with ground + lights.
+    // targetSize = real-world largest dimension in METERS — SET IT ON EVERY MODEL for correct scale.
+    // Models ground-snap: their base sits at position Y (use yOffset to lift/sink).
     // layout: "grid" = square grid, "line" = row, "circle" = ring, "scatter" = random spread
     // variety = fetch N distinct models and cycle through them (good for count>4)
     { "action": "add_sketchfab_model",
-      "query": "3-5 word search term",
+      "query": "2-4 word search term",
       "name": "display name prefix",
       "count": 6,
       "variety": 3,
       "layout": "grid",
       "spacing": 5,
+      "targetSize": 22,
       "position": [0, 0, 0],
       "yOffset": 0,
       "rotation": [0, 0, 0],
@@ -284,32 +298,60 @@ SCENE KIT CONSTRUCTION (Sketchfab real models)
 Use add_sketchfab_model when the user wants real architectural detail, props, or kits.
 ALWAYS pair with: ground plane, at least 2 lights, fog or HDRI for atmosphere.
 
+TARGET SIZE (meters, largest dimension) — set targetSize on EVERY model so scale is real:
+  skyscraper/tower 40-80 · building/warehouse 15-30 · house/cabin 8-12 · truck/bus 8
+  vehicle/car 4.5 · tree 5-8 · streetlamp/post/pillar 4 · human/character 1.8
+  pipe/barrel/crate 1.5-3 · prop/debris/tool 0.5-1.5 · road/terrain section 10-20
+
 EXAMPLE — Industrial District:
   1. Ground plane (geometry:plane roughness:0.9 size:60×60 rotation:[-1.5708,0,0])
   2. set_environment + add_light directional warm #ffaa66 + add_light point
-  3. add_sketchfab_model query:"industrial warehouse building" count:4 layout:"grid" spacing:15
-  4. add_sketchfab_model query:"industrial pipe fitting" count:12 layout:"scatter" spacing:5
-  5. add_sketchfab_model query:"construction crane" count:2 layout:"line" spacing:20 position:[0,0,-15]
+  3. add_sketchfab_model query:"warehouse building" count:4 layout:"grid" spacing:15 targetSize:22
+  4. add_sketchfab_model query:"industrial pipe" count:12 layout:"scatter" spacing:5 targetSize:2.5
+  5. add_sketchfab_model query:"construction crane" count:2 layout:"line" spacing:20 position:[0,0,-15] targetSize:18
   6. set_fog exponential + set_hdri satara_night
 
 EXAMPLE — City Block:
   1. Ground concrete plane
-  2. add_sketchfab_model query:"city building facade low poly" count:8 variety:4 layout:"grid" spacing:12
-  3. add_sketchfab_model query:"urban street lamp post" count:16 layout:"line" spacing:6 position:[0,0,8]
-  4. add_sketchfab_model query:"road asphalt section" count:20 layout:"grid" spacing:4 yOffset:-0.05
+  2. add_sketchfab_model query:"city building facade" count:8 variety:4 layout:"grid" spacing:12 targetSize:25
+  3. add_sketchfab_model query:"street lamp post" count:16 layout:"line" spacing:6 position:[0,0,8] targetSize:4
+  4. add_sketchfab_model query:"road asphalt section" count:20 layout:"grid" spacing:4 yOffset:-0.05 targetSize:12
   5. Three-point lighting + slight fog
 
+EXAMPLE — Forest / Nature:
+  1. Ground plane mossy green roughness:0.95 size:80×80
+  2. add_sketchfab_model query:"pine tree" count:20 variety:4 layout:"scatter" spacing:7 targetSize:7
+  3. add_sketchfab_model query:"forest rock" count:12 variety:3 layout:"scatter" spacing:5 targetSize:1.5
+  4. add_sketchfab_model query:"fern bush" count:16 layout:"scatter" spacing:4 targetSize:0.8
+  5. set_fog exponential green tint + set_hdri forest_slope + warm directional light
+
+EXAMPLE — Medieval Village:
+  1. Ground dirt plane
+  2. add_sketchfab_model query:"medieval house" count:8 variety:4 layout:"grid" spacing:12 targetSize:9
+  3. add_sketchfab_model query:"stone well" count:1 targetSize:2 + query:"wooden cart" count:3 layout:"scatter" spacing:6 targetSize:2.5
+  4. add_sketchfab_model query:"market stall" count:4 layout:"line" spacing:5 targetSize:3
+  5. Warm directional + ambient + light fog
+
+EXAMPLE — Warehouse Interior:
+  1. Large floor plane + ceiling
+  2. add_sketchfab_model query:"warehouse shelf rack" count:10 variety:3 layout:"grid" spacing:6 targetSize:4
+  3. add_sketchfab_model query:"cardboard box pallet" count:20 layout:"scatter" spacing:3 targetSize:1.2
+  4. add_sketchfab_model query:"forklift" count:2 layout:"scatter" spacing:10 targetSize:3
+  5. Overhead point lights + slight fog + concrete material
+
 EXAMPLE — Sci-Fi Corridor:
-  1. add_sketchfab_model query:"sci fi corridor modular panel" count:10 layout:"line" spacing:3
-  2. add_sketchfab_model query:"sci fi pipe cable industrial" count:8 layout:"scatter" spacing:2 yOffset:0.5
+  1. add_sketchfab_model query:"sci fi corridor panel" count:10 layout:"line" spacing:3 targetSize:3
+  2. add_sketchfab_model query:"sci fi pipe cable" count:8 layout:"scatter" spacing:2 yOffset:0.5 targetSize:1.5
   3. Neon point lights + bloom + fog exponential 0.04
 
 RULES for add_sketchfab_model:
-- Keep query concise and searchable (3–5 words, specific beats vague)
-- Use variety:2 or variety:3 for count>4 to avoid repetition
+- Set targetSize on EVERY model for real-world scale — never rely on the default
+- ALWAYS emit ground plane + ≥2 lights + (fog OR set_hdri) in the SAME response
+- Keep queries concise: 2-4 concrete nouns, no adjectives Sketchfab won't index
+- Use variety:2-4 whenever count>4 to avoid visible repetition
+- Models ground-snap (base at position Y); use yOffset only to intentionally lift/sink
 - Do NOT use add_sketchfab_model for simple shapes (use geometry primitives instead)
-- scale[] overrides auto-scale; default auto-scale fits model to ~2m bounding box
-- Always include ground + lighting in the same response as sketchfab commands
+- scale[] is a MULTIPLIER on top of targetSize (leave [1,1,1] unless stretching)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CINEMATIC SCENE BUILDING PATTERNS
