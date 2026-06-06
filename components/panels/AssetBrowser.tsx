@@ -909,6 +909,21 @@ function FXTab() {
           {postFX.chromaticAberration && (
             <SliderRow label="Offset" value={postFX.chromaticOffset} min={0} max={0.01} step={0.0005} onChange={(v) => setPostFX({ chromaticOffset: v })} />
           )}
+          <FXToggleRow label="Ambient Occlusion" active={postFX.ssao} onChange={(v) => setPostFX({ ssao: v })} />
+          {postFX.ssao && (
+            <>
+              <SliderRow label="Intensity" value={postFX.ssaoIntensity} min={0.5} max={5} step={0.1} onChange={(v) => setPostFX({ ssaoIntensity: v })} />
+              <SliderRow label="Radius" value={postFX.ssaoRadius} min={0.05} max={0.5} step={0.01} onChange={(v) => setPostFX({ ssaoRadius: v })} />
+            </>
+          )}
+          <FXToggleRow label="Depth of Field" active={postFX.dof} onChange={(v) => setPostFX({ dof: v })} />
+          {postFX.dof && (
+            <>
+              <SliderRow label="Focus Dist." value={postFX.dofFocusDistance} min={0} max={0.1} step={0.002} onChange={(v) => setPostFX({ dofFocusDistance: v })} />
+              <SliderRow label="Focal Length" value={postFX.dofFocalLength} min={0.01} max={0.2} step={0.005} onChange={(v) => setPostFX({ dofFocalLength: v })} />
+              <SliderRow label="Bokeh Scale" value={postFX.dofBokehScale} min={1} max={10} step={0.5} onChange={(v) => setPostFX({ dofBokehScale: v })} />
+            </>
+          )}
           <SliderRow label="Exposure" value={postFX.toneMappingExposure} min={0.1} max={3} step={0.05} onChange={(v) => setPostFX({ toneMappingExposure: v })} />
         </div>
       </div>

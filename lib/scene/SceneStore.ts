@@ -386,6 +386,14 @@ export interface PostFXState {
   chromaticAberration: boolean
   chromaticOffset: number
   toneMappingExposure: number
+  ssao: boolean
+  ssaoIntensity: number
+  ssaoRadius: number
+  ssaoBias: number
+  dof: boolean
+  dofFocusDistance: number
+  dofFocalLength: number
+  dofBokehScale: number
 }
 
 export interface PanelState {
@@ -729,6 +737,14 @@ export const useScene = create<SceneState>()(
         chromaticAberration: false,
         chromaticOffset: 0.002,
         toneMappingExposure: 1,
+        ssao: false,
+        ssaoIntensity: 1.5,
+        ssaoRadius: 0.15,
+        ssaoBias: 0.025,
+        dof: false,
+        dofFocusDistance: 0.02,
+        dofFocalLength: 0.05,
+        dofBokehScale: 3,
       },
 
       panels: {
