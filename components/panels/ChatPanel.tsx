@@ -25,6 +25,7 @@ interface AssistantMessage {
   behaviorAttachments?: BehaviorAttachment[]
   gallery?: GallerySpec
   sketchfabResults?: SketchfabPlacedModel[]
+  resolveCount?: number
 }
 type Message = UserMessage | AssistantMessage
 type HistoryMessage = { role: 'user' | 'assistant'; content: string }
@@ -346,6 +347,8 @@ export function ChatPanel() {
 
       if (hasSketchfab) {
         try {
+          const totalRequested = sketchfabCmds.reduce((s, c) => s + Math.max(c.count ?? 1, 1), 0)
+          patchLast({ resolveCount: totalRequested })
           const resolveBody = {
             queries: sketchfabCmds.map((cmd) => ({
               query: cmd.query,
@@ -744,7 +747,7 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
       {msg.status === 'resolving' && (
         <div className="flex items-center gap-2 text-[11px]" style={{ color: '#8B9CF4' }}>
           <Loader2 size={11} className="animate-spin" />
-          <span>Fetching 3D models from Sketchfab…</span>
+          <span>Fetching {msg.resolveCount ? `${msg.resolveCount} ` : ''}3D models from Sketchfab…</span>
         </div>
       )}
 
