@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   Sparkles, ArrowUp, Loader2, Undo2, AlertCircle, CheckCircle2,
   Mic, MicOff, Zap, Globe, Trees, Lightbulb, Camera, Wand2,
-  ChevronDown,
+  ChevronDown, X, Check,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { BehaviorConfig } from '@/lib/scene/SceneStore'
@@ -15,17 +15,25 @@ import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/Pr
 
 interface UserMessage { role: 'user'; content: string }
 interface SketchfabPlacedModel { query: string; name: string; thumbnail: string | null }
+interface ResolvedSketchfabModel { query: string; uid: string; name: string; url: string; thumbnail: string | null }
+interface PendingSketchfab {
+  cmds: AddSketchfabModelCmd[]
+  resolved: ResolvedSketchfabModel[]
+  fallbacks: string[]
+  skippedUids?: string[]
+}
 interface AssistantMessage {
   role: 'assistant'
   content: string
   commandCount: number
-  status: 'streaming' | 'resolving' | 'complete' | 'error'
+  status: 'streaming' | 'resolving' | 'awaiting-confirm' | 'complete' | 'error'
   suggestions?: string[]
   actionErrors?: string[]
   behaviorAttachments?: BehaviorAttachment[]
   gallery?: GallerySpec
   sketchfabResults?: SketchfabPlacedModel[]
   resolveCount?: number
+  pendingSketchfab?: PendingSketchfab
 }
 type Message = UserMessage | AssistantMessage
 type HistoryMessage = { role: 'user' | 'assistant'; content: string }
@@ -43,6 +51,64 @@ function defaultTargetSize(query: string): number | undefined {
   if (/\b(pipe|barrel|crate|rock|boulder|bush|cart|stall)\b/.test(q)) return 2.5
   if (/\b(prop|debris|tool|box|plant|flower|lantern)\b/.test(q)) return 1
   return undefined // renderer defaults to 2m
+}
+
+const SKETCHFAB_MAT = {
+  type: 'standard' as const, color: '#ffffff', roughness: 0.5, metalness: 0,
+  emissive: '#000000', emissiveIntensity: 0, opacity: 1, transparent: false,
+  wireframe: false, envMapIntensity: 1, transmission: 0, ior: 1.5, thickness: 0.5,
+  flatShading: false, side: 'front' as const,
+}
+
+// Build the addObject configs for a set of resolved Sketchfab commands.
+// Pure (no store access) so it can be reused by both auto-place and confirm-place.
+function buildSketchfabObjects(
+  cmds: AddSketchfabModelCmd[],
+  resolved: ResolvedSketchfabModel[],
+  skippedUids: string[] = [],
+): Array<Parameters<ReturnType<typeof useScene.getState>['addObject']>[0]> {
+  const configs: Array<Parameters<ReturnType<typeof useScene.getState>['addObject']>[0]> = []
+  for (const cmd of cmds) {
+    const models = resolved.filter((r) => r.query === cmd.query && !skippedUids.includes(r.uid))
+    const totalCount = Math.max(cmd.count ?? 1, 1)
+    const positions = computeLayoutPositions(
+      totalCount,
+      cmd.layout ?? 'grid',
+      cmd.position ?? [0, 0, 0],
+      cmd.spacing ?? 4,
+      cmd.yOffset ?? 0,
+    )
+
+    if (models.length === 0) {
+      configs.push({
+        name: cmd.name ?? cmd.query,
+        type: 'mesh',
+        geometry: { type: 'box', width: 2, height: 2, depth: 2 },
+        material: { ...SKETCHFAB_MAT, color: '#cc3333' },
+        transform: { position: positions[0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      })
+      continue
+    }
+
+    const targetSize = cmd.targetSize ?? defaultTargetSize(cmd.query)
+    for (let i = 0; i < totalCount; i++) {
+      const model = models[i % models.length]
+      configs.push({
+        name: `${cmd.name ?? model.name}${totalCount > 1 ? ` ${i + 1}` : ''}`,
+        type: 'mesh',
+        geometry: { type: 'gltf', url: model.url, targetSize },
+        material: SKETCHFAB_MAT,
+        transform: {
+          position: positions[i],
+          rotation: cmd.rotation ?? [0, 0, 0],
+          scale: cmd.scale ?? [1, 1, 1],
+        },
+        castShadow: true,
+        receiveShadow: true,
+      })
+    }
+  }
+  return configs
 }
 
 // ─── Suggestion sets ──────────────────────────────────────────────────────────
@@ -162,6 +228,8 @@ export function ChatPanel() {
   const undo = useScene((s) => s.undo)
   const past = useScene((s) => s.past)
 
+  const autoPlaceSketchfab = useScene((s) => s.autoPlaceSketchfab)
+
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationHistory, setConversationHistory] = useState<HistoryMessage[]>([])
   const [input, setInput] = useState('')
@@ -172,6 +240,9 @@ export function ChatPanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
+  // Mirror messages into a ref so handlers can read latest without stale closure
+  const messagesRef = useRef<Message[]>([])
+  useEffect(() => { messagesRef.current = messages }, [messages])
 
   // Client-side only suggestions (avoids hydration mismatch)
   const [startSuggestions, setStartSuggestions] = useState<typeof WORLD_SUGGESTIONS>(() => WORLD_SUGGESTIONS.slice(0, 6))
@@ -204,6 +275,51 @@ export function ChatPanel() {
       return [...m.slice(0, idx), { ...m[idx], ...patch } as AssistantMessage]
     })
   }
+
+  function patchAt(idx: number, patch: Partial<AssistantMessage>) {
+    setMessages((m) => {
+      if (idx < 0 || idx >= m.length || m[idx].role !== 'assistant') return m
+      return [...m.slice(0, idx), { ...m[idx], ...patch } as AssistantMessage, ...m.slice(idx + 1)]
+    })
+  }
+
+  const placeSketchfab = useCallback((msgIdx: number) => {
+    const msg = messagesRef.current[msgIdx]
+    if (!msg || msg.role !== 'assistant' || !msg.pendingSketchfab) return
+    const { cmds, resolved, fallbacks, skippedUids = [] } = msg.pendingSketchfab
+    const configs = buildSketchfabObjects(cmds, resolved, skippedUids)
+    if (configs.length > 0) {
+      useScene.getState().addObjectsBatch(configs)
+    }
+    if (fallbacks?.length) {
+      useScene.getState().showNotification(`Sketchfab: no models found for "${fallbacks.join('", "')}" — used placeholders`)
+    }
+    const placedModels: SketchfabPlacedModel[] = resolved
+      .filter((r) => !skippedUids.includes(r.uid))
+      .map((r) => ({ query: r.query, name: r.name, thumbnail: r.thumbnail }))
+    patchAt(msgIdx, { status: 'complete', pendingSketchfab: undefined, sketchfabResults: placedModels.length ? placedModels : undefined })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const skipSketchfab = useCallback((msgIdx: number) => {
+    patchAt(msgIdx, { status: 'complete', pendingSketchfab: undefined })
+    useScene.getState().showNotification('Sketchfab models skipped')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const toggleSkippedUid = useCallback((msgIdx: number, uid: string) => {
+    setMessages((m) => {
+      const msg = m[msgIdx]
+      if (!msg || msg.role !== 'assistant' || !msg.pendingSketchfab) return m
+      const prev = msg.pendingSketchfab.skippedUids ?? []
+      const skippedUids = prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid]
+      return [
+        ...m.slice(0, msgIdx),
+        { ...msg, pendingSketchfab: { ...msg.pendingSketchfab, skippedUids } } as AssistantMessage,
+        ...m.slice(msgIdx + 1),
+      ]
+    })
+  }, [])
 
   const toggleVoice = useCallback(() => {
     if (listening) { recognitionRef.current?.stop(); setListening(false); return }
@@ -376,63 +492,28 @@ export function ChatPanel() {
             fallbacks: string[]
           }
 
-          const store = useScene.getState()
-          const FULL_MAT = { type: 'standard' as const, color: '#ffffff', roughness: 0.5, metalness: 0, emissive: '#000000', emissiveIntensity: 0, opacity: 1, transparent: false, wireframe: false, envMapIntensity: 1, transmission: 0, ior: 1.5, thickness: 0.5, flatShading: false, side: 'front' as const }
-          let modelCommandCount = 0
-
-          for (const cmd of sketchfabCmds) {
-            const models = resolveData.results.filter((r) => r.query === cmd.query)
-            const totalCount = Math.max(cmd.count ?? 1, 1)
-            const positions = computeLayoutPositions(
-              totalCount,
-              cmd.layout ?? 'grid',
-              cmd.position ?? [0, 0, 0],
-              cmd.spacing ?? 4,
-              cmd.yOffset ?? 0,
-            )
-
-            if (models.length === 0) {
-              store.addObject({
-                name: cmd.name ?? cmd.query,
-                type: 'mesh',
-                geometry: { type: 'box', width: 2, height: 2, depth: 2 },
-                material: { ...FULL_MAT, color: '#cc3333' },
-                transform: { position: positions[0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-              })
-              modelCommandCount++
-              continue
+          if (autoPlaceSketchfab) {
+            // Escape hatch: place immediately without preview
+            const configs = buildSketchfabObjects(sketchfabCmds, resolveData.results)
+            if (configs.length > 0) useScene.getState().addObjectsBatch(configs)
+            if (resolveData.fallbacks?.length) {
+              useScene.getState().showNotification(`Sketchfab: no models found for "${resolveData.fallbacks.join('", "')}" — used placeholders`)
             }
-
-            const targetSize = cmd.targetSize ?? defaultTargetSize(cmd.query)
-            for (let i = 0; i < totalCount; i++) {
-              const model = models[i % models.length]
-              store.addObject({
-                name: `${cmd.name ?? model.name}${totalCount > 1 ? ` ${i + 1}` : ''}`,
-                type: 'mesh',
-                geometry: { type: 'gltf', url: model.url, targetSize },
-                material: FULL_MAT,
-                transform: {
-                  position: positions[i],
-                  rotation: cmd.rotation ?? [0, 0, 0],
-                  scale: cmd.scale ?? [1, 1, 1],
-                },
-                castShadow: true,
-                receiveShadow: true,
-              })
-              modelCommandCount++
-            }
+            const placedModels: SketchfabPlacedModel[] = resolveData.results.map((r) => ({
+              query: r.query, name: r.name, thumbnail: r.thumbnail ?? null,
+            }))
+            patchLast({ commandCount: syncCommandCount + configs.length, status: 'complete', sketchfabResults: placedModels.length ? placedModels : undefined })
+          } else {
+            // Default: show preview grid and wait for user confirmation
+            patchLast({
+              status: 'awaiting-confirm',
+              pendingSketchfab: {
+                cmds: sketchfabCmds,
+                resolved: resolveData.results,
+                fallbacks: resolveData.fallbacks ?? [],
+              },
+            })
           }
-
-          if (resolveData.fallbacks?.length) {
-            store.showNotification(`Sketchfab: no models found for "${resolveData.fallbacks.join('", "')}" — used placeholders`)
-          }
-
-          const placedModels: SketchfabPlacedModel[] = resolveData.results.map((r) => ({
-            query: r.query,
-            name: r.name,
-            thumbnail: r.thumbnail ?? null,
-          }))
-          patchLast({ commandCount: syncCommandCount + modelCommandCount, status: 'complete', sketchfabResults: placedModels.length ? placedModels : undefined })
         } catch (e) {
           useScene.getState().showNotification(`Sketchfab error: ${e instanceof Error ? e.message : 'Failed to load models'}`)
           patchLast({ status: 'complete' })
@@ -577,10 +658,14 @@ export function ChatPanel() {
                 <AssistantBubble
                   key={i}
                   msg={m}
+                  msgIdx={i}
                   isLast={i === messages.length - 1}
                   loading={loading && i === messages.length - 1}
                   onUndo={past.length > 0 ? undo : undefined}
                   onSuggestion={send}
+                  onPlace={placeSketchfab}
+                  onSkip={skipSketchfab}
+                  onToggleSkip={toggleSkippedUid}
                 />
               )
             )}
@@ -699,12 +784,16 @@ function BehaviorBadge({ attachment, onRemove }: { attachment: BehaviorAttachmen
   )
 }
 
-function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
+function AssistantBubble({ msg, msgIdx, loading, onUndo, onSuggestion, onPlace, onSkip, onToggleSkip }: {
   msg: AssistantMessage
+  msgIdx: number
   isLast: boolean
   loading: boolean
   onUndo?: () => void
   onSuggestion?: (prompt: string) => void
+  onPlace?: (idx: number) => void
+  onSkip?: (idx: number) => void
+  onToggleSkip?: (idx: number, uid: string) => void
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -749,6 +838,15 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
           <Loader2 size={11} className="animate-spin" />
           <span>Fetching {msg.resolveCount ? `${msg.resolveCount} ` : ''}3D models from Sketchfab…</span>
         </div>
+      )}
+
+      {msg.status === 'awaiting-confirm' && msg.pendingSketchfab && onPlace && onSkip && onToggleSkip && (
+        <SketchfabPreview
+          pending={msg.pendingSketchfab}
+          onPlace={() => onPlace(msgIdx)}
+          onSkip={() => onSkip(msgIdx)}
+          onToggleSkip={(uid) => onToggleSkip(msgIdx, uid)}
+        />
       )}
 
       {msg.actionErrors && msg.actionErrors.length > 0 && (
@@ -826,6 +924,125 @@ function AssistantBubble({ msg, loading, onUndo, onSuggestion }: {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Sketchfab Preview ────────────────────────────────────────────────────────
+
+function SketchfabPreview({
+  pending,
+  onPlace,
+  onSkip,
+  onToggleSkip,
+}: {
+  pending: PendingSketchfab
+  onPlace: () => void
+  onSkip: () => void
+  onToggleSkip: (uid: string) => void
+}) {
+  const { resolved, fallbacks, skippedUids = [] } = pending
+
+  // Group resolved models by query
+  const byQuery = useMemo(() => {
+    const map = new Map<string, ResolvedSketchfabModel[]>()
+    for (const r of resolved) {
+      const arr = map.get(r.query) ?? []
+      arr.push(r)
+      map.set(r.query, arr)
+    }
+    return map
+  }, [resolved])
+
+  const activeCount = resolved.filter((r) => !skippedUids.includes(r.uid)).length
+  const totalModels = resolved.length + (fallbacks?.length ?? 0)
+
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ background: '#0a0b10', borderColor: '#1E2028' }}>
+      {/* Header */}
+      <div className="px-3 py-2 flex items-center gap-2" style={{ borderBottom: '1px solid #1E2028', background: '#0d0e13' }}>
+        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#8B9CF4' }}>
+          {totalModels} model{totalModels !== 1 ? 's' : ''} ready to place
+        </span>
+        <span className="ml-auto text-[9px]" style={{ color: '#3a3e50' }}>
+          click × to remove before placing
+        </span>
+      </div>
+
+      {/* Model grid */}
+      <div className="px-3 py-2 flex flex-col gap-3">
+        {Array.from(byQuery.entries()).map(([query, models]) => (
+          <div key={query} className="flex flex-col gap-1.5">
+            <span className="text-[9px] uppercase tracking-wider truncate" style={{ color: '#5a5e75' }} title={query}>
+              {query}
+            </span>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+              {models.map((r) => {
+                const skipped = skippedUids.includes(r.uid)
+                return (
+                  <div key={r.uid} className="shrink-0 flex flex-col gap-0.5 relative" style={{ width: 56 }}>
+                    <div
+                      className="rounded-md overflow-hidden relative cursor-pointer transition-opacity"
+                      style={{
+                        width: 56, height: 42,
+                        background: '#12141a',
+                        border: `1px solid ${skipped ? '#cc333355' : '#1E2028'}`,
+                        opacity: skipped ? 0.4 : 1,
+                      }}
+                      onClick={() => onToggleSkip(r.uid)}
+                      title={skipped ? 'Click to include' : 'Click to remove'}
+                    >
+                      {r.thumbnail
+                        ? <img src={r.thumbnail} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <div className="w-full h-full flex items-center justify-center text-base">📦</div>}
+                      {/* Toggle overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                        style={{ background: skipped ? '#00000066' : '#cc333355' }}>
+                        {skipped
+                          ? <Check size={14} className="text-white" strokeWidth={2.5} />
+                          : <X size={14} className="text-white" strokeWidth={2.5} />}
+                      </div>
+                    </div>
+                    <span className="text-[9px] leading-tight truncate" style={{ color: skipped ? '#3a3e50' : '#7A7E92' }} title={r.name}>
+                      {r.name}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Fallbacks notice */}
+        {fallbacks && fallbacks.length > 0 && (
+          <div className="text-[9px] px-2 py-1 rounded-md" style={{ background: '#1a0808', border: '1px solid #4a1515', color: '#f87171' }}>
+            No results for: {fallbacks.join(', ')} — placeholders will be used
+          </div>
+        )}
+      </div>
+
+      {/* Footer actions */}
+      <div className="px-3 py-2 flex items-center gap-2" style={{ borderTop: '1px solid #1E2028', background: '#0d0e13' }}>
+        <button
+          onClick={onPlace}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+          style={{ background: 'linear-gradient(135deg, #5B6CFF, #7c3aed)', color: '#ffffff' }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9' }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1' }}
+        >
+          <Check size={11} strokeWidth={2.5} />
+          Place {activeCount > 0 ? `${activeCount} ` : ''}model{activeCount !== 1 ? 's' : ''}
+        </button>
+        <button
+          onClick={onSkip}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] transition-all border"
+          style={{ color: '#7A7E92', borderColor: '#1E2028', background: 'transparent' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#E8E9F0'; e.currentTarget.style.background = '#1E2028' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#7A7E92'; e.currentTarget.style.background = 'transparent' }}
+        >
+          Skip all
+        </button>
+      </div>
     </div>
   )
 }

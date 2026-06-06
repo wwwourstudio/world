@@ -481,6 +481,7 @@ export const MATERIAL_PRESETS: Record<string, Partial<MaterialConfig>> = {
 
 interface SceneActions {
   addObject: (config: Partial<Omit<SceneObject, 'id'>>) => string
+  addObjectsBatch: (configs: Array<Partial<Omit<SceneObject, 'id'>>>) => string[]
   updateObject: (id: string, patch: DeepPartial<SceneObject>) => void
   removeObject: (id: string) => void
   duplicateObject: (id: string, offset?: [number, number, number]) => string
@@ -505,6 +506,7 @@ interface SceneActions {
   setPanelTab: (side: 'left' | 'right' | 'bottom', tab: string) => void
 
   setPlaying: (v: boolean) => void
+  setAutoPlaceSketchfab: (v: boolean) => void
   setPhysicsEnabled: (v: boolean) => void
 
   setPlayhead: (t: number) => void
@@ -589,6 +591,7 @@ interface SceneState extends SceneActions {
 
   physicsEnabled: boolean
   isPlaying: boolean
+  autoPlaceSketchfab: boolean
   physicsGravity: [number, number, number]
 
   playhead: number
@@ -739,6 +742,7 @@ export const useScene = create<SceneState>()(
 
       physicsEnabled: false,
       isPlaying: false,
+      autoPlaceSketchfab: false,
       physicsGravity: [0, -9.81, 0],
 
       playhead: 0,
@@ -797,6 +801,25 @@ export const useScene = create<SceneState>()(
           s.selectedIds = [obj.id]
         })
         return obj.id
+      },
+
+      addObjectsBatch(configs) {
+        const objs = configs.map(createDefault)
+        set((s) => {
+          // Single history frame so one undo removes the whole batch
+          s.past.push(snapshotObjects(s.objects, s.rootIds))
+          s.future = []
+          for (const obj of objs) {
+            s.objects[obj.id] = obj
+            if (obj.parentId && s.objects[obj.parentId]) {
+              s.objects[obj.parentId].children.push(obj.id)
+            } else {
+              s.rootIds.push(obj.id)
+            }
+          }
+          s.selectedIds = objs.map((o) => o.id)
+        })
+        return objs.map((o) => o.id)
       },
 
       updateObject(id, patch) {
@@ -1037,6 +1060,10 @@ export const useScene = create<SceneState>()(
 
       setAnimating(v) {
         set((s) => { s.isAnimating = v })
+      },
+
+      setAutoPlaceSketchfab(v) {
+        set((s) => { s.autoPlaceSketchfab = v })
       },
 
       // ── Stats / Camera ───────────────────────────────────────────────────
