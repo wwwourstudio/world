@@ -7,14 +7,22 @@ import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 
 // HDRI options from Poly Haven
 const HDRI_ASSETS = [
-  { id: 'golden_bay', label: 'Golden Bay', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/golden_bay.png?width=200' },
-  { id: 'forest_slope', label: 'Forest Slope', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/forest_slope.png?width=200' },
-  { id: 'satara_night', label: 'Satara Night', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/satara_night.png?width=200' },
-  { id: 'kiara_interior', label: 'Kiara Interior', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/kiara_interior_1.png?width=200' },
-  { id: 'starlit_golf', label: 'Starlit Golf', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/starlit_golf_course.png?width=200' },
-  { id: 'studio_small', label: 'Studio', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/studio_small_08.png?width=200' },
-  { id: 'sunflowers', label: 'Sunflowers', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/sunflowers.png?width=200' },
-  { id: 'kloppenheim', label: 'Kloppenheim', thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/kloppenheim_06.png?width=200' },
+  { id: 'golden_bay',           label: 'Golden Bay',       thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/golden_bay.png?width=200' },
+  { id: 'forest_slope',         label: 'Forest Slope',     thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/forest_slope.png?width=200' },
+  { id: 'satara_night',         label: 'Satara Night',     thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/satara_night.png?width=200' },
+  { id: 'kiara_interior',       label: 'Kiara Interior',   thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/kiara_interior_1.png?width=200' },
+  { id: 'starlit_golf',         label: 'Starlit Golf',     thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/starlit_golf_course.png?width=200' },
+  { id: 'studio_small',         label: 'Studio',           thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/studio_small_08.png?width=200' },
+  { id: 'sunflowers',           label: 'Sunflowers',       thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/sunflowers.png?width=200' },
+  { id: 'kloppenheim',          label: 'Kloppenheim',      thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/kloppenheim_06.png?width=200' },
+  { id: 'venice_sunset',        label: 'Venice Sunset',    thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/venice_sunset.png?width=200' },
+  { id: 'autumn_field',         label: 'Autumn Field',     thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/autumn_field.png?width=200' },
+  { id: 'wasteland_clouds',     label: 'Wasteland',        thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/wasteland_clouds_puresky.png?width=200' },
+  { id: 'overcast_soil',        label: 'Overcast',         thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/overcast_soil.png?width=200' },
+  { id: 'industrial_sunset',    label: 'Industrial',       thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/industrial_sunset_02.png?width=200' },
+  { id: 'snowy_field',          label: 'Snowy Field',      thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/snowy_field.png?width=200' },
+  { id: 'neon_photostudio',     label: 'Neon Studio',      thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/neon_photostudio.png?width=200' },
+  { id: 'brown_photostudio',    label: 'Warm Studio',      thumb: 'https://cdn.polyhaven.com/asset_img/thumbs/brown_photostudio.png?width=200' },
 ]
 
 // Material preset swatches (color + label)
@@ -32,14 +40,22 @@ const MATERIAL_SWATCHES: Array<{ id: string; label: string; color: string; rough
 ]
 
 const HDRI_URLS: Record<string, string> = {
-  golden_bay: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/golden_bay_1k.hdr',
-  forest_slope: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/forest_slope_1k.hdr',
-  satara_night: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/satara_night_1k.hdr',
-  kiara_interior: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kiara_interior_1_1k.hdr',
-  starlit_golf: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/starlit_golf_course_1_1k.hdr',
-  studio_small: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_08_1k.hdr',
-  sunflowers: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/sunflowers_puresky_1k.hdr',
-  kloppenheim: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloppenheim_06_1k.hdr',
+  golden_bay:        'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/golden_bay_1k.hdr',
+  forest_slope:      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/forest_slope_1k.hdr',
+  satara_night:      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/satara_night_1k.hdr',
+  kiara_interior:    'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kiara_interior_1_1k.hdr',
+  starlit_golf:      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/starlit_golf_course_1_1k.hdr',
+  studio_small:      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_08_1k.hdr',
+  sunflowers:        'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/sunflowers_puresky_1k.hdr',
+  kloppenheim:       'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloppenheim_06_1k.hdr',
+  venice_sunset:     'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/venice_sunset_1k.hdr',
+  autumn_field:      'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/autumn_field_1k.hdr',
+  wasteland_clouds:  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/wasteland_clouds_puresky_1k.hdr',
+  overcast_soil:     'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/overcast_soil_puresky_1k.hdr',
+  industrial_sunset: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/industrial_sunset_02_1k.hdr',
+  snowy_field:       'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/snowy_field_1k.hdr',
+  neon_photostudio:  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/neon_photostudio_1k.hdr',
+  brown_photostudio: 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/brown_photostudio_1k.hdr',
 }
 
 interface SketchfabModel {

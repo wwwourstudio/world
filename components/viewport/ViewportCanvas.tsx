@@ -17,6 +17,7 @@ import {
   Line,
   GizmoHelper,
   GizmoViewport,
+  ContactShadows,
 } from '@react-three/drei'
 import {
   EffectComposer,
@@ -24,6 +25,8 @@ import {
   Vignette,
   Noise,
   ChromaticAberration,
+  DepthOfField,
+  N8AO,
 } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
@@ -1435,17 +1438,33 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
       }
     }
 
+    // Vertex colors from height — uses MeshStandardMaterial (lit, PBR)
+    const low = new THREE.Color(cfg.lowColor)
+    const mid = new THREE.Color(cfg.midColor)
+    const high = new THREE.Color(cfg.highColor)
+    const col = new THREE.Color()
+    const colors = new Float32Array(count * 3)
+    const maxH = Math.max(cfg.heightScale, 0.001)
+    for (let i = 0; i < count; i++) {
+      const h = positions[i * 3 + 1]
+      const t = Math.min(1, Math.max(0, h / maxH))
+      if (t < 0.5) col.lerpColors(low, mid, t * 2)
+      else col.lerpColors(mid, high, (t - 0.5) * 2)
+      colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b
+    }
+
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     geo.setIndex(indices)
     geo.computeVertexNormals()
     geoRef.current = geo
     return geo
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.resolution, cfg.size, cfg.seed, cfg.layers, cfg.noiseScale, cfg.heightScale])
+  }, [cfg.resolution, cfg.size, cfg.seed, cfg.layers, cfg.noiseScale, cfg.heightScale, cfg.lowColor, cfg.midColor, cfg.highColor])
 
-  // Apply sculpted heights imperatively
+  // Apply sculpted heights imperatively and recompute vertex colors
   useEffect(() => {
     const geo = geoRef.current
     if (!geo || !cfg.vertexHeights || cfg.vertexHeights.length !== cfg.resolution * cfg.resolution) return
@@ -1453,26 +1472,26 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
     cfg.vertexHeights.forEach((h, i) => pos.setY(i, h))
     pos.needsUpdate = true
     geo.computeVertexNormals()
+    // Refresh vertex colors from new heights
+    const colorAttr = geo.getAttribute('color') as THREE.BufferAttribute | null
+    if (colorAttr) {
+      const low = new THREE.Color(cfg.lowColor)
+      const mid = new THREE.Color(cfg.midColor)
+      const high = new THREE.Color(cfg.highColor)
+      const col = new THREE.Color()
+      const maxH = Math.max(cfg.heightScale, 0.001)
+      cfg.vertexHeights.forEach((h, i) => {
+        const t = Math.min(1, Math.max(0, h / maxH))
+        if (t < 0.5) col.lerpColors(low, mid, t * 2)
+        else col.lerpColors(mid, high, (t - 0.5) * 2)
+        colorAttr.setXYZ(i, col.r, col.g, col.b)
+      })
+      colorAttr.needsUpdate = true
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg.vertexHeights, cfg.resolution])
 
-  const terrainMat = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: {
-      lowColor: { value: new THREE.Color(cfg.lowColor) },
-      midColor: { value: new THREE.Color(cfg.midColor) },
-      highColor: { value: new THREE.Color(cfg.highColor) },
-      maxH: { value: Math.max(cfg.heightScale, 0.001) },
-    },
-    vertexShader: `varying float vY; void main() { vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `
-      uniform vec3 lowColor; uniform vec3 midColor; uniform vec3 highColor; uniform float maxH;
-      varying float vY;
-      void main() {
-        float t = clamp(vY/maxH,0.0,1.0);
-        vec3 col = t<0.5 ? mix(lowColor,midColor,t*2.0) : mix(midColor,highColor,(t-0.5)*2.0);
-        gl_FragColor = vec4(col,1.0);
-      }`,
-  }), [cfg.lowColor, cfg.midColor, cfg.highColor, cfg.heightScale])
+  // terrainMat removed — vertex colors + MeshStandardMaterial is used inline (lit, PBR)
 
   function handleSculptAt(point: THREE.Vector3) {
     const lx = point.x - obj.transform.position[0]
@@ -1518,7 +1537,7 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
         if (activeTool === 'sculpt' && sculpting.current) { e.stopPropagation(); handleSculptAt(e.point) }
       }}
     >
-      <primitive object={terrainMat} attach="material" />
+      <meshStandardMaterial vertexColors roughness={0.88} metalness={0} envMapIntensity={0.5} />
       {isSelected && (
         <mesh>
           <boxGeometry args={[cfg.size, 0.02, cfg.size]} />
@@ -1539,12 +1558,16 @@ function WaterObject({ obj }: { obj: SceneObject }) {
 
   const waterGeo = useMemo(() => new THREE.PlaneGeometry(cfg.size, cfg.size, 32, 32), [cfg.size])
 
-  const waterMat = useMemo(() => new THREE.MeshPhongMaterial({
+  const waterMat = useMemo(() => new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(cfg.color),
     opacity: cfg.opacity,
-    transparent: cfg.opacity < 1,
-    shininess: 120,
-    specular: new THREE.Color('#aaccff'),
+    transparent: true,
+    roughness: 0.02,
+    metalness: 0.0,
+    transmission: 0.25,
+    ior: 1.33,
+    thickness: 1.5,
+    envMapIntensity: 2.5,
     side: THREE.DoubleSide,
   }), [cfg.color, cfg.opacity])
 
@@ -2290,32 +2313,58 @@ function HDRIEnvironment() {
 
 function PostProcessing() {
   const fx = useScene((s) => s.postFX)
-  if (!fx.bloom && !fx.vignette && !fx.noise && !fx.chromaticAberration) return null
+  const hasAny = fx.bloom || fx.vignette || fx.noise || fx.chromaticAberration || fx.ssao || fx.dof
+  if (!hasAny) return null
 
+  // Separate composers so conditional effects don't break EffectComposer's typed children
   return (
-    <EffectComposer>
-      <Bloom
-        intensity={fx.bloom ? fx.bloomIntensity : 0}
-        luminanceThreshold={fx.bloomThreshold}
-        luminanceSmoothing={fx.bloomSmoothing}
-      />
-      <Vignette
-        offset={fx.vignette ? fx.vignetteOffset : 0}
-        darkness={fx.vignette ? fx.vignetteDarkness : 0}
-        blendFunction={BlendFunction.NORMAL}
-      />
-      <Noise
-        opacity={fx.noise ? fx.noiseOpacity : 0}
-        blendFunction={BlendFunction.ADD}
-      />
-      <ChromaticAberration
-        offset={new THREE.Vector2(
-          fx.chromaticAberration ? fx.chromaticOffset : 0,
-          fx.chromaticAberration ? fx.chromaticOffset : 0,
-        )}
-        blendFunction={BlendFunction.NORMAL}
-      />
-    </EffectComposer>
+    <>
+      {fx.ssao && (
+        <EffectComposer multisampling={0} enabled>
+          <N8AO
+            aoRadius={fx.ssaoRadius}
+            intensity={fx.ssaoIntensity}
+            distanceFalloff={1}
+            aoSamples={16}
+            denoiseSamples={4}
+            denoiseRadius={12}
+            halfRes
+          />
+        </EffectComposer>
+      )}
+      {fx.dof && (
+        <EffectComposer multisampling={0} enabled>
+          <DepthOfField
+            focusDistance={fx.dofFocusDistance}
+            focalLength={fx.dofFocalLength}
+            bokehScale={fx.dofBokehScale}
+          />
+        </EffectComposer>
+      )}
+      <EffectComposer multisampling={0}>
+        <Bloom
+          intensity={fx.bloom ? fx.bloomIntensity : 0}
+          luminanceThreshold={fx.bloomThreshold}
+          luminanceSmoothing={fx.bloomSmoothing}
+        />
+        <Vignette
+          offset={fx.vignette ? fx.vignetteOffset : 0}
+          darkness={fx.vignette ? fx.vignetteDarkness : 0}
+          blendFunction={BlendFunction.NORMAL}
+        />
+        <Noise
+          opacity={fx.noise ? fx.noiseOpacity : 0}
+          blendFunction={BlendFunction.ADD}
+        />
+        <ChromaticAberration
+          offset={new THREE.Vector2(
+            fx.chromaticAberration ? fx.chromaticOffset : 0,
+            fx.chromaticAberration ? fx.chromaticOffset : 0,
+          )}
+          blendFunction={BlendFunction.NORMAL}
+        />
+      </EffectComposer>
+    </>
   )
 }
 
@@ -2496,6 +2545,19 @@ function InnerScene() {
       />
 
       {rootIds.map((id) => <SceneObjectNode key={id} id={id} />)}
+
+      {/* Soft contact shadows — makes objects look grounded */}
+      {environment.shadowsEnabled && (
+        <ContactShadows
+          position={[0, 0, 0]}
+          opacity={0.35}
+          scale={80}
+          blur={2.5}
+          far={18}
+          color="#000000"
+          frames={1}
+        />
+      )}
 
       <GizmoControl />
       <FPSCounter />

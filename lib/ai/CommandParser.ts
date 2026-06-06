@@ -141,6 +141,13 @@ export interface SetPostFXCmd {
   vignette?: boolean
   noise?: boolean
   chromaticAberration?: boolean
+  ssao?: boolean
+  ssaoIntensity?: number
+  ssaoRadius?: number
+  dof?: boolean
+  dofFocusDistance?: number
+  dofFocalLength?: number
+  dofBokehScale?: number
 }
 
 export interface AddTextCmd {
@@ -791,6 +798,13 @@ export function executeCommand(cmd: SceneCommand): void {
         ...(c.vignette !== undefined ? { vignette: c.vignette } : {}),
         ...(c.noise !== undefined ? { noise: c.noise } : {}),
         ...(c.chromaticAberration !== undefined ? { chromaticAberration: c.chromaticAberration } : {}),
+        ...(c.ssao !== undefined ? { ssao: c.ssao } : {}),
+        ...(c.ssaoIntensity !== undefined ? { ssaoIntensity: c.ssaoIntensity } : {}),
+        ...(c.ssaoRadius !== undefined ? { ssaoRadius: c.ssaoRadius } : {}),
+        ...(c.dof !== undefined ? { dof: c.dof } : {}),
+        ...(c.dofFocusDistance !== undefined ? { dofFocusDistance: c.dofFocusDistance } : {}),
+        ...(c.dofFocalLength !== undefined ? { dofFocalLength: c.dofFocalLength } : {}),
+        ...(c.dofBokehScale !== undefined ? { dofBokehScale: c.dofBokehScale } : {}),
       })
       break
     }

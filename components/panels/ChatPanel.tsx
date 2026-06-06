@@ -93,6 +93,11 @@ function buildSketchfabObjects(
     const targetSize = cmd.targetSize ?? defaultTargetSize(cmd.query)
     for (let i = 0; i < totalCount; i++) {
       const model = models[i % models.length]
+      // Scatter layout: randomize Y rotation per instance so props don't all face the same way
+      const baseRotation = cmd.rotation ?? [0, 0, 0]
+      const rotation: [number, number, number] = cmd.layout === 'scatter'
+        ? [baseRotation[0], Math.random() * Math.PI * 2, baseRotation[2]]
+        : baseRotation
       configs.push({
         name: `${cmd.name ?? model.name}${totalCount > 1 ? ` ${i + 1}` : ''}`,
         type: 'mesh',
@@ -100,7 +105,7 @@ function buildSketchfabObjects(
         material: SKETCHFAB_MAT,
         transform: {
           position: positions[i],
-          rotation: cmd.rotation ?? [0, 0, 0],
+          rotation,
           scale: cmd.scale ?? [1, 1, 1],
         },
         castShadow: true,
@@ -114,18 +119,18 @@ function buildSketchfabObjects(
 // ─── Suggestion sets ──────────────────────────────────────────────────────────
 
 const WORLD_SUGGESTIONS = [
-  { label: 'Ancient Forest',   icon: '🌲', cat: 'scene', prompt: 'Build a dense ancient forest with towering trees, mossy rocks, atmospheric fog, and dappled golden light filtering through the canopy. Add fallen logs and scattered wildflowers.' },
-  { label: 'Sci-Fi Base',      icon: '🛸', cat: 'scene', prompt: 'Create a sci-fi military base with metal structures, glowing emissive control panels, blue neon lighting, and animated holographic displays. Add mechanical details and exhaust vents.' },
-  { label: 'Medieval Village', icon: '🏰', cat: 'scene', prompt: 'Build a medieval village with a stone castle, market stalls, warm torchlight, cobblestone streets, and animated lanterns swaying in the wind. Add a well and hay bales.' },
-  { label: 'Cyberpunk City',   icon: '🏙️', cat: 'scene', prompt: 'Create a cyberpunk city district at night with towering neon-lit skyscrapers, rain-slicked reflective streets, pink/cyan advertising holograms, and atmospheric rain particles.' },
-  { label: 'Space Station',    icon: '🚀', cat: 'scene', prompt: 'Build a space station with a ring structure, solar panels, floating debris particles, docking bay, and a stunning view of a glowing nebula in the deep black background.' },
-  { label: 'Golden Sunset',    icon: '🌅', cat: 'scene', prompt: 'Create a cinematic golden sunset with rolling hills, warm directional light casting long shadows, silhouette trees, and golden dust particle motes floating in the light.' },
-  { label: 'Underwater Reef',  icon: '🐠', cat: 'scene', prompt: 'Build a vibrant coral reef with colorful corals, swaying kelp, caustic light patterns, and schools of fish particle effects. Deep blue ambient with volumetric light shafts.' },
-  { label: 'Winter Cabin',     icon: '🏔️', cat: 'scene', prompt: 'Build a cozy winter cabin with snow-covered terrain, warm glowing windows, pine trees dusted in snow, a frozen pond, and softly falling snow particles.' },
-  { label: 'Jungle Temple',    icon: '🏛️', cat: 'scene', prompt: 'Ancient jungle temple with moss-covered stone pillars, overgrown vines, mystical glowing runes, torch flames with emissive pulse, tropical particle effects and god rays.' },
-  { label: 'Volcano Island',   icon: '🌋', cat: 'scene', prompt: 'Dramatic volcanic island with glowing lava terrain, dark rocky landscape, emissive lava flows with orange-red glow, billowing smoke particles, and fire sparks.' },
-  { label: 'Product Showcase', icon: '💎', cat: 'scene', prompt: 'Build a premium product showcase with a dark dramatic background, three-point studio lighting (key, fill, rim), a chrome pedestal, and subtle particle shimmer. Perfect for product visualization.' },
-  { label: 'Zen Garden',       icon: '🎋', cat: 'scene', prompt: 'Serene Japanese zen garden with raked sand plane, stone lanterns with warm glow, bamboo clusters, and cherry blossom petal particles drifting softly in a calm morning light.' },
+  { label: 'Ancient Forest',   icon: '🌲', cat: 'scene', prompt: 'Build a dense ancient forest using Sketchfab models: pine trees (variety:4, scatter layout), mossy rocks, fallen logs, and fern underbrush. Use forest_slope HDRI, exponential green fog, warm directional light through canopy, and enable ssao for depth. Add dappled point lights through branches.' },
+  { label: 'Sci-Fi Base',      icon: '🛸', cat: 'scene', prompt: 'Create a triple-A sci-fi military base with Sketchfab models: sci-fi buildings (targetSize:18), metal corridors, glowing control panels, mechanical pipes and vents. Use satara_night HDRI, blue/cyan neon point lights, bloom with chromatic aberration, ssao, and heavy fog. Emissive materials on panels.' },
+  { label: 'Medieval Village', icon: '🏰', cat: 'scene', prompt: 'Build an AAA medieval village with Sketchfab models: medieval houses (variety:4, grid layout), market stalls, wooden carts, stone well, hay bales. Use kloppenheim HDRI, warm directional sun, torch point lights (orange/amber), ssao, light fog. Dirt ground plane. Swaying flags behavior.' },
+  { label: 'Cyberpunk City',   icon: '🏙️', cat: 'scene', prompt: 'Create a triple-A cyberpunk city at night with Sketchfab models: city building facades (variety:4, targetSize:25), street lamps, road sections. Use satara_night HDRI, heavy rain particles, pink/cyan neon point lights, glossy wet-street ground (roughness 0.05), bloom + chromatic aberration + ssao + vignette.' },
+  { label: 'Space Station',    icon: '🚀', cat: 'scene', prompt: 'Build an epic space station using Sketchfab models: sci-fi corridor panels, solar panels, docking bay components. Deep space background (#000000), no HDRI (use point lights instead), blue/white accent lights, floating debris particles, bloom intensity 0.8, ssao for panel depth.' },
+  { label: 'Golden Sunset',    icon: '🌅', cat: 'scene', prompt: 'Create a cinematic golden sunset scene: venice_sunset HDRI, rolling terrain with warm golden colors, Sketchfab trees silhouetted on the horizon, warm orange directional light at low angle, golden dust scatter particles, vignette + ssao. Exposure 1.2.' },
+  { label: 'Abandoned Factory',icon: '🏚️', cat: 'scene', prompt: 'Build an abandoned industrial factory with Sketchfab models: warehouse building, rusty pipe sections, cardboard pallets, broken machinery, chain-link fence. Use overcast_soil HDRI, desaturated palette, rust-colored point lights, heavy exponential fog, ssao cranked up (intensity 3.0), noise grain.' },
+  { label: 'Winter Cabin',     icon: '🏔️', cat: 'scene', prompt: 'Build a cozy AAA winter cabin scene: snowy_field HDRI, Sketchfab pine trees dusted in snow, cabin building (targetSize:9), frozen pond (water plane, blue-white), snow particles. Warm amber light from windows (point light), cool directional moonlight, ssao, light blue fog.' },
+  { label: 'Jungle Temple',    icon: '🏛️', cat: 'scene', prompt: 'Ancient jungle temple scene using Sketchfab models: stone temple ruins (targetSize:15), jungle trees (variety:4, scatter), tropical plants, rocks covered in moss. Use forest_slope HDRI, god-ray spot lights through canopy, mystical emissive runes, ssao for stone depth, green fog.' },
+  { label: 'Volcano Island',   icon: '🌋', cat: 'scene', prompt: 'Dramatic volcanic island: terrain with lava colors (lowColor #1a0800, midColor #8B1A00, highColor #ff4400), emissive lava flow objects, Sketchfab volcanic rocks. Orange/red point lights near lava, heavy dark fog (#1a0800), fire + smoke particles, ssao, bloom intensity 0.6.' },
+  { label: 'Product Showcase', icon: '💎', cat: 'scene', prompt: 'Build a premium product showcase: brown_photostudio or studio_small HDRI, dark dramatic background, chrome pedestal (box, chrome material), three-point studio lighting (key front-right 2.0, fill left 0.7, rim behind 1.5 blue tint), ssao, subtle dof (focus on object). Perfect for product visualization.' },
+  { label: 'Desert Ruins',     icon: '🏜️', cat: 'scene', prompt: 'Build an epic desert ruins scene with Sketchfab models: ancient stone pillars (targetSize:8, scatter), broken walls, archaeological debris. Use golden_bay HDRI, strong warm directional sun at low angle, sand-colored terrain, heat haze via vignette + slight bloom. Ssao for stone crevice depth.' },
 ]
 
 const WEBSITE_SUGGESTIONS = [
@@ -138,15 +143,17 @@ const WEBSITE_SUGGESTIONS = [
 ]
 
 const QUICK_ACTIONS = [
-  { icon: '🌫️', label: 'Add fog', prompt: 'Add atmospheric exponential fog' },
-  { icon: '💡', label: 'Better lighting', prompt: 'Improve the scene lighting with three-point setup and HDRI' },
+  { icon: '🎮', label: 'AAA quality', prompt: 'Make this scene look like a triple-A game: enable ambient occlusion (ssao intensity 2.0), add bloom, vignette, and choose the best HDRI for the current mood. Add more detail props via Sketchfab if the scene looks sparse.' },
+  { icon: '🌫️', label: 'Add fog', prompt: 'Add atmospheric exponential fog to establish depth and mood' },
+  { icon: '💡', label: 'Better lighting', prompt: 'Improve the scene lighting with a directional key light, two accent point lights, and the best HDRI for the current scene theme' },
   { icon: '✨', label: 'Add bloom', prompt: 'Enable bloom and vignette post-processing for a cinematic look' },
+  { icon: '🔭', label: 'Enable AO', prompt: 'Enable ambient occlusion (ssao: true, intensity 2.0, radius 0.15) for a realistic grounded look' },
   { icon: '🌧️', label: 'Add rain', prompt: 'Add rain particle effect to the scene' },
   { icon: '⚡', label: 'Add sparks', prompt: 'Add sparks/fire particle effects' },
   { icon: '🏔️', label: 'Add terrain', prompt: 'Add procedural terrain with natural colors and 5m height variation' },
   { icon: '🌊', label: 'Add water', prompt: 'Add an animated water plane to the scene' },
-  { icon: '🌃', label: 'Night mode', prompt: 'Switch scene to dramatic night time with dark sky, moonlight, and warm accent lights' },
-  { icon: '🎬', label: 'Cinematic', prompt: 'Make the scene more cinematic: add depth of field, vignette, boost shadows and highlights' },
+  { icon: '🌃', label: 'Night mode', prompt: 'Switch scene to dramatic night time: satara_night HDRI, moonlight directional, warm point lights, exponential fog, and enable ssao for depth' },
+  { icon: '🎬', label: 'Cinematic', prompt: 'Make the scene more cinematic: enable ssao for depth, depth of field, vignette, boost contrast, and set the best HDRI' },
 ]
 
 const BEHAVIOR_ICONS: Record<BehaviorConfig['type'], string> = {
