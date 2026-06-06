@@ -161,6 +161,14 @@ export function ChatPanel() {
   const [startSuggestions, setStartSuggestions] = useState<typeof WORLD_SUGGESTIONS>(() => WORLD_SUGGESTIONS.slice(0, 6))
   useEffect(() => { setStartSuggestions(getRotatingSuggestions(appMode)) }, [appMode])
 
+  // Detect SpeechRecognition after mount to avoid SSR/client mismatch (React #418)
+  const [voiceSupported, setVoiceSupported] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any
+    setVoiceSupported(!!(win.SpeechRecognition || win.webkitSpeechRecognition))
+  }, [])
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
@@ -425,8 +433,6 @@ export function ChatPanel() {
   }
 
   const isEmpty = messages.length === 0
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const voiceSupported = typeof window !== 'undefined' && !!(((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition))
   const isWebsite = appMode === 'website'
 
   return (
