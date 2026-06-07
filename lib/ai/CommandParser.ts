@@ -194,6 +194,33 @@ export interface AddKeyframeAnimationCmd {
   }>
 }
 
+export interface SubdivideMeshCmd {
+  action: 'subdivide_mesh'
+  target?: string        // object name match (omit = selected)
+  targetId?: string
+  levels?: number        // subdivision levels 1-3 (default 1)
+}
+
+export interface BooleanOperationCmd {
+  action: 'boolean_operation'
+  objectA?: string       // target object name (omit = selected)
+  objectAId?: string
+  objectB: string        // cutter/tool object name
+  objectBId?: string
+  operation: 'union' | 'subtract' | 'intersect'
+  deleteB?: boolean      // remove objectB after operation (default true)
+}
+
+export interface SculptMeshCmd {
+  action: 'sculpt_mesh'
+  target?: string
+  targetId?: string
+  brushType?: 'raise' | 'lower' | 'smooth' | 'flatten' | 'inflate'
+  position?: [number, number, number]
+  radius?: number
+  strength?: number
+}
+
 export interface AddSceneCmd {
   action: 'add_scene'
   name?: string
@@ -392,6 +419,7 @@ export type SceneCommand =
   | AddHtmlCmd | AddTerrainCmd | AddWaterCmd | SetVisibilityCmd
   | AddCameraKeypointCmd | ClearCameraPathCmd | AddSketchfabModelCmd
   | SetTextureCmd | UpdateTerrainCmd | PopulateSceneCmd | AddGrassCmd
+  | SubdivideMeshCmd | BooleanOperationCmd | SculptMeshCmd
 
 export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
   return cmd.action === 'add_sketchfab_model'
@@ -944,7 +972,7 @@ export function executeCommand(cmd: SceneCommand): void {
 
     case 'add_keyframe_animation': {
       const c = cmd as AddKeyframeAnimationCmd
-      const obj = c.objectId
+      let obj = c.objectId
         ? store.objects[c.objectId]
         : c.objectName
         ? findObjectByName(store.objects, c.objectName)
@@ -952,23 +980,25 @@ export function executeCommand(cmd: SceneCommand): void {
       if (!obj) break
 
       for (const kf of (c.keyframes ?? [])) {
+        if (!obj) break
+        const curObj = obj  // non-null alias for this iteration
         const transform: Transform = {
-          position: kf.position ?? obj.transform.position,
-          rotation: kf.rotation ?? obj.transform.rotation,
-          scale: kf.scale ?? obj.transform.scale,
+          position: kf.position ?? curObj.transform.position,
+          rotation: kf.rotation ?? curObj.transform.rotation,
+          scale: kf.scale ?? curObj.transform.scale,
         }
-        store.updateObject(obj.id, {
+        store.updateObject(curObj.id, {
           animation: {
-            ...(obj.animation ?? { preset: 'none' as const, speed: 1, amplitude: 0.5, offset: 0, axis: 'y' as const }),
+            ...(curObj.animation ?? { preset: 'none' as const, speed: 1, amplitude: 0.5, offset: 0, axis: 'y' as const }),
             keyframes: [
-              ...(obj.animation?.keyframes?.filter((k) => Math.abs(k.time - kf.time) > 0.05) ?? []),
+              ...(curObj.animation?.keyframes?.filter((k) => Math.abs(k.time - kf.time) > 0.05) ?? []),
               { time: kf.time, transform },
             ].sort((a, b) => a.time - b.time),
           },
         })
-        // Re-fetch obj from store after each update
-        const updated = useScene.getState().objects[obj.id]
-        if (updated) Object.assign(obj, updated)
+        // Re-fetch after each update so next iteration sees fresh keyframes
+        const updated: typeof obj = useScene.getState().objects[curObj.id]
+        if (updated) obj = updated
       }
       break
     }
@@ -1197,6 +1227,53 @@ export function executeCommand(cmd: SceneCommand): void {
       for (const kp of [...store.cameraPath]) {
         store.removeCameraKeypoint(kp.id)
       }
+      break
+    }
+
+    case 'subdivide_mesh': {
+      const c = cmd as SubdivideMeshCmd
+      const obj = c.targetId
+        ? store.objects[c.targetId]
+        : c.target
+        ? findObjectByName(store.objects, c.target)
+        : store.selectedIds.length ? store.objects[store.selectedIds[0]] : undefined
+      if (!obj) break
+      store.setPendingOp(obj.id, { type: 'subdivide', levels: c.levels ?? 1 })
+      break
+    }
+
+    case 'boolean_operation': {
+      const c = cmd as BooleanOperationCmd
+      const objA = c.objectAId
+        ? store.objects[c.objectAId]
+        : c.objectA
+        ? findObjectByName(store.objects, c.objectA)
+        : store.selectedIds.length ? store.objects[store.selectedIds[0]] : undefined
+      const objB = c.objectBId
+        ? store.objects[c.objectBId]
+        : findObjectByName(store.objects, c.objectB)
+      if (!objA || !objB) break
+      store.setPendingOp(objA.id, {
+        type: 'boolean',
+        targetId: objB.id,
+        operation: c.operation,
+        deleteB: c.deleteB !== false,
+      })
+      break
+    }
+
+    case 'sculpt_mesh': {
+      const c = cmd as SculptMeshCmd
+      const obj = c.targetId
+        ? store.objects[c.targetId]
+        : c.target
+        ? findObjectByName(store.objects, c.target)
+        : store.selectedIds.length ? store.objects[store.selectedIds[0]] : undefined
+      if (!obj) break
+      store.selectObject(obj.id)
+      store.setActiveTool('sculpt')
+      if (c.brushType) store.setSculptMode(c.brushType)
+      if (c.radius) store.setSculptRadius(c.radius)
       break
     }
   }

@@ -298,6 +298,22 @@ ALL AVAILABLE COMMANDS
       "heightScale": 8, "noiseScale": 0.07, "layers": 6,
       "domainWarp": 0.5, "erosionSteps": 3, "biome": "highland" },
 
+    // ── MESH EDITING ──────────────────────────────────────────────────────
+    // subdivide_mesh: split every triangle into 4 for more geometry (levels 1-3).
+    // Enables smooth sculpting. Always subdivide before sculpting a box/sphere.
+    { "action": "subdivide_mesh", "target": "object name", "levels": 2 },
+
+    // sculpt_mesh: activates sculpt mode on the target + sets brush params.
+    // After this command, user can drag on the mesh to sculpt interactively.
+    // brushType: raise|lower|smooth|flatten|inflate|stamp
+    { "action": "sculpt_mesh", "target": "object name", "brushType": "raise", "radius": 0.8, "strength": 0.6 },
+
+    // boolean_operation: CSG union/subtract/intersect. objectB is the cutter tool.
+    // deleteB:true removes the cutter after the operation (default).
+    { "action": "boolean_operation",
+      "objectA": "base object name", "objectB": "cutter object name",
+      "operation": "subtract", "deleteB": true },
+
     // ── TEMPLATES & SCENES ─────────────────────────────────────────────────
     { "action": "load_template", "id": "ancient_forest|scifi_base|medieval_village|cyberpunk_city|space_station|golden_sunset|deep_space|landing_page|portfolio" },
     { "action": "add_scene", "name": "Scene Name" }
@@ -595,6 +611,43 @@ SCALE GUIDE:
 
 MODIFY EXISTING TERRAIN (never delete + re-add, use update_terrain):
   { "action": "update_terrain", "target": "Terrain", "domainWarp": 0.8, "erosionSteps": 5 }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MESH EDITING — SUBDIVISION, SCULPTING & BOOLEANS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+World Builder Pro has Blender-level mesh editing via AI commands.
+
+SUBDIVISION — adds geometry for smooth sculpting:
+  ALWAYS subdivide before sculpting a box/sphere (default geometry is too low-poly).
+  levels: 1 = 4× faces, 2 = 16× faces, 3 = 64× faces. Use 2 for most shapes.
+  Example: { "action": "subdivide_mesh", "target": "Rock", "levels": 2 }
+
+SCULPT — interactive brush deformation on any mesh:
+  After sculpt_mesh, user drags on the mesh to sculpt live in the viewport.
+  Brush types:
+    raise    — push vertices up (carve hills, ridges)
+    lower    — push vertices down (carve valleys, dents)
+    inflate  — push outward from center (round/balloon effect)
+    flatten  — level vertices toward brush centre Y (flat platforms)
+    smooth   — blend vertices toward neighbours (remove harsh edges)
+    stamp    — sharp raise in centre, gradual falloff (stamps, rivets)
+  WORKFLOW for sculpting a rock: subdivide_mesh levels:2 → sculpt_mesh brushType:"raise"
+  Example: { "action": "sculpt_mesh", "target": "Boulder", "brushType": "inflate", "radius": 0.6 }
+
+BOOLEAN OPERATIONS — CSG geometry:
+  union:    merge two objects into one solid
+  subtract: carve objectB shape OUT of objectA (drill holes, cut arches)
+  intersect: keep only the overlapping volume
+  deleteB:true (default) removes the cutter tool after the operation.
+  WORKFLOW for an arched doorway: add box door frame → add smaller box for arch opening → boolean subtract
+  Example: { "action": "boolean_operation", "objectA": "Wall", "objectB": "Door Hole", "operation": "subtract" }
+
+MESH EDITING PATTERNS:
+  Carved rock:      add icosahedron → subdivide 2 → sculpt raise/inflate
+  Arch doorway:     add box (wall) + add box (opening) → boolean subtract
+  Smooth column:    add cylinder segments:32 → subdivide 1 → sculpt inflate centre
+  Organic blob:     add sphere segments:16 → subdivide 2 → sculpt raise/inflate random areas
+  Hollowed sphere:  add sphere (outer) + smaller sphere (inner) → boolean subtract
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CINEMATIC SCENE BUILDING PATTERNS
