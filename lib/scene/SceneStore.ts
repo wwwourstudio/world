@@ -157,6 +157,7 @@ export interface GeometryConfig {
   textCenter?: boolean       // center text geometry around origin
   curveSegments?: number     // font smoothness (3-12, default 6)
   customVertices?: number[]     // flat [x,y,z,...] overrides procedural geometry
+  customIndices?: number[]      // flat index buffer; used with customVertices
   vertexPaintColors?: number[]  // flat [r,g,b,...] per vertex (0–1 range)
 }
 
@@ -373,6 +374,15 @@ export interface SceneObject {
   grass?: GrassConfig
   behaviors?: BehaviorConfig[]
   htmlConfig?: HtmlObjectConfig
+  pendingOp?: {
+    type: 'subdivide'
+    levels: number
+  } | {
+    type: 'boolean'
+    targetId: string
+    operation: 'union' | 'subtract' | 'intersect'
+    deleteB: boolean
+  } | null
 }
 
 export interface EnvironmentState {
@@ -559,6 +569,8 @@ interface SceneActions {
   deselectVertex: (idx: number) => void
   clearVertexSelection: () => void
   setCustomVertices: (id: string, verts: number[]) => void
+  setPendingOp: (id: string, op: SceneObject['pendingOp']) => void
+  setCustomGeometry: (id: string, positions: number[], indices?: number[]) => void
 
   showNotification: (msg: string, type?: 'success' | 'error' | 'info') => void
   setBakePreview: (url: string | null) => void
@@ -1159,6 +1171,19 @@ export const useScene = create<SceneState>()(
       setCustomVertices(id, verts) {
         set((s) => {
           if (s.objects[id]) s.objects[id].geometry.customVertices = verts
+        })
+      },
+
+      setPendingOp(id, op) {
+        set((s) => { if (s.objects[id]) s.objects[id].pendingOp = op })
+      },
+
+      setCustomGeometry(id, positions, indices) {
+        set((s) => {
+          if (!s.objects[id]) return
+          s.objects[id].geometry.customVertices = positions
+          s.objects[id].geometry.customIndices = indices ?? undefined
+          s.objects[id].pendingOp = null
         })
       },
 

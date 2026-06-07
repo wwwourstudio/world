@@ -42,11 +42,54 @@ import { cameraFrameFn } from '@/lib/cameraFrame'
 import { fbmNoise, domainWarpedFbm, worleyNoise2D, thermalErosion, sampleTerrainHeight } from '@/lib/noise'
 import { BIOME_COLORS } from '@/lib/scene/SceneStore'
 import { interpolateCameraPath } from '@/lib/cameraPath'
+import { subdivideGeometry } from '@/lib/three/subdivision'
+import { Brush, Evaluator, SUBTRACTION, ADDITION, INTERSECTION } from 'three-bvh-csg'
 
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
+/** Build an imperative THREE.BufferGeometry from a GeometryConfig (for use outside JSX). */
+function buildGeometryFromConfig(geo: GeometryConfig): THREE.BufferGeometry {
+  if (geo.customVertices && geo.customVertices.length > 0) {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(geo.customVertices, 3))
+    if (geo.customIndices) g.setIndex(geo.customIndices)
+    g.computeVertexNormals()
+    return g
+  }
+  switch (geo.type) {
+    case 'sphere':    return new THREE.SphereGeometry(geo.radius ?? 0.5, geo.segments ?? 24, geo.segments ?? 24)
+    case 'cylinder':  return new THREE.CylinderGeometry(geo.radiusTop ?? 0.5, geo.radiusBottom ?? 0.5, geo.height ?? 1, geo.segments ?? 16)
+    case 'cone':      return new THREE.ConeGeometry(geo.radius ?? 0.5, geo.height ?? 1, geo.segments ?? 12)
+    case 'torus':     return new THREE.TorusGeometry(geo.radius ?? 0.5, geo.tube ?? 0.2, 16, geo.segments ?? 32)
+    case 'plane':     return new THREE.PlaneGeometry(geo.width ?? 1, geo.height ?? 1)
+    case 'ring':      return new THREE.RingGeometry(0.3, geo.radius ?? 0.5, 32)
+    case 'capsule':   return new THREE.CapsuleGeometry(geo.radius ?? 0.3, geo.height ?? 1, 4, 16)
+    case 'tetrahedron':  return new THREE.TetrahedronGeometry(geo.radius ?? 0.5)
+    case 'octahedron':   return new THREE.OctahedronGeometry(geo.radius ?? 0.5)
+    case 'icosahedron':  return new THREE.IcosahedronGeometry(geo.radius ?? 0.5, geo.segments ?? 0)
+    case 'torusknot': return new THREE.TorusKnotGeometry(geo.radius ?? 0.4, geo.tube ?? 0.15, 100, 16)
+    default:          return new THREE.BoxGeometry(geo.width ?? 1, geo.height ?? 1, geo.depth ?? 1)
+  }
+}
+
+/** Custom buffer geometry from stored vertices/indices (after sculpting or subdivision). */
+function CustomBufferGeometry({ positions, indices }: { positions: number[], indices?: number[] }) {
+  const geo = useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    if (indices) g.setIndex(indices)
+    g.computeVertexNormals()
+    return g
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions, indices])
+  return <primitive object={geo} attach="geometry" />
+}
+
 function SceneGeometry({ geo }: { geo: GeometryConfig }) {
+  if (geo.customVertices && geo.customVertices.length > 0) {
+    return <CustomBufferGeometry positions={geo.customVertices} indices={geo.customIndices} />
+  }
   switch (geo.type) {
     case 'sphere': return <sphereGeometry args={[geo.radius ?? 0.5, geo.segments ?? 24, geo.segments ?? 24]} />
     case 'cylinder': return <cylinderGeometry args={[geo.radiusTop ?? 0.5, geo.radiusBottom ?? 0.5, geo.height ?? 1, geo.segments ?? 16]} />
@@ -459,6 +502,55 @@ function MeshObject({ obj }: { obj: SceneObject }) {
   useAnimation(ref as React.RefObject<THREE.Object3D | null>, obj.animation, obj.id)
   useBehaviors(ref as React.RefObject<THREE.Object3D | null>, obj.behaviors, obj.id)
 
+  // ── Sculpting ──
+  const sculpting = useRef(false)
+  const sculptSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handleSculptAt(point: THREE.Vector3) {
+    const mesh = ref.current
+    if (!mesh) return
+    const geo = mesh.geometry
+    const posAttr = geo.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!posAttr) return
+    const count = posAttr.count
+    const { sculptMode, sculptRadius, sculptStrength = 0.5 } = useScene.getState()
+    const strength = sculptStrength ?? 0.5
+    const localPt = mesh.worldToLocal(point.clone())
+
+    for (let i = 0; i < count; i++) {
+      const vx = posAttr.getX(i), vy = posAttr.getY(i), vz = posAttr.getZ(i)
+      const dist = Math.sqrt((vx - localPt.x) ** 2 + (vy - localPt.y) ** 2 + (vz - localPt.z) ** 2)
+      if (dist > sculptRadius) continue
+      const falloff = Math.pow(1 - dist / sculptRadius, 2) * strength * 0.015
+      if (sculptMode === 'raise')   { posAttr.setY(i, vy + falloff) }
+      else if (sculptMode === 'lower')   { posAttr.setY(i, vy - falloff) }
+      else if (sculptMode === 'inflate') {
+        const len = Math.sqrt(vx * vx + vy * vy + vz * vz) + 0.001
+        posAttr.setXYZ(i, vx + (vx / len) * falloff, vy + (vy / len) * falloff, vz + (vz / len) * falloff)
+      }
+      else if (sculptMode === 'flatten') { posAttr.setY(i, vy + (localPt.y - vy) * falloff * 8) }
+      else if (sculptMode === 'smooth') {
+        // Laplacian: pull slightly toward localPt (approximate neighbourhood avg)
+        posAttr.setXYZ(i, vx + (localPt.x - vx) * falloff * 0.3, vy, vz + (localPt.z - vz) * falloff * 0.3)
+      }
+      else if (sculptMode === 'stamp') {
+        if (dist < sculptRadius * 0.3) posAttr.setY(i, vy + falloff * 2)
+      }
+    }
+    posAttr.needsUpdate = true
+    geo.computeVertexNormals()
+
+    if (sculptSaveTimer.current) clearTimeout(sculptSaveTimer.current)
+    sculptSaveTimer.current = setTimeout(() => {
+      const pa = mesh.geometry.getAttribute('position') as THREE.BufferAttribute
+      const verts: number[] = []
+      for (let i = 0; i < pa.count; i++) verts.push(pa.getX(i), pa.getY(i), pa.getZ(i))
+      const idxArr = mesh.geometry.index
+      const indices = idxArr ? Array.from(idxArr.array as Uint32Array) : undefined
+      useScene.getState().setCustomGeometry(obj.id, verts, indices)
+    }, 400)
+  }
+
   // ── Vertex painting ──
   const painting = useRef(false)
   const paintColors = useRef<Float32Array | null>(null)
@@ -623,14 +715,17 @@ function MeshObject({ obj }: { obj: SceneObject }) {
         useScene.getState().setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id })
       }}
       onPointerDown={(e) => {
+        if (activeTool === 'sculpt') { e.stopPropagation(); sculpting.current = true; handleSculptAt(e.point) }
         if (activeTool === 'paint') { e.stopPropagation(); painting.current = true; handlePaintAt(e.point) }
       }}
-      onPointerUp={() => { painting.current = false }}
+      onPointerUp={() => { painting.current = false; sculpting.current = false }}
       onPointerMove={(e) => {
+        if (activeTool === 'sculpt' && sculpting.current) { e.stopPropagation(); handleSculptAt(e.point) }
         if (activeTool === 'paint' && painting.current) { e.stopPropagation(); handlePaintAt(e.point) }
       }}
       onPointerEnter={(e) => {
         e.stopPropagation()
+        if (activeTool === 'sculpt') { document.body.style.cursor = 'crosshair'; return }
         if (activeTool === 'paint') { document.body.style.cursor = 'crosshair'; return }
         if (!ix || ix.hoverEffect === 'none') return
         hovered.current = true
@@ -645,8 +740,8 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       }}
       onPointerLeave={(e) => {
         e.stopPropagation()
-        painting.current = false
-        if (activeTool === 'paint') { document.body.style.cursor = ''; return }
+        painting.current = false; sculpting.current = false
+        if (activeTool === 'sculpt' || activeTool === 'paint') { document.body.style.cursor = ''; return }
         if (!ix || ix.hoverEffect === 'none') return
         hovered.current = false
         if (ref.current) {
@@ -2143,7 +2238,12 @@ function SceneObjectNode({ id }: { id: string }) {
       </GLTFErrorBoundary>
     )
   }
-  return <MeshObject obj={obj} />
+  return (
+    <>
+      <MeshObject obj={obj} />
+      <MeshOpExecutor id={id} />
+    </>
+  )
 }
 
 // ─── Transform Gizmo ─────────────────────────────────────────────────────────
@@ -2236,6 +2336,76 @@ function ShadowMapSetup() {
       // Gracefully skip if unavailable
     }
   }, [gl])
+  return null
+}
+
+// ─── Mesh Operation Executor ─────────────────────────────────────────────────
+// Watches pendingOp on each object and runs subdivision / boolean imperatively.
+
+function MeshOpExecutor({ id }: { id: string }) {
+  const pendingOp = useScene((s) => s.objects[id]?.pendingOp)
+  const objGeo    = useScene((s) => s.objects[id]?.geometry)
+  const objects   = useScene((s) => s.objects)
+  const { setCustomGeometry } = useScene()
+
+  useEffect(() => {
+    if (!pendingOp || !objGeo) return
+
+    if (pendingOp.type === 'subdivide') {
+      const geo = buildGeometryFromConfig(objGeo)
+      const sub = subdivideGeometry(geo, pendingOp.levels)
+      const pos = sub.getAttribute('position') as THREE.BufferAttribute
+      const verts: number[] = []
+      for (let i = 0; i < pos.count; i++) verts.push(pos.getX(i), pos.getY(i), pos.getZ(i))
+      const idx = sub.index ? Array.from(sub.index.array as Uint32Array) : undefined
+      setCustomGeometry(id, verts, idx)
+      useScene.getState().showNotification(`Subdivided — ${pos.count} vertices`, 'success')
+    }
+
+    if (pendingOp.type === 'boolean') {
+      const objB = objects[pendingOp.targetId]
+      if (!objB) { useScene.getState().setPendingOp(id, null); return }
+
+      try {
+        const geoA = buildGeometryFromConfig(objGeo)
+        const geoB = buildGeometryFromConfig(objB.geometry)
+
+        const brushA = new Brush(geoA)
+        const [ax, ay, az] = useScene.getState().objects[id]!.transform.position
+        brushA.position.set(ax, ay, az)
+        const [arx, ary, arz] = useScene.getState().objects[id]!.transform.rotation
+        brushA.rotation.set(arx, ary, arz)
+        brushA.updateMatrixWorld()
+
+        const brushB = new Brush(geoB)
+        const [bx, by, bz] = objB.transform.position
+        brushB.position.set(bx, by, bz)
+        const [brx, bry, brz] = objB.transform.rotation
+        brushB.rotation.set(brx, bry, brz)
+        brushB.updateMatrixWorld()
+
+        const op = pendingOp.operation === 'subtract' ? SUBTRACTION
+          : pendingOp.operation === 'union' ? ADDITION : INTERSECTION
+        const evaluator = new Evaluator()
+        const result = evaluator.evaluate(brushA, brushB, op)
+
+        const rpos = result.geometry.getAttribute('position') as THREE.BufferAttribute
+        const rverts: number[] = []
+        for (let i = 0; i < rpos.count; i++) rverts.push(rpos.getX(i), rpos.getY(i), rpos.getZ(i))
+        const ridx = result.geometry.index ? Array.from(result.geometry.index.array as Uint32Array) : undefined
+        setCustomGeometry(id, rverts, ridx)
+
+        if (pendingOp.deleteB) useScene.getState().removeObject(pendingOp.targetId)
+        useScene.getState().showNotification(`Boolean ${pendingOp.operation} applied`, 'success')
+      } catch (err) {
+        console.error('Boolean operation failed:', err)
+        useScene.getState().setPendingOp(id, null)
+        useScene.getState().showNotification('Boolean failed — check geometry', 'error')
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOp])
+
   return null
 }
 
