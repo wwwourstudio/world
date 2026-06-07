@@ -12,6 +12,7 @@ import { parseCommands, executeCommands, isSketchfabCmd, computeLayoutPositions 
 import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd } from '@/lib/ai/CommandParser'
 import { ChatAssetCarousel } from '@/components/panels/ChatAssetCarousel'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
+import { cameraFrameFn } from '@/lib/cameraFrame'
 
 interface UserMessage { role: 'user'; content: string }
 interface SketchfabPlacedModel { query: string; name: string; thumbnail: string | null }
@@ -297,6 +298,11 @@ export function ChatPanel() {
     const configs = buildSketchfabObjects(cmds, resolved, skippedUids)
     if (configs.length > 0) {
       useScene.getState().addObjectsBatch(configs)
+      const positions = configs.map((c) => c.transform?.position ?? ([0, 0, 0] as [number, number, number]))
+      const cx = positions.reduce((s, p) => s + p[0], 0) / positions.length
+      const cz = positions.reduce((s, p) => s + p[2], 0) / positions.length
+      const spread = positions.reduce((s, p) => Math.max(s, Math.hypot(p[0] - cx, p[2] - cz)), 5)
+      setTimeout(() => cameraFrameFn.current?.([cx, 0, cz], Math.min(60, spread * 2.5)), 400)
     }
     if (fallbacks?.length) {
       useScene.getState().showNotification(`Sketchfab: no models found for "${fallbacks.join('", "')}" — used placeholders`)
@@ -502,7 +508,14 @@ export function ChatPanel() {
           if (autoPlaceSketchfab) {
             // Escape hatch: place immediately without preview
             const configs = buildSketchfabObjects(sketchfabCmds, resolveData.results)
-            if (configs.length > 0) useScene.getState().addObjectsBatch(configs)
+            if (configs.length > 0) {
+              useScene.getState().addObjectsBatch(configs)
+              const positions = configs.map((c) => c.transform?.position ?? ([0, 0, 0] as [number, number, number]))
+              const cx = positions.reduce((s, p) => s + p[0], 0) / positions.length
+              const cz = positions.reduce((s, p) => s + p[2], 0) / positions.length
+              const spread = positions.reduce((s, p) => Math.max(s, Math.hypot(p[0] - cx, p[2] - cz)), 5)
+              setTimeout(() => cameraFrameFn.current?.([cx, 0, cz], Math.min(60, spread * 2.5)), 400)
+            }
             if (resolveData.fallbacks?.length) {
               useScene.getState().showNotification(`Sketchfab: no models found for "${resolveData.fallbacks.join('", "')}" — used placeholders`)
             }
