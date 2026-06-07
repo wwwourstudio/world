@@ -39,7 +39,8 @@ import { captureCanvas } from '@/lib/canvasCapture'
 import { captureCamera } from '@/lib/captureCamera'
 import { jumpToCamera, cameraJumpFn } from '@/lib/cameraJump'
 import { cameraFrameFn } from '@/lib/cameraFrame'
-import { fbmNoise } from '@/lib/noise'
+import { fbmNoise, domainWarpedFbm, worleyNoise2D, thermalErosion } from '@/lib/noise'
+import { BIOME_COLORS } from '@/lib/scene/SceneStore'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 
 
@@ -1413,17 +1414,38 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
     const positions = new Float32Array(count * 3)
     const uvs = new Float32Array(count * 2)
 
+    const posY = new Float32Array(count)
     for (let iy = 0; iy < res; iy++) {
       for (let ix = 0; ix < res; ix++) {
         const i = iy * res + ix
         const x = -half + ix * step
         const z = -half + iy * step
-        const h = fbmNoise(x, z, cfg.seed, cfg.layers, cfg.noiseScale) * cfg.heightScale
+
+        let h: number
+        if (cfg.domainWarp && cfg.domainWarp > 0) {
+          h = domainWarpedFbm(x, z, cfg.seed, cfg.layers, cfg.noiseScale, cfg.domainWarp) * cfg.heightScale
+        } else {
+          h = fbmNoise(x, z, cfg.seed, cfg.layers, cfg.noiseScale) * cfg.heightScale
+        }
+
+        if (cfg.worleyBlend && cfg.worleyBlend > 0) {
+          const w = worleyNoise2D(x * cfg.noiseScale * 2, z * cfg.noiseScale * 2, cfg.seed + 99)
+          h = h * (1 - cfg.worleyBlend) + (1 - w) * cfg.heightScale * cfg.worleyBlend * 0.4
+        }
+
+        posY[i] = h
         positions[i * 3] = x
         positions[i * 3 + 1] = h
         positions[i * 3 + 2] = z
         uvs[i * 2] = ix / (res - 1)
         uvs[i * 2 + 1] = iy / (res - 1)
+      }
+    }
+
+    if (cfg.erosionSteps && cfg.erosionSteps > 0) {
+      thermalErosion(posY, res, cfg.erosionSteps, 0.4)
+      for (let i = 0; i < count; i++) {
+        positions[i * 3 + 1] = posY[i]
       }
     }
 
@@ -1439,9 +1461,10 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
     }
 
     // Vertex colors from height — uses MeshStandardMaterial (lit, PBR)
-    const low = new THREE.Color(cfg.lowColor)
-    const mid = new THREE.Color(cfg.midColor)
-    const high = new THREE.Color(cfg.highColor)
+    const biomeColors = cfg.biome ? BIOME_COLORS[cfg.biome] : null
+    const low = new THREE.Color(biomeColors?.low ?? cfg.lowColor)
+    const mid = new THREE.Color(biomeColors?.mid ?? cfg.midColor)
+    const high = new THREE.Color(biomeColors?.high ?? cfg.highColor)
     const col = new THREE.Color()
     const colors = new Float32Array(count * 3)
     const maxH = Math.max(cfg.heightScale, 0.001)
@@ -1462,7 +1485,7 @@ function TerrainObject({ obj }: { obj: SceneObject }) {
     geoRef.current = geo
     return geo
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg.resolution, cfg.size, cfg.seed, cfg.layers, cfg.noiseScale, cfg.heightScale, cfg.lowColor, cfg.midColor, cfg.highColor])
+  }, [cfg.resolution, cfg.size, cfg.seed, cfg.layers, cfg.noiseScale, cfg.heightScale, cfg.lowColor, cfg.midColor, cfg.highColor, cfg.domainWarp, cfg.worleyBlend, cfg.erosionSteps, cfg.biome])
 
   // Apply sculpted heights imperatively and recompute vertex colors
   useEffect(() => {

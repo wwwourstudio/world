@@ -8,8 +8,8 @@ import {
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { BehaviorConfig } from '@/lib/scene/SceneStore'
-import { parseCommands, executeCommands, isSketchfabCmd, computeLayoutPositions } from '@/lib/ai/CommandParser'
-import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd } from '@/lib/ai/CommandParser'
+import { parseCommands, executeCommands, isSketchfabCmd, isTextureCmd, computeLayoutPositions } from '@/lib/ai/CommandParser'
+import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd, SetTextureCmd } from '@/lib/ai/CommandParser'
 import { ChatAssetCarousel } from '@/components/panels/ChatAssetCarousel'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
 import { cameraFrameFn } from '@/lib/cameraFrame'
@@ -426,7 +426,7 @@ export function ChatPanel() {
             patchLast({ content: displayText || '…' })
             if (!executed && fullText.includes('```') && fullText.split('```').length > 2) {
               const { commands, actions, text, suggestions, gallery } = parseCommands(fullText)
-              const syncCmdsEarly = commands.filter((cmd) => !isSketchfabCmd(cmd))
+              const syncCmdsEarly = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd))
               if (syncCmdsEarly.length > 0 || actions.length > 0) {
                 const result = executeCommands(syncCmdsEarly, actions)
                 syncCommandCount = result.executed
@@ -452,7 +452,8 @@ export function ChatPanel() {
       const { commands, actions, text, suggestions, gallery } = parseCommands(fullText)
       const cleanedText = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
       const sketchfabCmds = commands.filter(isSketchfabCmd) as AddSketchfabModelCmd[]
-      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd))
+      const textureCmds = commands.filter(isTextureCmd) as SetTextureCmd[]
+      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd))
       const hasSketchfab = sketchfabCmds.length > 0
 
       if (!executed && (syncCmds.length > 0 || actions.length > 0)) {
@@ -537,6 +538,37 @@ export function ChatPanel() {
         } catch (e) {
           useScene.getState().showNotification(`Sketchfab error: ${e instanceof Error ? e.message : 'Failed to load models'}`)
           patchLast({ status: 'complete' })
+        }
+      }
+
+      // Resolve and apply set_texture commands (async, fire-and-forget per cmd)
+      if (textureCmds.length > 0) {
+        const store = useScene.getState()
+        for (const cmd of textureCmds) {
+          try {
+            const res = await fetch(`/api/polyhaven/search-texture?q=${encodeURIComponent(cmd.query)}`)
+            if (!res.ok) {
+              const err = await res.json() as { error?: string }
+              store.showNotification(`Texture not found: ${cmd.query}${err.error ? ` — ${err.error}` : ''}`)
+              continue
+            }
+            const data = await res.json() as { id: string; name: string; maps: Record<string, string> }
+            const targets = cmd.target
+              ? Object.values(store.objects).filter(o => o.name.toLowerCase().includes(cmd.target!.toLowerCase()))
+              : store.selectedIds.map(id => store.objects[id]).filter(Boolean)
+            if (targets.length === 0) {
+              store.showNotification(`set_texture: no objects matched "${cmd.target ?? 'selection'}"`)
+              continue
+            }
+            for (const obj of targets) {
+              store.updateObject(obj.id, {
+                material: { maps: data.maps, textureRepeat: cmd.repeat ?? [4, 4] },
+              })
+            }
+            store.showNotification(`Texture applied: ${data.name}`)
+          } catch (e) {
+            useScene.getState().showNotification(`Texture error: ${e instanceof Error ? e.message : String(e)}`)
+          }
         }
       }
 
