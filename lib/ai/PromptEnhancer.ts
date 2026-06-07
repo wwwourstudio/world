@@ -81,6 +81,12 @@ export function enhancePrompt(input: string, sceneContext: string): string {
   return `${input}\n\nSuggested techniques for this mood: ${expansions.join(' | ')}`
 }
 
+export function buildAgentSystemPrompt(sceneState: string, agentExpertise: string): string {
+  const base = buildSystemPrompt(sceneState)
+  // Inject agent expertise at the very top — highest priority for Claude
+  return `${agentExpertise.trim()}\n\n${'━'.repeat(54)}\nGENERAL WORLD BUILDER CAPABILITIES (use alongside your specialty above)\n${'━'.repeat(54)}\n\n${base}`
+}
+
 export function buildSystemPrompt(sceneState: string): string {
   return `You are the AI for World Builder Pro — a professional 3D scene creation tool for building triple-A quality game environments, cinematic renders, and interactive 3D experiences.
 
@@ -297,6 +303,13 @@ ALL AVAILABLE COMMANDS
     { "action": "update_terrain", "target": "Terrain",
       "heightScale": 8, "noiseScale": 0.07, "layers": 6,
       "domainWarp": 0.5, "erosionSteps": 3, "biome": "highland" },
+
+    // ── MULTI-AGENT DELEGATION ────────────────────────────────────────────
+    // delegate_to_agent: Director emits this to hand off tasks to specialists.
+    // Order: terrain_sculptor → lighting_director → asset_populator
+    { "action": "delegate_to_agent", "agent": "terrain_sculptor", "task": "Create highland terrain with erosion, biome=highland, heightScale:14" },
+    { "action": "delegate_to_agent", "agent": "lighting_director", "task": "Set golden hour atmosphere: golden_bay HDRI, sunElevation:8, warm fog" },
+    { "action": "delegate_to_agent", "agent": "asset_populator", "task": "Populate with pine trees variety:4 scatter, medieval house variety:3 grid, snapToTerrain:true" },
 
     // ── WORLD SAVE / LOAD ─────────────────────────────────────────────────
     // save_world: saves entire current scene as a named world (with thumbnail).
@@ -695,6 +708,28 @@ QUALITY CHECKLIST (apply to every scene you build)
 ✓ For add_sketchfab_model: always include ground + lighting + texture in the same response
 ✓ For AAA/game scenes: enable ssao after placing Sketchfab models for realism
 ✓ Fog density 0.01–0.03 for large outdoor scenes, 0.03–0.06 for tight/moody spaces
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MULTI-AGENT SYSTEM (Director mode)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When Multi-Agent mode is enabled, you may act as DIRECTOR and delegate to specialists.
+Use delegate_to_agent for complex scenes requiring multiple domains of expertise.
+
+Available specialist agents:
+  terrain_sculptor   — procedural terrain, erosion, biomes, water
+  lighting_director  — HDRI, sky, fog, postFX, cinematic lighting
+  asset_populator    — Sketchfab search, placement, composition
+  mesh_editor        — sculpt, subdivide, boolean operations
+  performance_guardian — scene optimization, poly reduction
+
+DELEGATION RULES:
+- Emit delegate_to_agent ONLY when the task clearly requires a specialist's deep domain
+- Order: terrain first (other agents depend on it), then lighting, then assets
+- Simple single-domain requests → just respond directly, no delegation needed
+- Each task description must be specific enough that the specialist can act immediately
+- After delegating, your message is the coordination plan — keep it to 2-3 sentences
+
+User @mentions route directly: "@terrain make mountains" → terrain_sculptor responds
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SAVE & LOAD WORLDS

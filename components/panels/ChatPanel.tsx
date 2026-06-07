@@ -4,14 +4,16 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   Sparkles, ArrowUp, Loader2, Undo2, AlertCircle, CheckCircle2,
   Mic, MicOff, Zap, Globe, Trees, Lightbulb, Camera, Wand2,
-  ChevronDown, X, Check,
+  ChevronDown, X, Check, Users,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { BehaviorConfig } from '@/lib/scene/SceneStore'
-import { parseCommands, executeCommands, isSketchfabCmd, isTextureCmd, isPopulateSceneCmd, computeLayoutPositions } from '@/lib/ai/CommandParser'
-import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd, SetTextureCmd, PopulateSceneCmd } from '@/lib/ai/CommandParser'
+import { parseCommands, executeCommands, isSketchfabCmd, isTextureCmd, isPopulateSceneCmd, isDelegateCmd, computeLayoutPositions } from '@/lib/ai/CommandParser'
+import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd, SetTextureCmd, PopulateSceneCmd, DelegateToAgentCmd } from '@/lib/ai/CommandParser'
 import { ChatAssetCarousel } from '@/components/panels/ChatAssetCarousel'
-import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
+import { buildSystemPrompt, buildAgentSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
+import { AGENT_REGISTRY, getAgent, routeMessageToAgent } from '@/lib/ai/agents/AgentRegistry'
+import type { AgentId } from '@/lib/ai/agents/AgentRegistry'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 import { inferTargetSize } from '@/lib/sketchfab/inferSize'
 import { sampleTerrainHeight } from '@/lib/noise'
@@ -38,6 +40,7 @@ interface AssistantMessage {
   sketchfabResults?: SketchfabPlacedModel[]
   resolveCount?: number
   pendingSketchfab?: PendingSketchfab
+  agentId?: AgentId  // which specialist agent produced this message
 }
 type Message = UserMessage | AssistantMessage
 type HistoryMessage = { role: 'user' | 'assistant'; content: string }
@@ -256,6 +259,8 @@ export function ChatPanel() {
   const [loading, setLoading] = useState(false)
   const [listening, setListening] = useState(false)
   const [showQuickActions, setShowQuickActions] = useState(false)
+  const [multiAgentEnabled, setMultiAgentEnabled] = useState(false)
+  const [activeAgentId, setActiveAgentId] = useState<AgentId | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -367,6 +372,135 @@ export function ChatPanel() {
     setListening(true)
   }, [listening])
 
+  // ── Specialist agent runner ───────────────────────────────────────────────────
+  // Runs a single specialist agent: adds a new assistant message, streams response,
+  // executes commands, and handles Sketchfab resolution.
+  async function runSpecialistAgent(agentId: AgentId, task: string) {
+    const agentDef = getAgent(agentId)
+    setActiveAgentId(agentId)
+
+    const sceneContext = buildSceneContext(
+      useScene.getState().objects as Record<string, unknown>,
+      useScene.getState().environment as unknown as Record<string, unknown>,
+      { fov: cameraFov, near: cameraNear, far: cameraFar, viewMode },
+      appMode,
+      cameraPath,
+    )
+    const agentSystemPrompt = buildAgentSystemPrompt(sceneContext, agentDef.expertisePrompt)
+
+    // Add a fresh streaming message for this specialist
+    setMessages((m) => [...m, {
+      role: 'assistant' as const,
+      content: '',
+      commandCount: 0,
+      status: 'streaming' as const,
+      agentId,
+    }])
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: task,
+          systemPrompt: agentSystemPrompt,
+          history: [],
+        }),
+      })
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No stream')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let fullText = ''
+      let executed = false
+      let syncCommandCount = 0
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          let event: { type: string; [k: string]: unknown }
+          try { event = JSON.parse(line.slice(6)) } catch { continue }
+          if (event.type === 'text_delta') {
+            fullText += event.text as string
+            const displayText = fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').replace(/```[\s\S]*$/, '').trim()
+            patchLast({ content: displayText || '…' })
+            if (!executed && fullText.includes('```') && fullText.split('```').length > 2) {
+              const { commands, actions } = parseCommands(fullText)
+              const syncCmdsEarly = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd) && !isDelegateCmd(cmd))
+              if (syncCmdsEarly.length > 0 || actions.length > 0) {
+                const result = executeCommands(syncCmdsEarly, actions)
+                syncCommandCount = result.executed
+                const inferred = inferAmbientBehaviors(result.newObjectIds)
+                executed = true
+                patchLast({ commandCount: result.executed, behaviorAttachments: inferred.length ? inferred : undefined })
+              }
+            }
+          }
+        }
+      }
+
+      const { commands, actions, text, suggestions } = parseCommands(fullText)
+      const cleanedText = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
+
+      const populateCmds = commands.filter(isPopulateSceneCmd) as PopulateSceneCmd[]
+      const expandedFromPopulate: AddSketchfabModelCmd[] = populateCmds.flatMap((p) =>
+        p.models.map((m) => ({
+          action: 'add_sketchfab_model' as const,
+          query: m.query, count: m.count, layout: m.layout, spacing: m.spacing,
+          targetSize: m.targetSize, filters: m.filters, position: m.position,
+          yOffset: m.yOffset, snapToTerrain: p.snapToTerrain,
+        }))
+      )
+      const sketchfabCmds = [...(commands.filter(isSketchfabCmd) as AddSketchfabModelCmd[]), ...expandedFromPopulate]
+      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd) && !isPopulateSceneCmd(cmd) && !isDelegateCmd(cmd))
+      const hasSketchfab = sketchfabCmds.length > 0
+
+      if (!executed && (syncCmds.length > 0 || actions.length > 0)) {
+        const result = executeCommands(syncCmds, actions)
+        syncCommandCount = result.executed
+        const inferred = inferAmbientBehaviors(result.newObjectIds)
+        patchLast({
+          content: cleanedText, commandCount: result.executed,
+          suggestions: suggestions ?? undefined,
+          behaviorAttachments: inferred.length ? inferred : undefined,
+          status: hasSketchfab ? 'resolving' : 'complete',
+        })
+      } else {
+        patchLast({ content: cleanedText, suggestions: suggestions ?? undefined, status: hasSketchfab ? 'resolving' : 'complete' })
+      }
+
+      if (hasSketchfab) {
+        try {
+          patchLast({ resolveCount: sketchfabCmds.reduce((s, c) => s + Math.max(c.count ?? 1, 1), 0) })
+          const resolveRes = await fetch('/api/sketchfab/resolve', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ queries: sketchfabCmds.map((cmd) => ({ query: cmd.query, count: cmd.variety ?? 1, filters: cmd.filters })) }),
+          })
+          if (!resolveRes.ok) throw new Error('Sketchfab resolve failed')
+          const resolveData = await resolveRes.json() as { results: ResolvedSketchfabModel[]; fallbacks: string[] }
+          if (autoPlaceSketchfab) {
+            const configs = buildSketchfabObjects(sketchfabCmds, resolveData.results, [], getTerrainConfig())
+            if (configs.length > 0) useScene.getState().addObjectsBatch(configs)
+            patchLast({ commandCount: syncCommandCount + configs.length, status: 'complete' })
+          } else {
+            patchLast({ status: 'awaiting-confirm', pendingSketchfab: { cmds: sketchfabCmds, resolved: resolveData.results, fallbacks: resolveData.fallbacks ?? [] } })
+          }
+        } catch { patchLast({ status: 'complete' }) }
+      }
+    } catch (e) {
+      patchLast({ content: e instanceof Error ? e.message : 'Agent error', status: 'error' })
+    } finally {
+      setActiveAgentId(null)
+    }
+  }
+
   async function send(promptOverride?: string) {
     const prompt = (promptOverride ?? input).trim()
     if (!prompt || loading) return
@@ -389,6 +523,10 @@ export function ChatPanel() {
       return
     }
 
+    // Determine which agent handles this request
+    const agentId = multiAgentEnabled ? (routeMessageToAgent(prompt) ?? undefined) : undefined
+    const agentDef = agentId ? getAgent(agentId) : null
+
     const sceneContext = buildSceneContext(
       objects as Record<string, unknown>,
       environment as unknown as Record<string, unknown>,
@@ -397,11 +535,15 @@ export function ChatPanel() {
       cameraPath,
     )
     const enhancedPrompt = enhancePrompt(prompt, sceneContext)
-    const systemPrompt = buildSystemPrompt(sceneContext)
+    const systemPrompt = agentDef
+      ? buildAgentSystemPrompt(sceneContext, agentDef.expertisePrompt)
+      : buildSystemPrompt(sceneContext)
+
+    if (agentId) setActiveAgentId(agentId)
 
     setMessages((m) => [...m,
       { role: 'user', content: prompt },
-      { role: 'assistant', content: '', commandCount: 0, status: 'streaming' },
+      { role: 'assistant', content: '', commandCount: 0, status: 'streaming', agentId },
     ])
     setLoading(true)
     useScene.getState().pushHistory()
@@ -486,7 +628,9 @@ export function ChatPanel() {
         ...expandedFromPopulate,
       ]
       const textureCmds = commands.filter(isTextureCmd) as SetTextureCmd[]
-      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd) && !isPopulateSceneCmd(cmd))
+      // Separate delegate commands — handled below after main stream completes
+      const delegateCmds = commands.filter(isDelegateCmd) as DelegateToAgentCmd[]
+      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd) && !isPopulateSceneCmd(cmd) && !isDelegateCmd(cmd))
       const hasSketchfab = sketchfabCmds.length > 0
 
       if (!executed && (syncCmds.length > 0 || actions.length > 0)) {
@@ -611,9 +755,17 @@ export function ChatPanel() {
         const updated: HistoryMessage[] = [...prev, { role: 'user', content: prompt }, { role: 'assistant', content: cleanText }]
         return updated.slice(-20)
       })
+
+      // ── Multi-agent delegation: run each specialist sequentially ──────────
+      if (delegateCmds.length > 0 && multiAgentEnabled) {
+        for (const d of delegateCmds) {
+          await runSpecialistAgent(d.agent as AgentId, d.task)
+        }
+      }
     } catch (e) {
       patchLast({ content: e instanceof Error ? e.message : 'Connection failed.', status: 'error' })
     } finally {
+      setActiveAgentId(null)
       setLoading(false)
     }
   }
@@ -627,17 +779,31 @@ export function ChatPanel() {
       {/* ── Header ── */}
       <div className="flex items-center gap-2 px-3 h-9 shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#0b0c11' }}>
         <div className="w-5 h-5 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: 'linear-gradient(135deg, #5B6CFF, #8B5CF6)' }}>
-          <Sparkles size={10} className="text-white" strokeWidth={2} />
+          style={{ background: multiAgentEnabled ? 'linear-gradient(135deg, #4F46E5, #7C3AED)' : 'linear-gradient(135deg, #5B6CFF, #8B5CF6)' }}>
+          {multiAgentEnabled ? <Users size={10} className="text-white" strokeWidth={2} /> : <Sparkles size={10} className="text-white" strokeWidth={2} />}
         </div>
-        <span className="text-[12px] font-semibold" style={{ color: '#E8E9F0' }}>AI Studio</span>
+        <span className="text-[12px] font-semibold" style={{ color: '#E8E9F0' }}>
+          {multiAgentEnabled ? 'Multi-Agent Studio' : 'AI Studio'}
+        </span>
         {isWebsite && (
           <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-medium"
             style={{ background: '#00aa6622', color: '#4ade80', border: '1px solid #00aa6633' }}>
             <Globe size={8} /> Website Mode
           </span>
         )}
-        <span className="ml-auto text-[9px] font-mono" style={{ color: '#3a3e50' }}>claude-sonnet-4-6</span>
+        <button
+          onClick={() => setMultiAgentEnabled((v) => !v)}
+          title={multiAgentEnabled ? 'Multi-Agent mode ON — click to disable' : 'Enable Multi-Agent mode'}
+          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium transition-all"
+          style={{
+            background: multiAgentEnabled ? '#4F46E522' : 'transparent',
+            color: multiAgentEnabled ? '#818CF8' : '#3a3e50',
+            border: `1px solid ${multiAgentEnabled ? '#4F46E544' : '#1E2028'}`,
+          }}
+        >
+          <Users size={8} />
+          {multiAgentEnabled ? 'Agents ON' : 'Agents'}
+        </button>
         {conversationHistory.length > 0 && (
           <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono"
             style={{ background: '#1a2050', color: '#5B6CFF', border: '1px solid #1a2050' }}>
@@ -645,6 +811,28 @@ export function ChatPanel() {
           </span>
         )}
       </div>
+
+      {/* ── Agent roster (shown when multi-agent enabled) ── */}
+      {multiAgentEnabled && (
+        <div className="flex items-center gap-1 px-3 py-1.5 overflow-x-auto shrink-0" style={{ borderBottom: '1px solid #1E2028', background: '#080a10', scrollbarWidth: 'none' }}>
+          {(Object.values(AGENT_REGISTRY) as typeof AGENT_REGISTRY[AgentId][]).map((agent) => (
+            <div
+              key={agent.id}
+              title={agent.tagline}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full shrink-0 text-[9px] font-medium transition-all"
+              style={{
+                background: activeAgentId === agent.id ? `${agent.color}22` : 'transparent',
+                color: activeAgentId === agent.id ? agent.color : '#3a3e50',
+                border: `1px solid ${activeAgentId === agent.id ? `${agent.color}44` : 'transparent'}`,
+              }}
+            >
+              <span>{agent.emoji}</span>
+              <span>{agent.name}</span>
+              {activeAgentId === agent.id && <Loader2 size={7} className="animate-spin" />}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Messages / Empty state ── */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
@@ -881,14 +1069,28 @@ function AssistantBubble({ msg, msgIdx, loading, onUndo, onSuggestion, onPlace, 
   onSkip?: (idx: number) => void
   onToggleSkip?: (idx: number, uid: string) => void
 }) {
+  const agent = msg.agentId ? AGENT_REGISTRY[msg.agentId] : null
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5">
-        <div className="w-4 h-4 rounded-md flex items-center justify-center shrink-0"
-          style={{ background: 'linear-gradient(135deg, #5B6CFF, #8B5CF6)' }}>
-          <Sparkles size={8} className="text-white" strokeWidth={2} />
+        <div
+          className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 text-[9px]"
+          style={{ background: agent ? `linear-gradient(135deg, ${agent.gradientFrom}, ${agent.gradientTo})` : 'linear-gradient(135deg, #5B6CFF, #8B5CF6)' }}
+        >
+          {agent ? <span style={{ lineHeight: 1 }}>{agent.emoji}</span> : <Sparkles size={8} className="text-white" strokeWidth={2} />}
         </div>
-        <span className="text-[10px] uppercase tracking-wider font-medium" style={{ color: '#7A7E92' }}>Claude</span>
+        <span
+          className="text-[10px] uppercase tracking-wider font-medium"
+          style={{ color: agent ? agent.color : '#7A7E92' }}
+        >
+          {agent ? agent.name : 'Claude'}
+        </span>
+        {agent && (
+          <span className="text-[8px] px-1 py-0.5 rounded-full" style={{ background: `${agent.color}18`, color: agent.color, border: `1px solid ${agent.color}30` }}>
+            specialist
+          </span>
+        )}
         {msg.commandCount > 0 && (
           <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px]"
             style={{ background: '#1a2a1a', color: '#4ade80', border: '1px solid #2a4a2a' }}>
@@ -913,9 +1115,9 @@ function AssistantBubble({ msg, msgIdx, loading, onUndo, onSuggestion, onPlace, 
           )}
         </div>
       ) : loading ? (
-        <div className="flex items-center gap-2 text-[11px]" style={{ color: '#7A7E92' }}>
-          <Loader2 size={11} className="animate-spin" />
-          <span>Building…</span>
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: agent ? agent.color : '#7A7E92' }}>
+          <Loader2 size={11} className="animate-spin" style={{ color: agent ? agent.color : undefined }} />
+          <span>{agent ? `${agent.name} is working…` : 'Building…'}</span>
         </div>
       ) : null}
 

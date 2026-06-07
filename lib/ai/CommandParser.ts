@@ -297,6 +297,18 @@ export interface AddHtmlCmd {
   fontSize?: number
 }
 
+export interface DelegateToAgentCmd {
+  action: 'delegate_to_agent'
+  agent: 'terrain_sculptor' | 'asset_populator' | 'mesh_editor' | 'lighting_director' | 'performance_guardian' | 'director'
+  task: string
+}
+
+export interface OrchestrateMultiAgentCmd {
+  action: 'orchestrate_multi_agent'
+  vision: string
+  steps?: Array<{ agent: string; task: string }>
+}
+
 export interface SaveWorldCmd {
   action: 'save_world'
   name: string
@@ -438,6 +450,15 @@ export type SceneCommand =
   | SetTextureCmd | UpdateTerrainCmd | PopulateSceneCmd | AddGrassCmd
   | SubdivideMeshCmd | BooleanOperationCmd | SculptMeshCmd
   | SaveWorldCmd | LoadWorldCmd | ListWorldsCmd
+  | DelegateToAgentCmd | OrchestrateMultiAgentCmd
+
+export function isDelegateCmd(cmd: SceneCommand): cmd is DelegateToAgentCmd {
+  return cmd.action === 'delegate_to_agent'
+}
+
+export function isOrchestrateCmd(cmd: SceneCommand): cmd is OrchestrateMultiAgentCmd {
+  return cmd.action === 'orchestrate_multi_agent'
+}
 
 export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
   return cmd.action === 'add_sketchfab_model'
@@ -1325,6 +1346,11 @@ export function executeCommand(cmd: SceneCommand): void {
       )
       break
     }
+
+    // Handled by ChatPanel orchestration layer — no-op here
+    case 'delegate_to_agent':
+    case 'orchestrate_multi_agent':
+      break
   }
 }
 
