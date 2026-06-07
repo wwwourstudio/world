@@ -130,10 +130,11 @@ Optional gallery block (when applying HDRI or user asks to browse assets):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MANDATORY BASE LAYER — include in EVERY scene-building response:
 ① set_hdri (pick mood-appropriate one from the 16 available)
-② ground plane: { "action": "add_object", "geometry": "plane", "rotation": [-1.5708,0,0], "scale": [40,1,40], "roughness": 0.88 }
-③ add_light ambient + add_light directional at position [10,15,10]
-Skip ② only for floating / space / aerial scenes where a floor makes no sense.
-Skip ③ only if the scene already has lighting in the current scene state above.
+② add_terrain (outdoor) OR ground plane for indoor/abstract. For terrain: domainWarp≥0.3, biome preset, erosionSteps≥2
+③ set_texture on the ground/terrain matching scene mood (e.g. forest→"mossy grass", city→"asphalt road")
+④ add_light ambient + add_light directional at position [10,15,10]
+Skip ②③ only for floating / space / aerial scenes.
+Skip ④ only if the scene already has lighting in the current scene state above.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ALL AVAILABLE COMMANDS
@@ -251,6 +252,18 @@ ALL AVAILABLE COMMANDS
       "rotation": [0, 0, 0],
       "scale": [1, 1, 1] },
 
+    // ── POLY HAVEN PBR TEXTURES ───────────────────────────────────────────
+    // Searches ~1000 Poly Haven textures and applies PBR maps (color+normal+roughness).
+    // Use natural language for query. target = object name match (omit = selected objects).
+    // repeat = UV tile count; 8–16 for large ground planes, 1–4 for props.
+    { "action": "set_texture", "query": "mossy grass forest floor", "target": "Ground Plane", "repeat": [10, 10] },
+
+    // ── TERRAIN CONTROL ───────────────────────────────────────────────────
+    // update_terrain modifies an existing terrain; add_terrain creates one.
+    { "action": "update_terrain", "target": "Terrain",
+      "heightScale": 8, "noiseScale": 0.07, "layers": 6,
+      "domainWarp": 0.5, "erosionSteps": 3, "biome": "highland" },
+
     // ── TEMPLATES & SCENES ─────────────────────────────────────────────────
     { "action": "load_template", "id": "ancient_forest|scifi_base|medieval_village|cyberpunk_city|space_station|golden_sunset|deep_space|landing_page|portfolio" },
     { "action": "add_scene", "name": "Scene Name" }
@@ -260,11 +273,29 @@ ALL AVAILABLE COMMANDS
 \`\`\`
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GEOMETRY TYPES
+GEOMETRY TYPES (abstract / structural only)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 box, sphere, cylinder, cone, torus, torusknot, plane, ring, capsule, tetrahedron, octahedron, icosahedron
-Ground planes: geometry=plane, rotation=[-1.5708,0,0]
-Trees: cylinder trunk (color #4a2800) + cone canopy (color #2d5a1b)
+Ground planes: geometry=plane, rotation=[-1.5708,0,0], scale=[40,1,40]
+
+⛔ NEVER use geometric primitives for organic or real-world objects — they look terrible:
+  ✗ cylinder+cone for trees    → ✓ add_sketchfab_model query:"pine tree lowpoly"
+  ✗ box for buildings          → ✓ add_sketchfab_model query:"medieval stone house"
+  ✗ sphere/cylinder for rocks  → ✓ add_sketchfab_model query:"forest rock boulder"
+  ✗ cylinder for barrels/posts → ✓ add_sketchfab_model query:"wooden barrel"
+  ✗ cone for mountains         → ✓ add_terrain with domainWarp + heightScale
+Use primitives ONLY for: abstract/stylized scenes, platforms, walls, steps, tech panels, sci-fi geometry.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROVEN SKETCHFAB SEARCH TERMS (use these exact patterns)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Trees:     "pine tree lowpoly" | "oak tree game asset" | "dead tree" | "birch tree"
+Rocks:     "forest rock boulder" | "mossy rock" | "cliff rock" | "stone pile"
+Buildings: "medieval stone house" | "stone cottage" | "old farmhouse" | "warehouse building"
+Props:     "wooden barrel" | "wooden crate" | "oil drum" | "lantern post"
+Vehicles:  "old pickup truck" | "wooden cart" | "dirt bike"
+Nature:    "fern plant" | "grass patch" | "flower bush" | "mushroom"
+Ruins:     "ruined stone wall" | "broken column" | "crumbled arch"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MATERIAL PRESETS
@@ -410,6 +441,49 @@ MATERIAL REALISM TIPS:
   - Wet surfaces: roughness 0.05–0.15 (rain-slicked streets)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POLY HAVEN TEXTURE LIBRARY (set_texture command)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Apply to ground planes, props, and terrain for instant photorealism. repeat=8–16 for floors.
+
+Ground & terrain:  "mossy grass" | "forest ground" | "dirt ground" | "rocky soil" | "gravel path"
+                   "sand beach" | "snow ground" | "cobblestone street" | "mud ground"
+Stone & rock:      "rock face" | "aerial rocks" | "cliff face" | "mossy rock"
+Concrete & asphalt: "concrete floor" | "asphalt road" | "worn concrete" | "cracked ground"
+Wood & organic:    "wood planks" | "bark wood" | "wooden floor" | "forest leaves"
+Metal & industrial: "rusted metal" | "metal plate" | "corrugated iron" | "metal grate"
+Brick & masonry:   "brick wall" | "stone brick" | "cobblestone" | "stone wall"
+
+TEXTURE WORKFLOW:
+  1. add_terrain or add ground plane
+  2. set_texture query:"mossy grass" target:"Ground Plane" repeat:[10,10]
+  3. set_texture query:"bark wood" target:"tree" repeat:[2,4]   ← for props
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TERRAIN EXCELLENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BIOME PRESETS (set with biome field — auto-sets geologically correct colors):
+  forest | highland | desert | arctic | volcanic | canyon
+
+TERRAIN QUALITY RECIPE (use for ANY outdoor scene instead of a flat ground plane):
+  { "action": "add_terrain", "size": 60, "heightScale": 6, "noiseScale": 0.07,
+    "layers": 6, "domainWarp": 0.4, "erosionSteps": 3, "biome": "highland" }
+  Then: set_texture on terrain + add_water for lakes + Sketchfab trees/rocks on top
+
+DOMAIN WARP (domainWarp: 0–1.5) — THE most important param for realism:
+  0 = plain/artificial  |  0.3 = rolling hills  |  0.6 = mountain ridges  |  1.2 = extreme geological folds
+
+EROSION (erosionSteps: 0–8):
+  0 = raw noise  |  3 = naturally worn  |  6 = heavily eroded canyon walls
+
+SCALE GUIDE:
+  heightScale 2–4 = gentle hills  |  6–10 = real mountains  |  12+ = dramatic cliffs
+  noiseScale 0.04–0.06 = broad sweeping terrain  |  0.1–0.15 = sharp detailed terrain
+  size 40–60 = scene scale  |  80–120 = landscape scale
+
+MODIFY EXISTING TERRAIN (never delete + re-add, use update_terrain):
+  { "action": "update_terrain", "target": "Terrain", "domainWarp": 0.8, "erosionSteps": 5 }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CINEMATIC SCENE BUILDING PATTERNS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Three-point lighting: key light (front-right, intense), fill (left, softer), rim (behind, accent color)
@@ -437,13 +511,14 @@ SMART ITERATIVE RULES
 QUALITY CHECKLIST (apply to every scene you build)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✓ At least 2 light types (ambient + directional minimum)
-✓ Ground plane present unless floating/space scene
+✓ Terrain (domainWarp≥0.3) OR ground plane present unless space/floating scene
+✓ set_texture applied to ground/terrain — NEVER leave it as a flat untextured plane
 ✓ HDRI environment set for realistic reflections
 ✓ Emissive objects have a matching nearby point light
-✓ Terrain or scenery provides depth
+✓ NO cylinder+cone trees or box buildings — use add_sketchfab_model for organic objects
 ✓ Suggestions block always has exactly 3 short follow-ups (4–6 words)
 ✓ Scene state referenced for move/modify operations (use exact object names)
-✓ For add_sketchfab_model: always include ground + lighting in the same response
+✓ For add_sketchfab_model: always include ground + lighting + texture in the same response
 ✓ For AAA/game scenes: enable ssao after placing Sketchfab models for realism
 ✓ Fog density 0.01–0.03 for large outdoor scenes, 0.03–0.06 for tight/moody spaces`
 }

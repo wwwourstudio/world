@@ -49,3 +49,73 @@ export function fbmNoise(
 
   return value / maxValue
 }
+
+// Domain-warped fBm — offsets sample coordinates by another fBm pass, creating
+// geological ridges and folded rock formations that plain fBm can't reproduce.
+export function domainWarpedFbm(
+  x: number,
+  z: number,
+  seed: number,
+  octaves: number,
+  scale: number,
+  warpStrength: number,
+  persistence = 0.5,
+  lacunarity = 2.0
+): number {
+  const wx = fbmNoise(x + 1.7, z + 9.2, seed, 3, scale, persistence, lacunarity)
+  const wz = fbmNoise(x + 8.3, z + 2.8, seed + 5, 3, scale, persistence, lacunarity)
+  return fbmNoise(
+    x + warpStrength * wx,
+    z + warpStrength * wz,
+    seed, octaves, scale, persistence, lacunarity
+  )
+}
+
+// Simple 2D Worley (cellular) noise — returns 0–1 distance to nearest cell center.
+// Useful for adding rocky pitting, craters, or karst features to terrain.
+export function worleyNoise2D(x: number, z: number, seed: number): number {
+  const xi = Math.floor(x)
+  const zi = Math.floor(z)
+  let minDist = Infinity
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const cx = xi + dx
+      const cz = zi + dz
+      const rx = hash(cx + cz * 57 + seed * 31) + cx
+      const rz = hash(cx * 113 + cz + seed * 17) + cz
+      const d = Math.sqrt((x - rx) ** 2 + (z - rz) ** 2)
+      if (d < minDist) minDist = d
+    }
+  }
+  return Math.min(1, minDist)
+}
+
+// Thermal erosion — iteratively redistributes material from steep slopes to
+// flat neighbors, simulating rock talus and sediment deposition.
+// Operates on a flat heights array (row-major, res×res). Mutates in place.
+export function thermalErosion(
+  heights: Float32Array,
+  res: number,
+  steps: number,
+  talus = 0.4,
+  transferRate = 0.5
+): void {
+  const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+  for (let s = 0; s < steps; s++) {
+    for (let iz = 1; iz < res - 1; iz++) {
+      for (let ix = 1; ix < res - 1; ix++) {
+        const idx = iz * res + ix
+        const h = heights[idx]
+        for (const [dz, dx] of dirs) {
+          const nidx = (iz + dz) * res + (ix + dx)
+          const diff = h - heights[nidx]
+          if (diff > talus) {
+            const transfer = transferRate * (diff - talus) * 0.5
+            heights[idx] -= transfer
+            heights[nidx] += transfer
+          }
+        }
+      }
+    }
+  }
+}

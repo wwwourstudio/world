@@ -260,6 +260,11 @@ export interface AddTerrainCmd {
   highColor?: string
   position?: [number, number, number]
   name?: string
+  // Extended terrain quality params
+  domainWarp?: number
+  worleyBlend?: number
+  erosionSteps?: number
+  biome?: string
 }
 
 export interface AddWaterCmd {
@@ -307,6 +312,29 @@ export interface AddSketchfabModelCmd {
   targetSize?: number     // real-world largest dimension in meters (building ~25, prop ~1)
 }
 
+export interface SetTextureCmd {
+  action: 'set_texture'
+  query: string              // natural-language texture description, e.g. "mossy grass"
+  target?: string            // object name match; omit = apply to currently selected objects
+  repeat?: [number, number]  // UV tile repeat; default [2,2]; use [8,16] for large ground planes
+}
+
+export interface UpdateTerrainCmd {
+  action: 'update_terrain'
+  target?: string         // terrain object name; default = first terrain in scene
+  seed?: number
+  heightScale?: number
+  noiseScale?: number
+  layers?: number
+  domainWarp?: number     // 0–1.5; higher = more geological distortion
+  worleyBlend?: number    // 0–1; adds rocky crater/pitting features
+  erosionSteps?: number   // 0–8 thermal erosion passes
+  biome?: string          // forest|highland|desert|arctic|volcanic|canyon
+  lowColor?: string
+  midColor?: string
+  highColor?: string
+}
+
 export type SceneCommand =
   | AddObjectCmd | AddLightCmd | SetMaterialCmd | SetHDRICmd | SetFogCmd
   | SetCameraCmd | AddAnimationCmd | EnablePhysicsCmd | SetEnvironmentCmd
@@ -315,9 +343,14 @@ export type SceneCommand =
   | AddKeyframeAnimationCmd | AddSceneCmd | SetCameraClipCmd | UpdateObjectCmd
   | AddHtmlCmd | AddTerrainCmd | AddWaterCmd | SetVisibilityCmd
   | AddCameraKeypointCmd | ClearCameraPathCmd | AddSketchfabModelCmd
+  | SetTextureCmd | UpdateTerrainCmd
 
 export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
   return cmd.action === 'add_sketchfab_model'
+}
+
+export function isTextureCmd(cmd: SceneCommand): cmd is SetTextureCmd {
+  return cmd.action === 'set_texture'
 }
 
 export function computeLayoutPositions(
@@ -1002,11 +1035,39 @@ export function executeCommand(cmd: SceneCommand): void {
           lowColor: c.lowColor ?? '#3a7d44',
           midColor: c.midColor ?? '#5a5a3a',
           highColor: c.highColor ?? '#888888',
+          domainWarp: c.domainWarp,
+          worleyBlend: c.worleyBlend,
+          erosionSteps: c.erosionSteps,
+          biome: c.biome as import('@/lib/scene/SceneStore').BiomePreset | undefined,
         },
         transform: { position: c.position ?? [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
         castShadow: true,
         receiveShadow: true,
       })
+      break
+    }
+
+    case 'update_terrain': {
+      const c = cmd as UpdateTerrainCmd
+      const objects = Object.values(store.objects)
+      const terrain = c.target
+        ? objects.find(o => o.type === 'terrain' && o.name.toLowerCase().includes(c.target!.toLowerCase()))
+        : objects.find(o => o.type === 'terrain')
+      if (!terrain) break
+      const existing = terrain.terrain ?? {}
+      const patch: Partial<import('@/lib/scene/SceneStore').TerrainConfig> = {}
+      if (c.seed !== undefined) patch.seed = c.seed
+      if (c.heightScale !== undefined) patch.heightScale = c.heightScale
+      if (c.noiseScale !== undefined) patch.noiseScale = c.noiseScale
+      if (c.layers !== undefined) patch.layers = c.layers
+      if (c.domainWarp !== undefined) patch.domainWarp = c.domainWarp
+      if (c.worleyBlend !== undefined) patch.worleyBlend = c.worleyBlend
+      if (c.erosionSteps !== undefined) patch.erosionSteps = c.erosionSteps
+      if (c.biome) patch.biome = c.biome as import('@/lib/scene/SceneStore').BiomePreset
+      if (c.lowColor) patch.lowColor = c.lowColor
+      if (c.midColor) patch.midColor = c.midColor
+      if (c.highColor) patch.highColor = c.highColor
+      store.updateObject(terrain.id, { terrain: { ...existing, ...patch } as import('@/lib/scene/SceneStore').TerrainConfig })
       break
     }
 

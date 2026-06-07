@@ -51,6 +51,17 @@ export interface BehaviorConfig {
   fired?: boolean
 }
 
+export type BiomePreset = 'forest' | 'highland' | 'desert' | 'arctic' | 'volcanic' | 'canyon'
+
+export const BIOME_COLORS: Record<BiomePreset, { low: string; mid: string; high: string }> = {
+  forest:   { low: '#3a6b28', mid: '#7a6a4a', high: '#9a9a9a' },
+  highland: { low: '#5a7a3a', mid: '#8a8060', high: '#d4d4cc' },
+  desert:   { low: '#c8a85a', mid: '#a08040', high: '#d0c090' },
+  arctic:   { low: '#c0d8e8', mid: '#9ab0c0', high: '#ffffff' },
+  volcanic: { low: '#cc3300', mid: '#4a3020', high: '#1a1a1a' },
+  canyon:   { low: '#c87040', mid: '#a05030', high: '#d09060' },
+}
+
 export interface TerrainConfig {
   size: number
   resolution: number
@@ -62,6 +73,10 @@ export interface TerrainConfig {
   midColor: string
   highColor: string
   vertexHeights?: number[]
+  domainWarp?: number      // 0 = off, 0.3 = rolling, 0.8 = dramatic ridges, 1.5 = extreme
+  worleyBlend?: number     // 0–1 blend cellular rock pitting features
+  erosionSteps?: number    // thermal erosion passes (0–8)
+  biome?: BiomePreset      // sets geologically correct colors when provided
 }
 
 export interface WaterConfig {
