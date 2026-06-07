@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     cappedTasks.map(async (task) => {
       const cached = dlCache.get(task.uid)
       if (cached && cached.expires > now) {
-        return { ...task, url: cached.url } as ResolvedModel
+        return { ...task, url: `/api/sketchfab/proxy?url=${encodeURIComponent(cached.url)}` } as ResolvedModel
       }
 
       const res = await fetchSketchfab(`https://api.sketchfab.com/v3/models/${task.uid}/download`, apiKey)
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
 
       cacheBound(dlCache)
       dlCache.set(task.uid, { url: glbUrl, expires: now + DL_TTL })
-      return { ...task, url: glbUrl } as ResolvedModel
+      return { ...task, url: `/api/sketchfab/proxy?url=${encodeURIComponent(glbUrl)}` } as ResolvedModel
     })
   )
 

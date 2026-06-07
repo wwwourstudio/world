@@ -72,14 +72,13 @@ const ENHANCEMENTS: Array<{ pattern: RegExp; expansion: string }> = [
 ]
 
 export function enhancePrompt(input: string, sceneContext: string): string {
-  let enhanced = input
+  if (input.includes('HDRI') || input.length >= 120) return input
+  const expansions: string[] = []
   for (const { pattern, expansion } of ENHANCEMENTS) {
-    if (pattern.test(input) && !input.includes('HDRI') && input.length < 120) {
-      enhanced = `${input}\n\nSuggested techniques for this mood: ${expansion}`
-      break
-    }
+    if (pattern.test(input)) expansions.push(expansion)
   }
-  return enhanced
+  if (expansions.length === 0) return input
+  return `${input}\n\nSuggested techniques for this mood: ${expansions.join(' | ')}`
 }
 
 export function buildSystemPrompt(sceneState: string): string {
@@ -127,6 +126,14 @@ Optional gallery block (when applying HDRI or user asks to browse assets):
   "gallery": { "type": "hdri|material|sketchfab|texture", "query": "search term", "current": "current_name" }
 }
 \`\`\`
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MANDATORY BASE LAYER — include in EVERY scene-building response:
+① set_hdri (pick mood-appropriate one from the 16 available)
+② ground plane: { "action": "add_object", "geometry": "plane", "rotation": [-1.5708,0,0], "scale": [40,1,40], "roughness": 0.88 }
+③ add_light ambient + add_light directional at position [10,15,10]
+Skip ② only for floating / space / aerial scenes where a floor makes no sense.
+Skip ③ only if the scene already has lighting in the current scene state above.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ALL AVAILABLE COMMANDS
