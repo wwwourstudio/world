@@ -3,6 +3,7 @@ import { MATERIAL_PRESETS } from '@/lib/scene/SceneStore'
 import { useScene } from '@/lib/scene/SceneStore'
 import { getTemplate } from '@/lib/ai/WorldTemplates'
 import { resolveObjectQuery } from '@/lib/ai/resolveObjectQuery'
+import { saveWorld, listWorlds, restoreWorldToStore } from '@/lib/worlds/WorldStore'
 
 // Types for commands Claude emits
 export interface AddObjectCmd {
@@ -296,6 +297,22 @@ export interface AddHtmlCmd {
   fontSize?: number
 }
 
+export interface SaveWorldCmd {
+  action: 'save_world'
+  name: string
+  description?: string
+}
+
+export interface LoadWorldCmd {
+  action: 'load_world'
+  name?: string
+  id?: string
+}
+
+export interface ListWorldsCmd {
+  action: 'list_worlds'
+}
+
 export interface AddTerrainCmd {
   action: 'add_terrain'
   size?: number
@@ -420,6 +437,7 @@ export type SceneCommand =
   | AddCameraKeypointCmd | ClearCameraPathCmd | AddSketchfabModelCmd
   | SetTextureCmd | UpdateTerrainCmd | PopulateSceneCmd | AddGrassCmd
   | SubdivideMeshCmd | BooleanOperationCmd | SculptMeshCmd
+  | SaveWorldCmd | LoadWorldCmd | ListWorldsCmd
 
 export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
   return cmd.action === 'add_sketchfab_model'
@@ -1274,6 +1292,37 @@ export function executeCommand(cmd: SceneCommand): void {
       store.setActiveTool('sculpt')
       if (c.brushType) store.setSculptMode(c.brushType)
       if (c.radius) store.setSculptRadius(c.radius)
+      break
+    }
+
+    case 'save_world': {
+      const c = cmd as SaveWorldCmd
+      saveWorld(c.name, c.description).then(w =>
+        store.showNotification(`World "${w.name}" saved`, 'success')
+      ).catch(() => store.showNotification('Save failed', 'error'))
+      break
+    }
+
+    case 'load_world': {
+      const c = cmd as LoadWorldCmd
+      listWorlds().then(worlds => {
+        const match = c.id
+          ? worlds.find(w => w.id === c.id)
+          : worlds.find(w => w.name.toLowerCase().includes((c.name ?? '').toLowerCase()))
+        if (!match) { store.showNotification('World not found', 'error'); return }
+        restoreWorldToStore(match.sceneData)
+        store.showNotification(`Loaded "${match.name}"`, 'success')
+      }).catch(() => store.showNotification('Load failed', 'error'))
+      break
+    }
+
+    case 'list_worlds': {
+      listWorlds().then(worlds =>
+        store.showNotification(
+          `${worlds.length} world${worlds.length !== 1 ? 's' : ''} saved locally`,
+          'info'
+        )
+      )
       break
     }
   }

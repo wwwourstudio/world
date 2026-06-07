@@ -5,7 +5,7 @@ import {
   MousePointer2, Move, RotateCw, Maximize2,
   PanelLeft, PanelRight, PanelBottom, Play, Square,
   Undo2, Redo2, Grid3X3, Download, Upload,
-  ChevronDown, Zap, Eye, Paintbrush, Mountain, Monitor, Globe2, Type, Navigation,
+  ChevronDown, Zap, Eye, Paintbrush, Mountain, Monitor, Globe2, Type, Navigation, Bookmark,
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import { WORLD_TEMPLATES } from '@/lib/ai/WorldTemplates'
@@ -13,6 +13,7 @@ import { DEFAULT_TERRAIN, DEFAULT_WATER } from '@/lib/scene/SceneStore'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
 import { ExportModal } from '@/components/modals/ExportModal'
 import { ImportModal } from '@/components/modals/ImportModal'
+import { WorldBrowserModal } from '@/components/modals/WorldBrowserModal'
 
 const TOOLS: { id: ActiveTool; icon: typeof MousePointer2; label: string; key: string }[] = [
   { id: 'select', icon: MousePointer2, label: 'Select', key: 'Q' },
@@ -61,6 +62,8 @@ export function MainToolbar() {
   const [showTemplates, setShowTemplates] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showWorlds, setShowWorlds] = useState(false)
+  const [worldsSaveOpen, setWorldsSaveOpen] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [showAddHtml, setShowAddHtml] = useState(false)
 
@@ -418,6 +421,9 @@ export function MainToolbar() {
           <span className="hidden md:inline">Physics</span>
         </button>
 
+        {/* Worlds */}
+        <ToolBtn icon={Bookmark} onClick={() => { setWorldsSaveOpen(false); setShowWorlds(true) }} title="World Browser" />
+
         {/* Import/Export */}
         <ToolBtn icon={Upload} onClick={() => setShowImport(true)} title="Import" />
         <ToolBtn icon={Download} onClick={() => setShowExport(true)} title="Export" />
@@ -441,6 +447,7 @@ export function MainToolbar() {
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
+      {showWorlds && <WorldBrowserModal onClose={() => setShowWorlds(false)} openSaveForm={worldsSaveOpen} />}
     </>
   )
 }

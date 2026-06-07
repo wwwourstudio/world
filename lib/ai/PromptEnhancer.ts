@@ -298,6 +298,14 @@ ALL AVAILABLE COMMANDS
       "heightScale": 8, "noiseScale": 0.07, "layers": 6,
       "domainWarp": 0.5, "erosionSteps": 3, "biome": "highland" },
 
+    // ── WORLD SAVE / LOAD ─────────────────────────────────────────────────
+    // save_world: saves entire current scene as a named world (with thumbnail).
+    { "action": "save_world", "name": "Highland Fortress", "description": "Castle on misty terrain with fog" },
+    // load_world: restores a previously saved world by name (partial match ok).
+    { "action": "load_world", "name": "Highland Fortress" },
+    // list_worlds: reports how many worlds are saved locally.
+    { "action": "list_worlds" },
+
     // ── MESH EDITING ──────────────────────────────────────────────────────
     // subdivide_mesh: split every triangle into 4 for more geometry (levels 1-3).
     // Enables smooth sculpting. Always subdivide before sculpting a box/sphere.
@@ -686,7 +694,16 @@ QUALITY CHECKLIST (apply to every scene you build)
 ✓ Scene state referenced for move/modify operations (use exact object names)
 ✓ For add_sketchfab_model: always include ground + lighting + texture in the same response
 ✓ For AAA/game scenes: enable ssao after placing Sketchfab models for realism
-✓ Fog density 0.01–0.03 for large outdoor scenes, 0.03–0.06 for tight/moody spaces`
+✓ Fog density 0.01–0.03 for large outdoor scenes, 0.03–0.06 for tight/moody spaces
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SAVE & LOAD WORLDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+save_world  — use when user says "save this", "save as X", "keep this scene", "checkpoint"
+load_world  — use when user says "load X", "open my X scene", "restore X", "go back to X"
+list_worlds — use when user asks "what worlds do I have?", "show my saved worlds", "list saves"
+After save_world, confirm: "Saved as '{name}'. Load it anytime with 'load world {name}'."
+After load_world, offer to continue: "World '{name}' loaded. What would you like to add or change?"`
 }
 
 export function buildSceneContext(
