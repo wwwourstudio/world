@@ -154,7 +154,13 @@ ALL AVAILABLE COMMANDS
       "color": "#ffffff", "intensity": 1, "distance": 20, "angle": 0.78, "penumbra": 0.1,
       "position": [0,5,0], "castShadow": true },
     { "action": "set_environment", "ambientColor": "#ffffff", "ambientIntensity": 0.3,
-      "directionalColor": "#ffffff", "directionalIntensity": 1.5, "backgroundColor": "#0B0C0F" },
+      "directionalColor": "#ffffff", "directionalIntensity": 1.5, "backgroundColor": "#0B0C0F",
+      // Sky/sun control (works alongside set_hdri):
+      "skyEnabled": true,
+      "sunElevation": 30,   // degrees above horizon: 90=noon, 30=midday, 8=golden hour, 2=sunset
+      "sunAzimuth": 180,    // compass heading 0-360 (0=north, 90=east, 180=south)
+      "skyTurbidity": 4,    // atmospheric haze 1-20 (2=crystal clear, 8=hazy, 15=very hazy)
+      "skyRayleigh": 2 },   // sky blue scattering 1-6 (low=white sky, high=deep blue)
     { "action": "set_hdri", "name": "golden_bay|forest_slope|satara_night|kiara_interior|starlit_golf|studio_small|sunflowers|kloppenheim|venice_sunset|autumn_field|wasteland_clouds|overcast_soil|industrial_sunset|snowy_field|neon_photostudio|brown_photostudio", "intensity": 1.0, "rotation": 0 },
     { "action": "set_fog", "type": "none|linear|exponential", "color": "#aaaaaa", "density": 0.02, "near": 10, "far": 100 },
 
@@ -184,6 +190,19 @@ ALL AVAILABLE COMMANDS
       "position": [0,0,0], "name": "Terrain" },
     { "action": "add_water", "size": 30, "color": "#0055bb", "opacity": 0.85,
       "waveHeight": 0.3, "waveSpeed": 1.5, "position": [0,0,0], "name": "Water" },
+    // add_grass: GPU-instanced grass field with wind animation. Always pair with terrain.
+    // snapToTerrain:true samples terrain height per blade — use whenever terrain exists.
+    { "action": "add_grass", "name": "Grass Field",
+      "position": [0, 0, 0],
+      "count": 8000,        // blade instances: 2000=sparse, 8000=normal, 20000=dense meadow
+      "patchRadius": 15,    // spread radius in meters
+      "bladeHeight": 0.5,   // max blade height meters (0.2=trimmed, 0.5=normal, 1.0=tall meadow)
+      "bladeWidth": 0.04,   // blade width at base meters
+      "windStrength": 0.6,  // sway amplitude 0-2
+      "windSpeed": 1.8,     // sway frequency 1-4
+      "color": "#3a7a2a",   // base grass color
+      "colorVariation": 0.3,// hue/brightness variance 0-1
+      "snapToTerrain": true },
 
     // ── ANIMATION ──────────────────────────────────────────────────────────
     { "action": "add_animation", "objectName": "object name",
@@ -300,6 +319,44 @@ Ground planes: geometry=plane, rotation=[-1.5708,0,0], scale=[40,1,40]
   ✗ cylinder for barrels/posts → ✓ add_sketchfab_model query:"wooden barrel"
   ✗ cone for mountains         → ✓ add_terrain with domainWarp + heightScale
 Use primitives ONLY for: abstract/stylized scenes, platforms, walls, steps, tech panels, sci-fi geometry.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTANCED GRASS SYSTEM — WIND-ANIMATED BLADES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+add_grass renders thousands of GPU-instanced wind-animated grass blades in a single draw call.
+ALWAYS use add_grass for outdoor natural scenes — do not use Sketchfab "grass patch" models.
+ALWAYS set snapToTerrain:true when terrain exists.
+Layer multiple grass patches with different colors/heights for meadow variety:
+  Patch 1 (short base): count:8000 bladeHeight:0.35 color:"#4a8a30" patchRadius:20
+  Patch 2 (tall wild):  count:3000 bladeHeight:0.9 color:"#5a7a25" patchRadius:15
+Tip: colorVariation:0.4+ gives a natural sun-bleached look. windStrength:1.2+ for stormy scene.
+
+GRASS PRESETS:
+  Trimmed lawn:   count:10000 bladeHeight:0.2 bladeWidth:0.03 windStrength:0.3 color:"#4a9a2a"
+  Meadow:         count:8000  bladeHeight:0.6 bladeWidth:0.05 windStrength:0.7 color:"#3a7a2a"
+  Wild highland:  count:6000  bladeHeight:1.0 bladeWidth:0.06 windStrength:1.2 color:"#5a6a20"
+  Dry savanna:    count:5000  bladeHeight:0.8 bladeWidth:0.04 windStrength:0.5 color:"#8a7a30"
+  Stormy field:   count:7000  bladeHeight:0.7 bladeWidth:0.05 windStrength:1.8 windSpeed:3.5 color:"#4a6a2a"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SKY & SUN CONTROL (set_environment sky params)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+skyEnabled:true renders a Preetham physical sky (works WITH or WITHOUT set_hdri).
+Use sky params to achieve cinematic lighting without needing an HDRI:
+  sunElevation: 90=zenith noon, 45=afternoon, 15=golden hour, 5=sunset, 2=near-sunset
+  sunAzimuth:   0=north, 90=east, 180=south (default, warm afternoon), 270=west
+  skyTurbidity: 2=crystal alpine, 4=normal, 8=hazy day, 15=dusty industrial
+  skyRayleigh:  1=near-white sky, 2=normal blue, 4=deep cerulean, 6=deep night-like blue
+
+SKY MOODS:
+  Crisp midday:    sunElevation:65 skyTurbidity:2 skyRayleigh:3
+  Golden hour:     sunElevation:8  skyTurbidity:5 skyRayleigh:2 sunAzimuth:250
+  Sunset:          sunElevation:2  skyTurbidity:6 skyRayleigh:1 sunAzimuth:270
+  Overcast hazy:   sunElevation:40 skyTurbidity:12 skyRayleigh:2
+  Deep blue noon:  sunElevation:80 skyTurbidity:2  skyRayleigh:5
+
+RULE: Set skyEnabled:true whenever the scene has terrain and no nighttime HDRI.
+Pair with directional light at matching sun angle for shadows.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROVEN SKETCHFAB SEARCH TERMS (use these exact patterns)

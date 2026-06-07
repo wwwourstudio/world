@@ -105,6 +105,27 @@ export interface SetEnvironmentCmd {
   backgroundColor?: string
   directionalColor?: string
   directionalIntensity?: number
+  // Sky / atmospheric scattering
+  skyEnabled?: boolean
+  sunElevation?: number   // degrees above horizon (0–90). 30 = midday, 5 = golden hour, 0 = sunset
+  sunAzimuth?: number     // degrees, compass heading 0–360
+  skyTurbidity?: number   // haze 1–20; 3 = clear, 10 = hazy, 20 = overcast
+  skyRayleigh?: number    // blue sky scattering 1–6; default 3
+}
+
+export interface AddGrassCmd {
+  action: 'add_grass'
+  name?: string
+  position?: [number, number, number]
+  count?: number          // blade count 2000–30000 (default 8000)
+  patchRadius?: number    // spread radius meters (default 15)
+  bladeHeight?: number    // meters (default 0.5)
+  bladeWidth?: number     // meters (default 0.04)
+  windStrength?: number   // 0–2 (default 0.6)
+  windSpeed?: number      // 1–4 (default 1.8)
+  color?: string          // hex (default '#3a7a2a')
+  colorVariation?: number // 0–1 (default 0.3)
+  snapToTerrain?: boolean // default true
 }
 
 export interface DeleteObjectCmd {
@@ -370,7 +391,7 @@ export type SceneCommand =
   | AddKeyframeAnimationCmd | AddSceneCmd | SetCameraClipCmd | UpdateObjectCmd
   | AddHtmlCmd | AddTerrainCmd | AddWaterCmd | SetVisibilityCmd
   | AddCameraKeypointCmd | ClearCameraPathCmd | AddSketchfabModelCmd
-  | SetTextureCmd | UpdateTerrainCmd | PopulateSceneCmd
+  | SetTextureCmd | UpdateTerrainCmd | PopulateSceneCmd | AddGrassCmd
 
 export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
   return cmd.action === 'add_sketchfab_model'
@@ -768,6 +789,34 @@ export function executeCommand(cmd: SceneCommand): void {
         ...(c.backgroundColor ? { backgroundColor: c.backgroundColor } : {}),
         ...(c.directionalColor ? { directionalColor: c.directionalColor } : {}),
         ...(c.directionalIntensity !== undefined ? { directionalIntensity: c.directionalIntensity } : {}),
+        ...(c.skyEnabled !== undefined ? { skyEnabled: c.skyEnabled } : {}),
+        ...(c.sunElevation !== undefined ? { sunElevation: c.sunElevation } : {}),
+        ...(c.sunAzimuth !== undefined ? { sunAzimuth: c.sunAzimuth } : {}),
+        ...(c.skyTurbidity !== undefined ? { skyTurbidity: c.skyTurbidity } : {}),
+        ...(c.skyRayleigh !== undefined ? { skyRayleigh: c.skyRayleigh } : {}),
+      })
+      break
+    }
+
+    case 'add_grass': {
+      const c = cmd as AddGrassCmd
+      store.addObject({
+        name: c.name ?? 'Grass',
+        type: 'grass',
+        geometry: { type: 'plane' },
+        material: { type: 'standard', color: c.color ?? '#3a7a2a', roughness: 0.8, metalness: 0, emissive: '#000000', emissiveIntensity: 0, opacity: 1, transparent: false, wireframe: false, envMapIntensity: 1, transmission: 0, ior: 1.5, thickness: 0.5, flatShading: false, side: 'front' },
+        transform: { position: c.position ?? [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        grass: {
+          count: c.count ?? 8000,
+          patchRadius: c.patchRadius ?? 15,
+          bladeHeight: c.bladeHeight ?? 0.5,
+          bladeWidth: c.bladeWidth ?? 0.04,
+          windStrength: c.windStrength ?? 0.6,
+          windSpeed: c.windSpeed ?? 1.8,
+          color: c.color ?? '#3a7a2a',
+          colorVariation: c.colorVariation ?? 0.3,
+          snapToTerrain: c.snapToTerrain ?? true,
+        },
       })
       break
     }

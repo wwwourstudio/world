@@ -33,13 +33,13 @@ import * as THREE from 'three'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { Physics, RigidBody } from '@react-three/rapier'
 import { useScene } from '@/lib/scene/SceneStore'
-import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig, ScrollAnimConfig } from '@/lib/scene/SceneStore'
+import type { SceneObject, GeometryConfig, MaterialConfig, LightConfig, AnimationConfig, ParticleConfig, Keyframe, BehaviorConfig, ScrollAnimConfig, GrassConfig } from '@/lib/scene/SceneStore'
 import { useShallow } from 'zustand/react/shallow'
 import { captureCanvas } from '@/lib/canvasCapture'
 import { captureCamera } from '@/lib/captureCamera'
 import { jumpToCamera, cameraJumpFn } from '@/lib/cameraJump'
 import { cameraFrameFn } from '@/lib/cameraFrame'
-import { fbmNoise, domainWarpedFbm, worleyNoise2D, thermalErosion } from '@/lib/noise'
+import { fbmNoise, domainWarpedFbm, worleyNoise2D, thermalErosion, sampleTerrainHeight } from '@/lib/noise'
 import { BIOME_COLORS } from '@/lib/scene/SceneStore'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 
@@ -2119,6 +2119,7 @@ function SceneObjectNode({ id }: { id: string }) {
   if (obj.type === 'light' && obj.light) return <LightObject obj={obj} />
   if (obj.type === 'terrain' && obj.terrain) return <TerrainObject obj={obj} />
   if (obj.type === 'water' && obj.water) return <WaterObject obj={obj} />
+  if (obj.type === 'grass' && obj.grass) return <GrassObject obj={obj} />
   if (obj.type === 'particle') return <ParticleObject obj={obj} />
   if (obj.geometry?.type === 'text') return <TextObject obj={obj} />
   if (obj.type === 'group') {
@@ -2236,6 +2237,159 @@ function ShadowMapSetup() {
     }
   }, [gl])
   return null
+}
+
+// ─── Grass System ────────────────────────────────────────────────────────────
+
+const GRASS_VERT = /* glsl */`
+  attribute float heightFactor;
+  attribute vec3 instanceColor;
+  attribute float instancePhase;
+
+  uniform float time;
+  uniform float windStrength;
+  uniform float windSpeed;
+
+  varying vec3 vColor;
+  varying float vHeightFactor;
+
+  void main() {
+    vColor = instanceColor;
+    vHeightFactor = heightFactor;
+
+    vec4 worldPos = instanceMatrix * vec4(position, 1.0);
+
+    // Wind sway: anchored at base (heightFactor=0), max sway at tip (heightFactor=1)
+    float hf2 = heightFactor * heightFactor;
+    float phase = time * windSpeed + instancePhase + worldPos.x * 0.25 + worldPos.z * 0.25;
+    worldPos.x += sin(phase) * windStrength * hf2 * 0.8;
+    worldPos.z += cos(phase * 0.71) * windStrength * hf2 * 0.35;
+
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`
+
+const GRASS_FRAG = /* glsl */`
+  varying vec3 vColor;
+  varying float vHeightFactor;
+
+  void main() {
+    // Darken base, brighten tips; simple ground AO
+    float ao = 0.25 + vHeightFactor * 0.75;
+    vec3 col = vColor * ao;
+    // Subtle tip brightening
+    col = mix(col, col * 1.3, smoothstep(0.7, 1.0, vHeightFactor));
+    gl_FragColor = vec4(col, 1.0);
+  }
+`
+
+function buildBladeMaterial(cfg: GrassConfig): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      windStrength: { value: cfg.windStrength },
+      windSpeed: { value: cfg.windSpeed },
+    },
+    vertexShader: GRASS_VERT,
+    fragmentShader: GRASS_FRAG,
+    side: THREE.DoubleSide,
+  })
+}
+
+function buildBladeGeometry(cfg: GrassConfig): THREE.BufferGeometry {
+  // Tapered quad blade: 4 verts, 2 tris, wider at base than tip
+  const w = cfg.bladeWidth
+  const h = cfg.bladeHeight
+  const positions = new Float32Array([
+    -w * 0.5,  0,   0,  // bottom-left
+     w * 0.5,  0,   0,  // bottom-right
+    -w * 0.15, h,   0,  // top-left (narrower)
+     w * 0.15, h,   0,  // top-right
+  ])
+  const heightFactor = new Float32Array([0, 0, 1, 1])
+  const uvs = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1])
+  const indices = new Uint16Array([0, 1, 2, 1, 3, 2])
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('heightFactor', new THREE.BufferAttribute(heightFactor, 1))
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geo.setIndex(new THREE.BufferAttribute(indices, 1))
+  return geo
+}
+
+function GrassObject({ obj }: { obj: SceneObject }) {
+  const cfg = obj.grass!
+  const meshRef = useRef<THREE.InstancedMesh>(null)
+  const matRef = useRef<THREE.ShaderMaterial | null>(null)
+
+  const objects = useScene((s) => s.objects)
+
+  // Build static geometry and material once
+  const { geo, mat } = useMemo(() => {
+    const g = buildBladeGeometry(cfg)
+    const m = buildBladeMaterial(cfg)
+    matRef.current = m
+    return { geo: g, mat: m }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.bladeHeight, cfg.bladeWidth, cfg.windStrength, cfg.windSpeed])
+
+  // Place instances whenever config or terrain changes
+  useEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+
+    const count = cfg.count
+    const phases = new Float32Array(count)
+    const colors = new Float32Array(count * 3)
+    const base = new THREE.Color(cfg.color)
+
+    const terrainObj = Object.values(objects).find((o) => o.type === 'terrain' && o.terrain)
+    const terrainCfg = terrainObj?.terrain && cfg.snapToTerrain ? {
+      seed: terrainObj.terrain.seed,
+      heightScale: terrainObj.terrain.heightScale,
+      noiseScale: terrainObj.terrain.noiseScale,
+      layers: terrainObj.terrain.layers,
+      domainWarp: terrainObj.terrain.domainWarp,
+      position: terrainObj.transform.position,
+    } : undefined
+
+    const [ox, oy, oz] = obj.transform.position
+    const dummy = new THREE.Object3D()
+
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const r = Math.sqrt(Math.random()) * cfg.patchRadius
+      const x = ox + Math.cos(angle) * r
+      const z = oz + Math.sin(angle) * r
+      const y = terrainCfg ? sampleTerrainHeight(x, z, terrainCfg) : oy
+
+      dummy.position.set(x, y, z)
+      dummy.rotation.y = Math.random() * Math.PI * 2
+      dummy.scale.setScalar(0.7 + Math.random() * 0.6)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+
+      phases[i] = Math.random() * Math.PI * 2
+      const v = 1 - Math.random() * cfg.colorVariation
+      colors[i * 3]     = base.r * v
+      colors[i * 3 + 1] = base.g * v
+      colors[i * 3 + 2] = base.b * v
+    }
+
+    mesh.instanceMatrix.needsUpdate = true
+    geo.setAttribute('instancePhase', new THREE.InstancedBufferAttribute(phases, 1))
+    geo.setAttribute('instanceColor', new THREE.InstancedBufferAttribute(colors, 3))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg, obj.transform.position, objects])
+
+  useFrame(({ clock }) => {
+    if (matRef.current) matRef.current.uniforms.time.value = clock.getElapsedTime()
+  })
+
+  return (
+    <instancedMesh ref={meshRef} args={[geo, mat, cfg.count]} castShadow receiveShadow />
+  )
 }
 
 // ─── Sky System ──────────────────────────────────────────────────────────────
