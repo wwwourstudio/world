@@ -23,7 +23,8 @@ export async function GET(
   }
 
   const data = await res.json()
-  const url: string | null = data.glb?.url ?? data.gltf?.url ?? null
+  const rawUrl: string | null = data.glb?.url ?? data.gltf?.url ?? null
+  const url = rawUrl ? `/api/sketchfab/proxy?url=${encodeURIComponent(rawUrl)}` : null
 
   return Response.json({ url })
 }

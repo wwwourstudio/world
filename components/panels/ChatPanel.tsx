@@ -8,15 +8,18 @@ import {
 } from 'lucide-react'
 import { useScene } from '@/lib/scene/SceneStore'
 import type { BehaviorConfig } from '@/lib/scene/SceneStore'
-import { parseCommands, executeCommands, isSketchfabCmd, isTextureCmd, computeLayoutPositions } from '@/lib/ai/CommandParser'
-import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd, SetTextureCmd } from '@/lib/ai/CommandParser'
+import { parseCommands, executeCommands, isSketchfabCmd, isTextureCmd, isPopulateSceneCmd, computeLayoutPositions } from '@/lib/ai/CommandParser'
+import type { BehaviorAttachment, GallerySpec, AddSketchfabModelCmd, SetTextureCmd, PopulateSceneCmd } from '@/lib/ai/CommandParser'
 import { ChatAssetCarousel } from '@/components/panels/ChatAssetCarousel'
 import { buildSystemPrompt, buildSceneContext, enhancePrompt } from '@/lib/ai/PromptEnhancer'
 import { cameraFrameFn } from '@/lib/cameraFrame'
+import { inferTargetSize } from '@/lib/sketchfab/inferSize'
+import { sampleTerrainHeight } from '@/lib/noise'
+import type { TerrainSampleConfig } from '@/lib/noise'
 
 interface UserMessage { role: 'user'; content: string }
 interface SketchfabPlacedModel { query: string; name: string; thumbnail: string | null }
-interface ResolvedSketchfabModel { query: string; uid: string; name: string; url: string; thumbnail: string | null }
+interface ResolvedSketchfabModel { query: string; uid: string; name: string; url: string; thumbnail: string | null; faceCount?: number; animationCount?: number }
 interface PendingSketchfab {
   cmds: AddSketchfabModelCmd[]
   resolved: ResolvedSketchfabModel[]
@@ -39,20 +42,6 @@ interface AssistantMessage {
 type Message = UserMessage | AssistantMessage
 type HistoryMessage = { role: 'user' | 'assistant'; content: string }
 
-// Infer a sensible real-world size (meters, largest dimension) from a search query
-// so Sketchfab models look proportional even when the AI omits targetSize.
-function defaultTargetSize(query: string): number | undefined {
-  const q = query.toLowerCase()
-  if (/\b(skyscraper|tower|high.?rise)\b/.test(q)) return 45
-  if (/\b(building|warehouse|factory|hangar|facade|house|cabin|barn|temple|castle)\b/.test(q)) return 22
-  if (/\b(crane|silo|windmill)\b/.test(q)) return 18
-  if (/\b(truck|bus|train|boat|ship)\b/.test(q)) return 9
-  if (/\b(tree|car|vehicle|tank)\b/.test(q)) return 5
-  if (/\b(lamp|post|pillar|column|statue|door|fence)\b/.test(q)) return 4
-  if (/\b(pipe|barrel|crate|rock|boulder|bush|cart|stall)\b/.test(q)) return 2.5
-  if (/\b(prop|debris|tool|box|plant|flower|lantern)\b/.test(q)) return 1
-  return undefined // renderer defaults to 2m
-}
 
 const SKETCHFAB_MAT = {
   type: 'standard' as const, color: '#ffffff', roughness: 0.5, metalness: 0,
@@ -67,6 +56,7 @@ function buildSketchfabObjects(
   cmds: AddSketchfabModelCmd[],
   resolved: ResolvedSketchfabModel[],
   skippedUids: string[] = [],
+  terrainCfg?: TerrainSampleConfig,
 ): Array<Parameters<ReturnType<typeof useScene.getState>['addObject']>[0]> {
   const configs: Array<Parameters<ReturnType<typeof useScene.getState>['addObject']>[0]> = []
   for (const cmd of cmds) {
@@ -91,7 +81,9 @@ function buildSketchfabObjects(
       continue
     }
 
-    const targetSize = cmd.targetSize ?? defaultTargetSize(cmd.query)
+    const targetSize = cmd.targetSize ?? inferTargetSize(cmd.query)
+    const shouldSnap = cmd.snapToTerrain && terrainCfg != null
+
     for (let i = 0; i < totalCount; i++) {
       const model = models[i % models.length]
       // Scatter layout: randomize Y rotation per instance so props don't all face the same way
@@ -99,13 +91,19 @@ function buildSketchfabObjects(
       const rotation: [number, number, number] = cmd.layout === 'scatter'
         ? [baseRotation[0], Math.random() * Math.PI * 2, baseRotation[2]]
         : baseRotation
+
+      const [px, , pz] = positions[i]
+      const py = shouldSnap && terrainCfg
+        ? sampleTerrainHeight(px, pz, terrainCfg) + (cmd.yOffset ?? 0)
+        : positions[i][1]
+
       configs.push({
         name: `${cmd.name ?? model.name}${totalCount > 1 ? ` ${i + 1}` : ''}`,
         type: 'mesh',
         geometry: { type: 'gltf', url: model.url, targetSize },
         material: SKETCHFAB_MAT,
         transform: {
-          position: positions[i],
+          position: [px, py, pz],
           rotation,
           scale: cmd.scale ?? [1, 1, 1],
         },
@@ -115,6 +113,20 @@ function buildSketchfabObjects(
     }
   }
   return configs
+}
+
+function getTerrainConfig(): TerrainSampleConfig | undefined {
+  const store = useScene.getState()
+  const terrainObj = Object.values(store.objects).find((o) => o.type === 'terrain' && o.terrain)
+  if (!terrainObj?.terrain) return undefined
+  return {
+    seed: terrainObj.terrain.seed,
+    heightScale: terrainObj.terrain.heightScale,
+    noiseScale: terrainObj.terrain.noiseScale,
+    layers: terrainObj.terrain.layers,
+    domainWarp: terrainObj.terrain.domainWarp,
+    position: terrainObj.transform.position,
+  }
 }
 
 // ─── Suggestion sets ──────────────────────────────────────────────────────────
@@ -295,7 +307,7 @@ export function ChatPanel() {
     const msg = messagesRef.current[msgIdx]
     if (!msg || msg.role !== 'assistant' || !msg.pendingSketchfab) return
     const { cmds, resolved, fallbacks, skippedUids = [] } = msg.pendingSketchfab
-    const configs = buildSketchfabObjects(cmds, resolved, skippedUids)
+    const configs = buildSketchfabObjects(cmds, resolved, skippedUids, getTerrainConfig())
     if (configs.length > 0) {
       useScene.getState().addObjectsBatch(configs)
       const positions = configs.map((c) => c.transform?.position ?? ([0, 0, 0] as [number, number, number]))
@@ -451,9 +463,30 @@ export function ChatPanel() {
 
       const { commands, actions, text, suggestions, gallery } = parseCommands(fullText)
       const cleanedText = text || fullText.replace(/```(?:json)?\s*[\s\S]*?```/g, '').trim()
-      const sketchfabCmds = commands.filter(isSketchfabCmd) as AddSketchfabModelCmd[]
+
+      // Expand populate_scene_with_assets into individual add_sketchfab_model commands
+      const populateCmds = commands.filter(isPopulateSceneCmd) as PopulateSceneCmd[]
+      const expandedFromPopulate: AddSketchfabModelCmd[] = populateCmds.flatMap((p) =>
+        p.models.map((m) => ({
+          action: 'add_sketchfab_model' as const,
+          query: m.query,
+          count: m.count,
+          layout: m.layout,
+          spacing: m.spacing,
+          targetSize: m.targetSize,
+          filters: m.filters,
+          position: m.position,
+          yOffset: m.yOffset,
+          snapToTerrain: p.snapToTerrain,
+        }))
+      )
+
+      const sketchfabCmds = [
+        ...(commands.filter(isSketchfabCmd) as AddSketchfabModelCmd[]),
+        ...expandedFromPopulate,
+      ]
       const textureCmds = commands.filter(isTextureCmd) as SetTextureCmd[]
-      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd))
+      const syncCmds = commands.filter((cmd) => !isSketchfabCmd(cmd) && !isTextureCmd(cmd) && !isPopulateSceneCmd(cmd))
       const hasSketchfab = sketchfabCmds.length > 0
 
       if (!executed && (syncCmds.length > 0 || actions.length > 0)) {
@@ -483,6 +516,7 @@ export function ChatPanel() {
             queries: sketchfabCmds.map((cmd) => ({
               query: cmd.query,
               count: cmd.variety ?? 1,
+              filters: cmd.filters,
             })),
           }
           const resolveRes = await fetch('/api/sketchfab/resolve', {
@@ -502,13 +536,13 @@ export function ChatPanel() {
           }
 
           const resolveData = await resolveRes.json() as {
-            results: Array<{ query: string; uid: string; name: string; url: string; thumbnail: string | null }>
+            results: Array<{ query: string; uid: string; name: string; url: string; thumbnail: string | null; faceCount?: number; animationCount?: number }>
             fallbacks: string[]
           }
 
           if (autoPlaceSketchfab) {
             // Escape hatch: place immediately without preview
-            const configs = buildSketchfabObjects(sketchfabCmds, resolveData.results)
+            const configs = buildSketchfabObjects(sketchfabCmds, resolveData.results, [], getTerrainConfig())
             if (configs.length > 0) {
               useScene.getState().addObjectsBatch(configs)
               const positions = configs.map((c) => c.transform?.position ?? ([0, 0, 0] as [number, number, number]))
@@ -1047,6 +1081,11 @@ function SketchfabPreview({
                       {r.thumbnail
                         ? <img src={r.thumbnail} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         : <div className="w-full h-full flex items-center justify-center text-base">📦</div>}
+                      {/* Animated badge */}
+                      {(r.animationCount ?? 0) > 0 && (
+                        <div className="absolute top-0.5 left-0.5 px-0.5 rounded text-[7px] font-bold"
+                          style={{ background: 'rgba(34,197,94,0.85)', color: '#fff' }}>ANIM</div>
+                      )}
                       {/* Toggle overlay */}
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
                         style={{ background: skipped ? '#00000066' : '#cc333355' }}>
@@ -1058,6 +1097,11 @@ function SketchfabPreview({
                     <span className="text-[9px] leading-tight truncate" style={{ color: skipped ? '#3a3e50' : '#7A7E92' }} title={r.name}>
                       {r.name}
                     </span>
+                    {r.faceCount != null && (
+                      <span className="text-[8px] leading-tight" style={{ color: '#3a3e50' }}>
+                        {r.faceCount >= 1000 ? `${(r.faceCount / 1000).toFixed(0)}k` : r.faceCount}f
+                      </span>
+                    )}
                   </div>
                 )
               })}

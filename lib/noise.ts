@@ -90,6 +90,27 @@ export function worleyNoise2D(x: number, z: number, seed: number): number {
   return Math.min(1, minDist)
 }
 
+// Sample terrain height at world XZ coordinates, matching the renderer's height
+// formula so objects can be auto-snapped to the terrain surface.
+export interface TerrainSampleConfig {
+  seed: number
+  heightScale: number
+  noiseScale: number
+  layers: number
+  domainWarp?: number
+  position?: [number, number, number]
+}
+
+export function sampleTerrainHeight(x: number, z: number, cfg: TerrainSampleConfig): number {
+  const { seed, heightScale, noiseScale, layers, domainWarp = 0, position = [0, 0, 0] } = cfg
+  const lx = x - position[0]
+  const lz = z - position[2]
+  const raw = domainWarp > 0
+    ? domainWarpedFbm(lx, lz, seed, layers, noiseScale, domainWarp)
+    : fbmNoise(lx, lz, seed, layers, noiseScale)
+  return position[1] + raw * heightScale
+}
+
 // Thermal erosion — iteratively redistributes material from steep slopes to
 // flat neighbors, simulating rock talus and sediment deposition.
 // Operates on a flat heights array (row-major, res×res). Mutates in place.

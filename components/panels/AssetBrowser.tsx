@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Search, RefreshCw, Download, Copy, Clipboard } from 'lucide-react'
+import { Search, RefreshCw, Download, Copy, Clipboard, ExternalLink } from 'lucide-react'
+import { inferTargetSize } from '@/lib/sketchfab/inferSize'
 import Image from 'next/image'
 import { useScene, MATERIAL_PRESETS } from '@/lib/scene/SceneStore'
 import type { MaterialMaps, MaterialConfig, SceneObject } from '@/lib/scene/SceneStore'
@@ -397,6 +398,10 @@ interface SketchfabModel {
   thumbnail: string | null
   downloadable: boolean
   viewerUrl: string
+  faceCount?: number | null
+  animationCount?: number | null
+  isAnimated?: boolean
+  author?: string | null
 }
 
 function ModelsTab() {
@@ -411,6 +416,9 @@ function ModelsTab() {
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [offset, setOffset] = useState(0)
+  const [filters, setFilters] = useState({
+    animated: false, pbr: false, rigged: false, cc0: false, staffpicked: false,
+  })
 
   function buildModel(id: string) {
     const model = PROCEDURAL_MODELS.find((m) => m.id === id)
@@ -419,12 +427,18 @@ function ModelsTab() {
     showNotification(`Added ${model.label}`)
   }
 
-  async function search(q: string, off: number, append = false) {
+  async function search(q: string, off: number, append = false, activeFilters = filters) {
     if (!q.trim()) { setResults([]); return }
     setLoading(true)
     setSfError(null)
     try {
-      const res = await fetch(`/api/sketchfab/search?q=${encodeURIComponent(q)}&count=20&sort_by=relevance&offset=${off}`)
+      const params = new URLSearchParams({ q, count: '20', sort_by: 'relevance', offset: String(off) })
+      if (activeFilters.animated)    params.set('animated', 'true')
+      if (activeFilters.pbr)         params.set('pbr', 'true')
+      if (activeFilters.rigged)      params.set('rigged', 'true')
+      if (activeFilters.cc0)         params.set('license', 'cc0')
+      if (activeFilters.staffpicked) params.set('staffpicked', 'true')
+      const res = await fetch(`/api/sketchfab/search?${params}`)
       const data = await res.json()
       if (data.error) { setSfError(data.error); setResults([]) }
       else {
@@ -443,6 +457,12 @@ function ModelsTab() {
     searchRef.current = setTimeout(() => search(val, 0), 600)
   }
 
+  function toggleFilter(key: keyof typeof filters) {
+    const next = { ...filters, [key]: !filters[key] }
+    setFilters(next)
+    if (query.trim()) { setOffset(0); search(query, 0, false, next) }
+  }
+
   async function importModel(model: SketchfabModel) {
     if (!model.downloadable) { showNotification('Model not downloadable (license restricted)', 'error'); return }
     setImporting(model.uid)
@@ -452,12 +472,21 @@ function ModelsTab() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
       if (!data.url) throw new Error('No download URL — model may require Sketchfab Pro')
-      addObject({ name: model.name, type: 'mesh', geometry: { type: 'gltf', url: data.url }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
+      const targetSize = inferTargetSize(model.name)
+      addObject({ name: model.name, type: 'mesh', geometry: { type: 'gltf', url: data.url, targetSize }, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } })
       showNotification(`Imported: ${model.name}`)
     } catch (e) {
       showNotification(`Import failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally { setImporting(null) }
   }
+
+  const FILTER_CHIPS = [
+    { key: 'animated' as const, label: 'Animated' },
+    { key: 'pbr' as const,      label: 'PBR' },
+    { key: 'rigged' as const,   label: 'Rigged' },
+    { key: 'cc0' as const,      label: 'CC0' },
+    { key: 'staffpicked' as const, label: 'Staff Pick' },
+  ]
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -484,10 +513,26 @@ function ModelsTab() {
         </div>
       </div>
 
-      {/* Sketchfab search */}
+      {/* Sketchfab search + filter chips */}
       <div className="px-3 pt-2 pb-1.5 shrink-0" style={{ borderBottom: '1px solid #1E2028' }}>
-        <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: '#3a3e50' }}>Sketchfab</p>
+        <p className="text-[9px] uppercase tracking-widest font-semibold mb-2" style={{ color: '#3a3e50' }}>Sketchfab Library</p>
         <SearchBar value={query} onChange={handleSearch} placeholder="Search 3D models…" />
+        <div className="flex gap-1.5 flex-wrap mt-2">
+          {FILTER_CHIPS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => toggleFilter(key)}
+              className="px-2 py-0.5 rounded-full text-[10px] font-medium border transition-all"
+              style={{
+                background: filters[key] ? '#1a2050' : '#0B0C0F',
+                borderColor: filters[key] ? '#5B6CFF' : '#1E2028',
+                color: filters[key] ? '#a5b4fc' : '#7A7E92',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
@@ -505,21 +550,46 @@ function ModelsTab() {
                       className="object-cover opacity-70 group-hover:opacity-100 transition-opacity" unoptimized />
                   )}
                 </div>
+
+                {/* Animated badge */}
+                {model.isAnimated && (
+                  <div className="absolute top-1 left-1">
+                    <div className="px-1 py-0.5 rounded text-[8px] font-bold"
+                      style={{ background: 'rgba(34,197,94,0.85)', color: '#fff' }}>ANIM</div>
+                  </div>
+                )}
+
                 {importing === model.uid ? (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/60">
                     <RefreshCw size={14} className="animate-spin text-white" />
                   </div>
                 ) : model.downloadable ? (
-                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1">
                     <div className="p-1 rounded bg-black/60"><Download size={10} className="text-white" /></div>
+                    <a
+                      href={model.viewerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-1 rounded bg-black/60 flex items-center justify-center"
+                      title="View on Sketchfab"
+                    >
+                      <ExternalLink size={9} className="text-white" />
+                    </a>
                   </div>
                 ) : (
                   <div className="absolute top-1 right-1">
                     <div className="px-1 py-0.5 rounded text-[9px] font-mono" style={{ background: 'rgba(220,38,38,0.8)', color: '#fca5a5' }}>locked</div>
                   </div>
                 )}
+
                 <div className="absolute inset-x-0 bottom-0 px-2 py-1 bg-gradient-to-t from-black/90">
                   <span className="text-[10px] text-white font-medium truncate block">{model.name}</span>
+                  {model.faceCount != null && (
+                    <span className="text-[8px]" style={{ color: '#9ca3af' }}>
+                      {model.faceCount >= 1000 ? `${(model.faceCount / 1000).toFixed(0)}k` : model.faceCount} faces
+                    </span>
+                  )}
                 </div>
               </button>
             ))}

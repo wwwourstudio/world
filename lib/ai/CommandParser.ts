@@ -297,6 +297,14 @@ export interface ClearCameraPathCmd {
   action: 'clear_camera_path'
 }
 
+export interface SketchfabFilters {
+  animated?: boolean    // only animated models
+  rigged?: boolean      // only rigged/skinned models
+  pbr?: boolean         // only PBR-material models
+  staffpicked?: boolean // only Sketchfab staff-curated models
+  cc0?: boolean         // Creative Commons Zero license
+}
+
 export interface AddSketchfabModelCmd {
   action: 'add_sketchfab_model'
   query: string
@@ -310,6 +318,25 @@ export interface AddSketchfabModelCmd {
   rotation?: [number, number, number]
   scale?: [number, number, number]
   targetSize?: number     // real-world largest dimension in meters (building ~25, prop ~1)
+  filters?: SketchfabFilters
+  snapToTerrain?: boolean // auto-snap model base to terrain height at placement XZ
+}
+
+export interface PopulateSceneCmd {
+  action: 'populate_scene_with_assets'
+  theme?: string
+  density?: 'sparse' | 'normal' | 'dense'
+  snapToTerrain?: boolean
+  models: Array<{
+    query: string
+    count: number
+    layout?: 'grid' | 'line' | 'circle' | 'scatter'
+    spacing?: number
+    targetSize?: number
+    filters?: SketchfabFilters
+    position?: [number, number, number]
+    yOffset?: number
+  }>
 }
 
 export interface SetTextureCmd {
@@ -343,7 +370,7 @@ export type SceneCommand =
   | AddKeyframeAnimationCmd | AddSceneCmd | SetCameraClipCmd | UpdateObjectCmd
   | AddHtmlCmd | AddTerrainCmd | AddWaterCmd | SetVisibilityCmd
   | AddCameraKeypointCmd | ClearCameraPathCmd | AddSketchfabModelCmd
-  | SetTextureCmd | UpdateTerrainCmd
+  | SetTextureCmd | UpdateTerrainCmd | PopulateSceneCmd
 
 export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
   return cmd.action === 'add_sketchfab_model'
@@ -351,6 +378,10 @@ export function isSketchfabCmd(cmd: SceneCommand): cmd is AddSketchfabModelCmd {
 
 export function isTextureCmd(cmd: SceneCommand): cmd is SetTextureCmd {
   return cmd.action === 'set_texture'
+}
+
+export function isPopulateSceneCmd(cmd: SceneCommand): cmd is PopulateSceneCmd {
+  return cmd.action === 'populate_scene_with_assets'
 }
 
 export function computeLayoutPositions(

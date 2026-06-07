@@ -234,11 +234,13 @@ ALL AVAILABLE COMMANDS
     { "action": "set_camera", "position": [10,8,10], "target": [0,0,0], "fov": 60 },
 
     // ── REAL 3D MODELS (Sketchfab) ────────────────────────────────────────
-    // Searches Sketchfab for real GLB/GLTF models and places them in arrays.
+    // Searches Sketchfab for real GLB/GLTF models and places them in scene.
     // targetSize = real-world largest dimension in METERS — SET IT ON EVERY MODEL for correct scale.
     // Models ground-snap: their base sits at position Y (use yOffset to lift/sink).
     // layout: "grid" = square grid, "line" = row, "circle" = ring, "scatter" = random spread
     // variety = fetch N distinct models and cycle through them (good for count>4)
+    // filters: animated/rigged/pbr/staffpicked/cc0 — narrow Sketchfab results (all optional)
+    // snapToTerrain: true = auto-snap each model's Y to terrain surface height at its XZ position
     { "action": "add_sketchfab_model",
       "query": "2-4 word search term",
       "name": "display name prefix",
@@ -250,7 +252,20 @@ ALL AVAILABLE COMMANDS
       "position": [0, 0, 0],
       "yOffset": 0,
       "rotation": [0, 0, 0],
-      "scale": [1, 1, 1] },
+      "scale": [1, 1, 1],
+      "snapToTerrain": false,
+      "filters": { "animated": false, "rigged": false, "pbr": false, "staffpicked": false, "cc0": false } },
+
+    // populate_scene_with_assets: ONE command to scatter many different model types.
+    // Expand the models array with as many query types as the scene needs.
+    { "action": "populate_scene_with_assets",
+      "theme": "forest",
+      "snapToTerrain": true,
+      "models": [
+        { "query": "pine tree lowpoly", "count": 12, "layout": "scatter", "spacing": 8, "targetSize": 6 },
+        { "query": "forest rock boulder", "count": 8, "layout": "scatter", "spacing": 5, "targetSize": 1.5 },
+        { "query": "fern plant", "count": 10, "layout": "scatter", "spacing": 3, "targetSize": 0.8 }
+      ] },
 
     // ── POLY HAVEN PBR TEXTURES ───────────────────────────────────────────
     // Searches ~1000 Poly Haven textures and applies PBR maps (color+normal+roughness).
@@ -296,6 +311,47 @@ Props:     "wooden barrel" | "wooden crate" | "oil drum" | "lantern post"
 Vehicles:  "old pickup truck" | "wooden cart" | "dirt bike"
 Nature:    "fern plant" | "grass patch" | "flower bush" | "mushroom"
 Ruins:     "ruined stone wall" | "broken column" | "crumbled arch"
+Characters:"elf warrior" | "knight armor" | "fantasy creature" | "sci-fi soldier"
+Sci-fi:    "sci-fi crate" | "space station module" | "futuristic console"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SKETCHFAB MASTERY — FILTERS, SNAP & POPULATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILTERS — narrow search quality. Add "filters" to any add_sketchfab_model:
+  animated:true     → moving / looping animations (wildlife, NPCs, vehicles)
+  rigged:true       → skinned skeleton (characters ready to pose/animate)
+  pbr:true          → physically-based materials (photorealistic look)
+  staffpicked:true  → Sketchfab curated — very high quality (use for hero props)
+  cc0:true          → Creative Commons Zero, fully free with no attribution
+
+  When to use:
+  • Characters / NPCs:   rigged:true + animated:true
+  • Showcase hero asset: staffpicked:true + pbr:true
+  • Game-ready foliage:  pbr:true (e.g. "pine tree lowpoly" + pbr)
+  • Open project:        cc0:true on every model for license safety
+  • Fill / backdrop:     no filters needed — plenty of good unfiltered assets
+  Combine freely: { "animated": true, "rigged": true }
+
+TERRAIN SNAP — set snapToTerrain:true whenever placing assets on terrain:
+  • Trees, rocks, vegetation on hills → always snapToTerrain:true
+  • Buildings on uneven ground → snapToTerrain:true
+  • Floating objects, water props, interiors → omit or false
+  Example: { "action":"add_sketchfab_model","query":"pine tree lowpoly","count":20,
+    "layout":"scatter","spacing":7,"targetSize":6,"snapToTerrain":true }
+
+POPULATE SCENE — ONE command fills an entire scene theme:
+  • Use populate_scene_with_assets instead of many separate add_sketchfab_model
+  • List every asset type the scene needs in the "models" array
+  • Each model entry has its own query, count, layout, spacing, targetSize
+  • Top-level snapToTerrain applies to all entries
+  Good densities: count 6–15 for trees, 4–10 for rocks, 1–3 for hero buildings
+
+QUALITY PRESETS by scene type:
+  RPG outdoor:   populate_scene_with_assets, snapToTerrain:true, trees+rocks+ruins+vegetation
+  Photorealistic: pbr:true + staffpicked:true on hero models
+  Animated world: animated:true for wildlife ("deer","bird","wolf")
+  Medieval:      "medieval stone house" + "market stall" + "wooden cart" + "stone well"
+  Sci-fi:        "space station module"+"sci-fi crate"+"futuristic console", pbr:true
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MATERIAL PRESETS
