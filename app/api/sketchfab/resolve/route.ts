@@ -1,8 +1,18 @@
 import { fetchSketchfab } from '@/lib/sketchfab/fetchWithRetry'
 
+interface SketchfabFilters {
+  animated?: boolean
+  rigged?: boolean
+  pbr?: boolean
+  staffpicked?: boolean
+  cc0?: boolean
+  license?: string
+}
+
 interface ResolveQuery {
   query: string
   count: number
+  filters?: SketchfabFilters
 }
 
 interface SketchfabSearchModel {
@@ -10,6 +20,8 @@ interface SketchfabSearchModel {
   name: string
   thumbnails?: { images?: Array<{ url: string }> }
   isDownloadable: boolean
+  faceCount?: number
+  animationCount?: number
 }
 
 interface ResolvedModel {
@@ -18,9 +30,17 @@ interface ResolvedModel {
   name: string
   url: string
   thumbnail: string | null
+  faceCount?: number
+  animationCount?: number
 }
 
-type SearchModel = { uid: string; name: string; thumbnail: string | null }
+type SearchModel = {
+  uid: string
+  name: string
+  thumbnail: string | null
+  faceCount?: number
+  animationCount?: number
+}
 
 // ─── In-memory caches (best-effort; wiped on serverless cold start) ──────────
 // Search results are stable → cache long. Download URLs are signed and expire
@@ -33,6 +53,12 @@ const searchCache = new Map<string, { models: SearchModel[]; expires: number }>(
 const dlCache = new Map<string, { url: string; expires: number }>()
 
 const norm = (q: string) => q.trim().toLowerCase().replace(/\s+/g, ' ')
+
+function filterKey(filters: SketchfabFilters | undefined): string {
+  if (!filters) return ''
+  const { animated, rigged, pbr, staffpicked, cc0, license } = filters
+  return JSON.stringify({ animated, rigged, pbr, staffpicked, cc0, license })
+}
 
 function cacheBound<V>(map: Map<string, V>) {
   if (map.size > MAX_CACHE) map.clear()
@@ -60,9 +86,9 @@ export async function POST(request: Request) {
 
   // ── Phase 1: search (cache-first) ──────────────────────────────────────────
   const searchResults = await Promise.allSettled(
-    queries.map(async ({ query, count }) => {
+    queries.map(async ({ query, count, filters }) => {
       const wanted = Math.max(count, 1)
-      const key = `${norm(query)}::${wanted}`
+      const key = `${norm(query)}::${wanted}::${filterKey(filters)}`
       const cached = searchCache.get(key)
       if (cached && cached.expires > now) {
         return { query, models: cached.models }
@@ -76,13 +102,26 @@ export async function POST(request: Request) {
       url.searchParams.set('type', 'models')
       url.searchParams.set('sort_by', 'relevance')
 
+      if (filters?.animated)    url.searchParams.set('animated', 'true')
+      if (filters?.rigged)      url.searchParams.set('rigged', 'true')
+      if (filters?.pbr)         url.searchParams.set('pbr', 'true')
+      if (filters?.staffpicked) url.searchParams.set('staffpicked', 'true')
+      if (filters?.cc0 || filters?.license === 'cc0') url.searchParams.set('license', 'cc0')
+      else if (filters?.license) url.searchParams.set('license', filters.license)
+
       const res = await fetchSketchfab(url.toString(), apiKey)
       if (!res.ok) throw new Error(`Search failed: ${res.status}`)
       const data = await res.json()
       const models: SearchModel[] = (data.results as SketchfabSearchModel[])
         .filter((m) => m.isDownloadable)
         .slice(0, wanted)
-        .map((m) => ({ uid: m.uid, name: m.name, thumbnail: m.thumbnails?.images?.[0]?.url ?? null }))
+        .map((m) => ({
+          uid: m.uid,
+          name: m.name,
+          thumbnail: m.thumbnails?.images?.[0]?.url ?? null,
+          faceCount: m.faceCount,
+          animationCount: m.animationCount,
+        }))
 
       cacheBound(searchCache)
       searchCache.set(key, { models, expires: now + SEARCH_TTL })
@@ -92,7 +131,7 @@ export async function POST(request: Request) {
 
   // Collect download tasks, track fallbacks for failed/empty searches
   const fallbacks: string[] = []
-  const downloadTasks: Array<{ query: string; uid: string; name: string; thumbnail: string | null }> = []
+  const downloadTasks: Array<{ query: string; uid: string; name: string; thumbnail: string | null; faceCount?: number; animationCount?: number }> = []
 
   for (let i = 0; i < searchResults.length; i++) {
     const r = searchResults[i]
@@ -101,7 +140,7 @@ export async function POST(request: Request) {
       continue
     }
     for (const model of r.value.models) {
-      downloadTasks.push({ query: r.value.query, uid: model.uid, name: model.name, thumbnail: model.thumbnail })
+      downloadTasks.push({ query: r.value.query, uid: model.uid, name: model.name, thumbnail: model.thumbnail, faceCount: model.faceCount, animationCount: model.animationCount })
     }
   }
 
