@@ -4,7 +4,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type ObjectType = 'mesh' | 'light' | 'group' | 'particle' | 'terrain' | 'water' | 'html'
+export type ObjectType = 'mesh' | 'light' | 'group' | 'particle' | 'terrain' | 'water' | 'html' | 'grass'
 export type AppMode = 'world' | 'website'
 export type GeometryType = 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'torusknot' | 'plane' | 'ring' | 'capsule' | 'tetrahedron' | 'octahedron' | 'icosahedron' | 'text' | 'gltf'
 export type LightType = 'ambient' | 'directional' | 'point' | 'spot' | 'hemisphere' | 'rectarea'
@@ -77,6 +77,18 @@ export interface TerrainConfig {
   worleyBlend?: number     // 0–1 blend cellular rock pitting features
   erosionSteps?: number    // thermal erosion passes (0–8)
   biome?: BiomePreset      // sets geologically correct colors when provided
+}
+
+export interface GrassConfig {
+  count: number           // blade instance count (2000–30000)
+  patchRadius: number     // spread radius in world meters
+  bladeHeight: number     // max blade height in meters (0.2–1.5)
+  bladeWidth: number      // blade width at base in meters (0.02–0.08)
+  windStrength: number    // sway amplitude 0–2
+  windSpeed: number       // sway frequency 1–4
+  color: string           // base grass colour
+  colorVariation: number  // hue/brightness variance 0–1
+  snapToTerrain: boolean  // sample terrain height per blade
 }
 
 export interface WaterConfig {
@@ -358,6 +370,7 @@ export interface SceneObject {
   scrollAnim?: ScrollAnimConfig
   terrain?: TerrainConfig
   water?: WaterConfig
+  grass?: GrassConfig
   behaviors?: BehaviorConfig[]
   htmlConfig?: HtmlObjectConfig
 }
