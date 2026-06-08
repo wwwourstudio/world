@@ -22,6 +22,54 @@ interface SketchfabSearchModel {
   isDownloadable: boolean
   faceCount?: number
   animationCount?: number
+  isStaffpicked?: boolean
+}
+
+// ─── Quality scoring ──────────────────────────────────────────────────────────
+
+function detectCategory(query: string): string {
+  const q = query.toLowerCase()
+  if (/tree|pine|oak|palm|birch|spruce|forest|bush|shrub|fern|plant|flower/.test(q)) return 'tree'
+  if (/rock|stone|boulder|cliff|rubble|pebble/.test(q)) return 'rock'
+  if (/build|house|cabin|tower|castle|church|skyscraper|apartment|office|warehouse|barn|shop|store/.test(q)) return 'building'
+  if (/car|truck|vehicle|bus|van|motorcycle|bike|jeep|pickup/.test(q)) return 'vehicle'
+  if (/person|character|human|npc|soldier|knight|wizard|warrior|elf|orc|zombie/.test(q)) return 'character'
+  if (/road|street|pavement|sidewalk|highway|asphalt|cobblestone/.test(q)) return 'road'
+  if (/furniture|chair|table|desk|sofa|bed|shelf/.test(q)) return 'furniture'
+  return 'generic'
+}
+
+const FACE_RANGES: Record<string, [number, number]> = {
+  tree:      [1_000,   80_000],
+  rock:      [500,     50_000],
+  building:  [3_000,  500_000],
+  vehicle:   [3_000,  200_000],
+  character: [2_000,  100_000],
+  road:      [100,     20_000],
+  furniture: [300,     30_000],
+  generic:   [200,  1_500_000],
+}
+
+function scoreModel(m: SketchfabSearchModel, queryTerms: string[], category: string): number {
+  let score = 0
+  // Has thumbnail = real, complete, non-empty model
+  if (m.thumbnails?.images?.[0]?.url) score += 3
+  // Face count in a reasonable range for the category
+  const [minF, maxF] = FACE_RANGES[category]
+  if (m.faceCount !== undefined) {
+    if (m.faceCount >= minF && m.faceCount <= maxF) score += 3
+    else if (m.faceCount < 200) score -= 3       // placeholder / stub
+    else if (m.faceCount > 2_000_000) score -= 2 // too heavy to load
+  }
+  // Name relevance — how many query terms appear in the model name
+  const nameLower = m.name.toLowerCase()
+  let hits = 0
+  for (const term of queryTerms) if (nameLower.includes(term)) hits++
+  score += hits * 2
+  if (hits === queryTerms.length && queryTerms.length > 0) score += 3 // full match bonus
+  // Staff-picked = editorially curated quality
+  if (m.isStaffpicked) score += 4
+  return score
 }
 
 interface ResolvedModel {
@@ -94,10 +142,10 @@ export async function POST(request: Request) {
         return { query, models: cached.models }
       }
 
-      const fetchCount = Math.min(wanted * 2, 10)
+      // Always fetch 24 candidates so quality scoring has enough to re-rank
       const url = new URL('https://api.sketchfab.com/v3/models')
       url.searchParams.set('q', query)
-      url.searchParams.set('count', String(fetchCount))
+      url.searchParams.set('count', '24')
       url.searchParams.set('downloadable', 'true')
       url.searchParams.set('type', 'models')
       url.searchParams.set('sort_by', 'relevance')
@@ -112,10 +160,17 @@ export async function POST(request: Request) {
       const res = await fetchSketchfab(url.toString(), apiKey)
       if (!res.ok) throw new Error(`Search failed: ${res.status}`)
       const data = await res.json()
+
+      const category = detectCategory(query)
+      const queryTerms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 2)
+
+      // Score all downloadable candidates, take the top `wanted` by quality score
       const models: SearchModel[] = (data.results as SketchfabSearchModel[])
         .filter((m) => m.isDownloadable)
+        .map((m) => ({ m, score: scoreModel(m, queryTerms, category) }))
+        .sort((a, b) => b.score - a.score)
         .slice(0, wanted)
-        .map((m) => ({
+        .map(({ m }) => ({
           uid: m.uid,
           name: m.name,
           thumbnail: m.thumbnails?.images?.[0]?.url ?? null,

@@ -44,7 +44,40 @@ import { BIOME_COLORS } from '@/lib/scene/SceneStore'
 import { interpolateCameraPath } from '@/lib/cameraPath'
 import { subdivideGeometry } from '@/lib/three/subdivision'
 import { Brush, Evaluator, SUBTRACTION, ADDITION, INTERSECTION } from 'three-bvh-csg'
+import { brushCursor } from '@/lib/brushCursor'
 
+
+// ─── Brush Cursor ─────────────────────────────────────────────────────────────
+// Shows a translucent sphere at the sculpt/paint cursor position.
+// Uses module-level `brushCursor` (not Zustand) — polled in useFrame for zero re-renders.
+
+function BrushCursorMesh() {
+  const meshRef = useRef<THREE.Mesh>(null)
+  const activeTool = useScene((s) => s.activeTool)
+  const sculptRadius = useScene((s) => s.sculptRadius)
+  const paintRadius = useScene((s) => s.paintRadius)
+
+  useFrame(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    const pos = brushCursor.pos
+    if (!pos || (activeTool !== 'sculpt' && activeTool !== 'paint')) {
+      mesh.visible = false
+      return
+    }
+    mesh.visible = true
+    mesh.position.set(pos[0], pos[1], pos[2])
+    const r = activeTool === 'sculpt' ? sculptRadius : paintRadius
+    mesh.scale.setScalar(r * 2)
+  })
+
+  return (
+    <mesh ref={meshRef} visible={false} renderOrder={999}>
+      <sphereGeometry args={[0.5, 16, 8]} />
+      <meshBasicMaterial color="#ffffff" transparent opacity={0.22} depthTest={false} wireframe />
+    </mesh>
+  )
+}
 
 // ─── Geometry Helper ─────────────────────────────────────────────────────────
 
@@ -720,8 +753,14 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       }}
       onPointerUp={() => { painting.current = false; sculpting.current = false }}
       onPointerMove={(e) => {
-        if (activeTool === 'sculpt' && sculpting.current) { e.stopPropagation(); handleSculptAt(e.point) }
-        if (activeTool === 'paint' && painting.current) { e.stopPropagation(); handlePaintAt(e.point) }
+        if (activeTool === 'sculpt') {
+          brushCursor.pos = [e.point.x, e.point.y, e.point.z]
+          if (sculpting.current) { e.stopPropagation(); handleSculptAt(e.point) }
+        }
+        if (activeTool === 'paint') {
+          brushCursor.pos = [e.point.x, e.point.y, e.point.z]
+          if (painting.current) { e.stopPropagation(); handlePaintAt(e.point) }
+        }
       }}
       onPointerEnter={(e) => {
         e.stopPropagation()
@@ -741,7 +780,7 @@ function MeshObject({ obj }: { obj: SceneObject }) {
       onPointerLeave={(e) => {
         e.stopPropagation()
         painting.current = false; sculpting.current = false
-        if (activeTool === 'sculpt' || activeTool === 'paint') { document.body.style.cursor = ''; return }
+        if (activeTool === 'sculpt' || activeTool === 'paint') { brushCursor.pos = null; document.body.style.cursor = ''; return }
         if (!ix || ix.hoverEffect === 'none') return
         hovered.current = false
         if (ref.current) {
@@ -887,6 +926,15 @@ function GLTFObject({ obj }: { obj: SceneObject }) {
         rotation={obj.transform.rotation}
         scale={obj.transform.scale}
         visible={obj.visible}
+        onPointerDown={(e) => {
+          if (activeTool === 'sculpt' || activeTool === 'paint') {
+            e.stopPropagation()
+            useScene.getState().showNotification(
+              'Sketchfab models can\'t be sculpted directly. Select it and ask Claude: "subdivide this mesh" first.',
+              'info'
+            )
+          }
+        }}
         onClick={(e) => {
           e.stopPropagation()
           if (activeTool === 'select' || activeTool === 'translate' || activeTool === 'rotate' || activeTool === 'scale') {
@@ -2906,6 +2954,7 @@ function InnerScene() {
         />
       )}
 
+      <BrushCursorMesh />
       <GizmoControl />
       <FPSCounter />
       <CameraController />
