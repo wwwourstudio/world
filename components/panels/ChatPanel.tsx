@@ -18,6 +18,7 @@ import { cameraFrameFn } from '@/lib/cameraFrame'
 import { inferTargetSize } from '@/lib/sketchfab/inferSize'
 import { sampleTerrainHeight } from '@/lib/noise'
 import type { TerrainSampleConfig } from '@/lib/noise'
+import { useWorldLocation } from '@/lib/worldLocation'
 
 interface UserMessage { role: 'user'; content: string }
 interface SketchfabPlacedModel { query: string; name: string; thumbnail: string | null }
@@ -261,6 +262,7 @@ export function ChatPanel() {
   const [showQuickActions, setShowQuickActions] = useState(false)
   const [multiAgentEnabled, setMultiAgentEnabled] = useState(false)
   const [activeAgentId, setActiveAgentId] = useState<AgentId | null>(null)
+  const worldLocation = useWorldLocation((s) => s.location)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -385,6 +387,7 @@ export function ChatPanel() {
       { fov: cameraFov, near: cameraNear, far: cameraFar, viewMode },
       appMode,
       cameraPath,
+      worldLocation,
     )
     const agentSystemPrompt = buildAgentSystemPrompt(sceneContext, agentDef.expertisePrompt)
 
@@ -533,6 +536,7 @@ export function ChatPanel() {
       { fov: cameraFov, near: cameraNear, far: cameraFar, viewMode },
       appMode,
       cameraPath,
+      worldLocation,
     )
     const enhancedPrompt = enhancePrompt(prompt, sceneContext)
     const systemPrompt = agentDef

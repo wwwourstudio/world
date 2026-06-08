@@ -396,17 +396,76 @@ RULE: Set skyEnabled:true whenever the scene has terrain and no nighttime HDRI.
 Pair with directional light at matching sun angle for shadows.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KITBASH WORLD BUILDING — CITIES, ROADS, OPEN WORLDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use populate_scene_with_assets for fast multi-asset world building.
+Always use variety:3-4 so no two instances look identical.
+ALWAYS set snapToTerrain:true when terrain exists.
+
+CITY / URBAN WORLD:
+  Queries (use all): "city building facade" variety:4 targetSize:25
+                     "modern office building" variety:3 targetSize:30
+                     "street lamp post" targetSize:4
+                     "sidewalk curb section" targetSize:3
+                     "car parked vehicle" variety:4 targetSize:4.5
+                     "bus stop shelter" targetSize:3
+                     "trash bin city" targetSize:0.8
+  Ground: set_texture "asphalt road" + "concrete pavement"
+  Lighting: directional warm 1.4 + point lights for streetlamps (#ffaa44)
+  Tip: grid layout for buildings (spacing:15-25), scatter for parked cars and props
+
+ROADS & HIGHWAYS:
+  Queries: "road asphalt section" targetSize:12 layout:"line" spacing:10
+           "highway overpass bridge" targetSize:30
+           "road barrier concrete" variety:3 targetSize:3.5 layout:"line" spacing:4
+           "traffic cone" targetSize:0.8 layout:"scatter" spacing:2
+           "road sign post" variety:3 targetSize:5
+  Ground texture: set_texture "asphalt road" repeat:[20,20]
+  Tip: line layout for road sections, yOffset:-0.02 to flush-mount road sections to ground
+
+FANTASY / OPEN WORLD RPG:
+  Queries: "medieval stone castle tower" targetSize:20
+           "medieval stone house" variety:4 targetSize:10 layout:"grid" spacing:12
+           "ruined stone wall arch" variety:3 targetSize:6 layout:"scatter" spacing:8
+           "stone well village" targetSize:2
+           "market stall medieval" variety:3 targetSize:3 layout:"line" spacing:5
+           "wooden cart medieval" variety:2 targetSize:2.5 layout:"scatter"
+           "pine tree" variety:4 targetSize:7 count:15 layout:"scatter"
+           "forest rock boulder" variety:3 targetSize:1.5 count:10 layout:"scatter"
+  Always use: add_terrain biome:highland + add_grass + set_hdri golden_bay
+
+SCI-FI / FUTURISTIC WORLD:
+  Queries: "sci fi building futuristic" variety:4 targetSize:35
+           "space station module" variety:3 targetSize:8
+           "sci fi corridor panel" targetSize:3 layout:"line"
+           "futuristic vehicle hover" variety:2 targetSize:5
+           "sci fi crate container" variety:3 targetSize:2 layout:"scatter"
+           "sci fi antenna tower" targetSize:12
+  Ground: concrete dark + emissive strips (add_object plane emissive:#00aaff)
+  Atmosphere: set_hdri satara_night + fog exponential 0.02 #050518 + bloom
+
+NATURAL / WILDERNESS WORLD:
+  Queries: "pine tree" variety:4 targetSize:8 count:20 layout:"scatter"
+           "oak tree" variety:3 targetSize:9 count:10 layout:"scatter"
+           "forest rock boulder" variety:4 targetSize:2 count:15 layout:"scatter"
+           "fallen log tree" variety:2 targetSize:4 layout:"scatter"
+           "fern bush" variety:3 targetSize:0.7 count:20 layout:"scatter"
+           "mushroom" variety:3 targetSize:0.3 count:10 layout:"scatter"
+  Always use: add_terrain biome:forest + add_grass patchRadius:20 + add_water for lakes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROVEN SKETCHFAB SEARCH TERMS (use these exact patterns)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Trees:     "pine tree lowpoly" | "oak tree game asset" | "dead tree" | "birch tree"
 Rocks:     "forest rock boulder" | "mossy rock" | "cliff rock" | "stone pile"
-Buildings: "medieval stone house" | "stone cottage" | "old farmhouse" | "warehouse building"
-Props:     "wooden barrel" | "wooden crate" | "oil drum" | "lantern post"
-Vehicles:  "old pickup truck" | "wooden cart" | "dirt bike"
-Nature:    "fern plant" | "grass patch" | "flower bush" | "mushroom"
-Ruins:     "ruined stone wall" | "broken column" | "crumbled arch"
+Buildings: "city building facade" | "medieval stone house" | "warehouse building" | "modern office building"
+Roads:     "road asphalt section" | "highway overpass bridge" | "road barrier concrete" | "street lamp post"
+Props:     "wooden barrel" | "wooden crate" | "oil drum" | "lantern post" | "traffic cone"
+Vehicles:  "old pickup truck" | "wooden cart" | "car parked vehicle" | "dirt bike"
+Nature:    "fern plant" | "flower bush" | "mushroom" | "fallen log tree"
+Ruins:     "ruined stone wall" | "broken column" | "crumbled arch" | "stone ruin"
 Characters:"elf warrior" | "knight armor" | "fantasy creature" | "sci-fi soldier"
-Sci-fi:    "sci-fi crate" | "space station module" | "futuristic console"
+Sci-fi:    "sci-fi crate" | "space station module" | "futuristic console" | "sci fi building futuristic"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SKETCHFAB MASTERY — FILTERS, SNAP & POPULATE
@@ -747,6 +806,7 @@ export function buildSceneContext(
   camera?: { fov?: number; near?: number; far?: number; viewMode?: string },
   appMode?: string,
   cameraPath?: unknown[],
+  location?: { name: string; lat: number; lon: number } | null,
 ): string {
   type ObjShape = {
     id: string
@@ -856,10 +916,13 @@ export function buildSceneContext(
   const pathStr = cameraPath && cameraPath.length > 0
     ? `\nCamera path: ${cameraPath.length} keypoint${cameraPath.length !== 1 ? 's' : ''}`
     : ''
+  const locationStr = location
+    ? `\nWorld Location: ${location.name} (${location.lat.toFixed(3)}°, ${location.lon.toFixed(3)}°) — use for realistic environment, climate, and biome suggestions`
+    : ''
 
   return `${objList.length} objects:
 ${objList.join('\n') || '  (empty scene)'}
 
 Env: ${envLines.join(' | ')}
-${camLines.join(' ')}${modeStr}${pathStr}`
+${camLines.join(' ')}${modeStr}${pathStr}${locationStr}`
 }

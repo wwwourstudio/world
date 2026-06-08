@@ -438,7 +438,7 @@ export interface PanelState {
   leftOpen: boolean
   rightOpen: boolean
   bottomOpen: boolean
-  leftTab: 'outliner' | 'material' | 'lighting' | 'website' | 'camera'
+  leftTab: 'outliner' | 'material' | 'lighting' | 'website' | 'camera' | 'map'
   rightTab: 'chat' | 'assets'
   bottomTab: 'animation' | 'physics'
 }

@@ -15,10 +15,11 @@ import { SceneSwitcher } from '@/components/panels/SceneSwitcher'
 import { LightingPanel } from '@/components/panels/LightingPanel'
 import { ViewportOverlay } from '@/components/viewport/ViewportOverlay'
 import type { ActiveTool } from '@/lib/scene/SceneStore'
-import { CheckCircle2, AlertCircle, Info, Layers, Palette, Sun, Globe2, Video } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Info, Layers, Palette, Sun, Globe2, Video, Map } from 'lucide-react'
 import { cameraFrameFn } from '@/lib/cameraFrame'
 import { WebsitePanel } from '@/components/panels/WebsitePanel'
 import { CameraPanel } from '@/components/panels/CameraPanel'
+import { MapPanel } from '@/components/panels/MapPanel'
 
 class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state = { error: null }
@@ -237,11 +238,12 @@ export default function WorldBuilderPage() {
                 { id: 'camera', label: 'Camera', icon: <Video size={11} strokeWidth={1.75} /> },
                 { id: 'material', label: 'Mat', icon: <Palette size={11} strokeWidth={1.75} /> },
                 { id: 'lighting', label: 'Light', icon: <Sun size={11} strokeWidth={1.75} /> },
+                { id: 'map', label: 'Map', icon: <Map size={11} strokeWidth={1.75} /> },
                 ...(appMode === 'website' ? [{ id: 'website', label: 'Web', icon: <Globe2 size={11} strokeWidth={1.75} /> }] : []),
               ] as Array<{ id: string; label: string; icon: React.ReactNode }>).map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => useScene.getState().setPanelTab('left', t.id as 'outliner' | 'camera' | 'material' | 'lighting' | 'website')}
+                  onClick={() => useScene.getState().setPanelTab('left', t.id as 'outliner' | 'camera' | 'material' | 'lighting' | 'map' | 'website')}
                   className="flex items-center justify-center gap-1 shrink-0 flex-1 min-w-0 h-7 rounded-md text-[10.5px] font-medium transition-all"
                   style={{
                     color: panels.leftTab === t.id ? '#E8E9F0' : '#5A5F78',
@@ -261,6 +263,8 @@ export default function WorldBuilderPage() {
                 <CameraPanel />
               ) : panels.leftTab === 'material' ? (
                 <MaterialEditor />
+              ) : panels.leftTab === 'map' ? (
+                <MapPanel />
               ) : panels.leftTab === 'website' ? (
                 <WebsitePanel />
               ) : (
